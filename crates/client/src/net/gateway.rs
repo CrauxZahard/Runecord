@@ -24,12 +24,11 @@ pub(crate) fn ws_worker(shared: Arc<Shared>) {
                     "{url}/gateway"
                 ))
                 .ok();
-                if let Some(r) = req.as_mut() {
-                    if let Ok(value) =
+                if let Some(r) = req.as_mut()
+                    && let Ok(value) =
                         tungstenite::http::HeaderValue::from_str(&format!("Bearer {token}"))
-                    {
-                        r.headers_mut().insert("Authorization", value);
-                    }
+                {
+                    r.headers_mut().insert("Authorization", value);
                 }
                 req
             }

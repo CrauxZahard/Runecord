@@ -1,6 +1,5 @@
 //! Emoji and reaction picker.
 
-use super::super::prelude::*;
 use super::super::*;
 
 const CATEGORIES: &[&str] = &[
@@ -66,7 +65,7 @@ pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
 
     let mut grid = row().w_full().gap(2.0).flex_wrap();
     let mut count = 0;
-    for (emoji, name, group) in EMOJIS.iter().filter(|(_, name, group)| {
+    for (emoji, name, _group) in EMOJIS.iter().filter(|(_, name, group)| {
         matches(name) && (!query.is_empty() || category == 0 || *group == category_name)
     }) {
         let label = emoji.to_string();

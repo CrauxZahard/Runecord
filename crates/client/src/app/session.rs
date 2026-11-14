@@ -67,10 +67,10 @@ impl App {
         self.request_guild_images(&guild_images);
         self.relationships = b.relationships;
         self.dms = b.dms;
-        if let Modal::DmSettings { channel } = self.modal {
-            if let Some(dm) = self.dms.iter().find(|dm| dm.channel.id == channel) {
-                self.dm_settings_name = TextEdit::new(dm.channel.name.clone());
-            }
+        if let Modal::DmSettings { channel } = self.modal
+            && let Some(dm) = self.dms.iter().find(|dm| dm.channel.id == channel)
+        {
+            self.dm_settings_name = TextEdit::new(dm.channel.name.clone());
         }
         let dm_icons: Vec<String> = self
             .dms

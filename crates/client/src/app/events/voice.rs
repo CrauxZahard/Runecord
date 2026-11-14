@@ -1,12 +1,11 @@
 //! Network event handlers: voice.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
-    pub(crate) fn apply_voice_state(&mut self, v: Box<VoiceState>) {
+    pub(crate) fn apply_voice_state(&mut self, v: VoiceState) {
         if v.channel_id.is_some() {
-            self.voice.insert(v.user_id, *v);
+            self.voice.insert(v.user_id, v);
         } else {
             self.voice.remove(&v.user_id);
             self.voice_video.remove(&v.user_id);

@@ -28,7 +28,7 @@ impl App {
             self.toast("No local account with that username");
         }
     }
-    pub(crate) fn apply_inbox(&mut self, inbox: Box<Inbox>) {
+    pub(crate) fn apply_inbox(&mut self, inbox: Inbox) {
         if self.modal == Modal::Inbox {
             if inbox.mentions.is_empty() && !inbox.unreads.is_empty() {
                 self.inbox_tab = 1;
@@ -36,7 +36,7 @@ impl App {
                 self.inbox_tab = 0;
             }
         }
-        self.inbox = Some(*inbox);
+        self.inbox = Some(inbox);
     }
     pub(crate) fn apply_mutuals(&mut self, user: Id, guilds: Vec<GuildSummary>) {
         self.mutuals.insert(user, guilds);

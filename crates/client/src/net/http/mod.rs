@@ -320,11 +320,11 @@ pub(crate) fn http_worker(shared: Arc<Shared>, rx: mpsc::Receiver<Command>) {
 }
 
 pub(crate) fn fetch_bootstrap(shared: &Arc<Shared>) {
-    if let Ok(v) = shared.get("/api/bootstrap") {
-        if let Ok(b) = serde_json::from_value::<Bootstrap>(v) {
-            shared.bootstrap_seen.store(true, Ordering::SeqCst);
-            shared.emit(NetEvent::Bootstrap(Box::new(b)));
-        }
+    if let Ok(v) = shared.get("/api/bootstrap")
+        && let Ok(b) = serde_json::from_value::<Bootstrap>(v)
+    {
+        shared.bootstrap_seen.store(true, Ordering::SeqCst);
+        shared.emit(NetEvent::Bootstrap(Box::new(b)));
     }
 }
 

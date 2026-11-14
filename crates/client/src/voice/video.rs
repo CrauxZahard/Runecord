@@ -14,7 +14,9 @@ pub(crate) fn video_stats() -> HashMap<Id, (u32, u32, u32)> {
         .unwrap_or_default()
 }
 
-pub(crate) fn drain_video() -> (Vec<(Id, u32, u32, Vec<u8>)>, Vec<Id>) {
+pub(crate) type VideoBatch = (Vec<(Id, u32, u32, Vec<u8>)>, Vec<Id>);
+
+pub(crate) fn drain_video() -> VideoBatch {
     let frames = VIDEO_LATEST.get_or_init(|| Mutex::new(HashMap::new()));
     let stopped = VIDEO_STOPPED.get_or_init(|| Mutex::new(Vec::new()));
     let frames = frames
@@ -291,27 +293,26 @@ pub(crate) fn note_status(user: Id, width: u32, height: u32, fps: u32) {
 }
 
 pub(crate) fn stop_preview(user: Id) {
-    if let Some(frames) = VIDEO_LATEST.get() {
-        if let Ok(mut frames) = frames.lock() {
-            frames.remove(&user);
-        }
+    if let Some(frames) = VIDEO_LATEST.get()
+        && let Ok(mut frames) = frames.lock()
+    {
+        frames.remove(&user);
     }
-    if let Some(meters) = VIDEO_METERS.get() {
-        if let Ok(mut meters) = meters.lock() {
-            meters.remove(&user);
-        }
+    if let Some(meters) = VIDEO_METERS.get()
+        && let Ok(mut meters) = meters.lock()
+    {
+        meters.remove(&user);
     }
-    if let Some(decoders) = VIDEO_DECODERS.get() {
-        if let Ok(mut decoders) = decoders.lock() {
-            if let Some(decoder) = decoders.remove(&user) {
-                decoder.stop.store(true, Ordering::Relaxed);
-            }
-        }
+    if let Some(decoders) = VIDEO_DECODERS.get()
+        && let Ok(mut decoders) = decoders.lock()
+        && let Some(decoder) = decoders.remove(&user)
+    {
+        decoder.stop.store(true, Ordering::Relaxed);
     }
-    if let Some(stopped) = VIDEO_STOPPED.get() {
-        if let Ok(mut stopped) = stopped.lock() {
-            stopped.push(user);
-        }
+    if let Some(stopped) = VIDEO_STOPPED.get()
+        && let Ok(mut stopped) = stopped.lock()
+    {
+        stopped.push(user);
     }
     wake();
 }

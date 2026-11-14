@@ -1,6 +1,5 @@
 //! Modal sheets: moderation.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn confirm_ban_sheet(s: &App, p: Palette, _guild: Id, user: Id) -> El {
@@ -179,7 +178,7 @@ pub(crate) fn prune_sheet(s: &App, p: Palette) -> El {
 
     let preview = match (s.prune_loading, s.prune_preview) {
         (true, _) => "Checking inactive members…".to_string(),
-        (false, Some(count)) if count == 1 => "1 member would be pruned.".to_string(),
+        (false, Some(1)) => "1 member would be pruned.".to_string(),
         (false, Some(count)) => format!("{count} members would be pruned."),
         _ => "Preview to count the members this would remove.".to_string(),
     };

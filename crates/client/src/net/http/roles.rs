@@ -3,6 +3,7 @@
 use super::super::*;
 use std::sync::Arc;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_role(
     shared: &Arc<Shared>,
     guild: Id,

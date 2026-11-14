@@ -1,5 +1,3 @@
-use super::super::prelude::*;
-use super::super::*;
 use super::*;
 
 pub(crate) fn bans_view(s: &App, p: Palette) -> El {

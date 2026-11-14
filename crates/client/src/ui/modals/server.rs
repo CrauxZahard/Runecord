@@ -1,6 +1,5 @@
 //! Modal sheets: server.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn create_server_sheet(s: &App, p: Palette) -> El {

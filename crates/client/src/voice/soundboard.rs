@@ -13,7 +13,6 @@ pub(crate) fn soundboard_sounds() -> [(&'static str, &'static str, f32); 6] {
 
 /// Queues a built-in sound for the next capture chunks. Because the PCM is mixed
 /// into the outgoing stream before Opus encoding, everyone in the channel hears it.
-
 pub(crate) fn play_soundboard(name: &str) {
     let pcm = soundboard_pcm(name);
     if pcm.is_empty() {
@@ -41,14 +40,13 @@ pub(crate) fn mix_soundboard(pcm: &mut [u8]) -> bool {
 }
 
 /// Mixes queued samples into little-endian s16 stereo-pair PCM, consuming what it used.
-
 pub(crate) fn mix_into(pcm: &mut [u8], queue: &mut Vec<i16>) -> bool {
     if queue.is_empty() {
         return false;
     }
     let frames = pcm.len() / 2;
     let take = frames.min(queue.len());
-    for (index, pair) in pcm.chunks_exact_mut(2).take(take).enumerate() {
+    for (index, pair) in pcm.as_chunks_mut::<2>().0.iter_mut().take(take).enumerate() {
         let base = i16::from_le_bytes([pair[0], pair[1]]) as i32;
         let mixed = (base + queue[index] as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         pair.copy_from_slice(&mixed.to_le_bytes());

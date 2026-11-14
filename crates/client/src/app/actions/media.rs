@@ -2,7 +2,6 @@
 
 use super::super::*;
 use crate::net::Command;
-use rune::TextEdit;
 
 impl App {
     pub fn begin_user_image_crop(&mut self, path: std::path::PathBuf, banner: bool) {

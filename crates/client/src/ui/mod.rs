@@ -10,9 +10,8 @@ pub(crate) mod prelude {
         text_input,
     };
     pub(crate) use runecord_protocol::{
-        Channel, ChannelKind, DmChannel, GuildNotificationSettings, GuildSummary, Id, Member,
-        Message, NotificationLevel, OverwriteKind, Presence, RelationshipKind, User, has, now_ms,
-        perm,
+        Channel, ChannelKind, DmChannel, GuildSummary, Id, Member, Message, NotificationLevel,
+        OverwriteKind, Presence, RelationshipKind, User, has, now_ms, perm,
     };
     pub(crate) use std::rc::Rc;
 }

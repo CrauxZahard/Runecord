@@ -1,6 +1,5 @@
 //! Roles and channel permissions.
 
-use super::super::prelude::*;
 use super::super::*;
 
 pub(crate) fn channel_permissions_sheet(s: &App, p: Palette, channel: Id) -> El {

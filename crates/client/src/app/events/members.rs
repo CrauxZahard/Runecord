@@ -1,7 +1,6 @@
 //! Network event handlers: members.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
     pub(crate) fn apply_member_update(&mut self, member: Box<Member>) {
@@ -16,14 +15,13 @@ impl App {
         } else if guild == self.active_guild {
             list.push(member);
         }
-        if member_user_is_self {
-            if let Some(existing) = self
+        if member_user_is_self
+            && let Some(existing) = self
                 .members
                 .get(&guild)
                 .and_then(|list| list.iter().find(|m| m.user.id == self.me.id))
-            {
-                self.me = existing.user.clone();
-            }
+        {
+            self.me = existing.user.clone();
         }
     }
     pub(crate) fn apply_member_remove(&mut self, guild: Id, user: Id) {

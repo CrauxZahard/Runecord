@@ -3,7 +3,7 @@ use super::*;
 pub(crate) fn pcm_rms(samples: &[u8]) -> f32 {
     let mut sum = 0.0f64;
     let mut count = 0u64;
-    for pair in samples.chunks_exact(2) {
+    for pair in samples.as_chunks::<2>().0 {
         let value = i16::from_le_bytes([pair[0], pair[1]]) as f64 / 32768.0;
         sum += value * value;
         count += 1;
@@ -39,7 +39,7 @@ pub(crate) fn shape_pcm(samples: &mut [u8], muted: &AtomicBool, gate: bool, synt
         }
     }
     if (volume - 1.0).abs() > f32::EPSILON {
-        for pair in samples.chunks_exact_mut(2) {
+        for pair in samples.as_chunks_mut::<2>().0 {
             let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * volume;
             let value = value.clamp(-32768.0, 32767.0) as i16;
             pair.copy_from_slice(&value.to_le_bytes());
@@ -105,12 +105,11 @@ pub(crate) fn start_mic_test() {
 }
 
 pub(crate) fn stop_mic_test() {
-    if let Some(slot) = MIC_TEST_STOP.get() {
-        if let Ok(mut current) = slot.lock() {
-            if let Some(stop) = current.take() {
-                stop.store(true, Ordering::Relaxed);
-            }
-        }
+    if let Some(slot) = MIC_TEST_STOP.get()
+        && let Ok(mut current) = slot.lock()
+        && let Some(stop) = current.take()
+    {
+        stop.store(true, Ordering::Relaxed);
     }
     MIC_LEVEL.store(0.0f32.to_bits(), Ordering::Relaxed);
 }
@@ -120,7 +119,7 @@ pub(crate) fn scale_pcm(samples: &[u8], volume: f32) -> Vec<u8> {
         return samples.to_vec();
     }
     let mut out = samples.to_vec();
-    for pair in out.chunks_exact_mut(2) {
+    for pair in out.as_chunks_mut::<2>().0 {
         let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * volume;
         let value = value.clamp(-32768.0, 32767.0) as i16;
         pair.copy_from_slice(&value.to_le_bytes());

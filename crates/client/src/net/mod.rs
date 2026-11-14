@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum Command {
     Login {
         username: String,
@@ -45,6 +46,7 @@ pub enum Command {
         content: String,
         reply_to: Option<Id>,
         attachments: Vec<Id>,
+        #[allow(dead_code)]
         nonce: String,
     },
     Edit {
@@ -422,11 +424,13 @@ pub enum Command {
         allow: u64,
         deny: u64,
     },
+    #[allow(dead_code)]
     ClearOverwrite {
         channel: Id,
         target: Id,
         kind: String,
     },
+    #[allow(dead_code)]
     Ping,
 }
 
@@ -472,6 +476,7 @@ pub enum NetEvent {
     Emojis(Vec<Emoji>),
     EmojiCreated(Emoji),
     EmojiDeleted {
+        #[allow(dead_code)]
         guild: Id,
         id: Id,
     },
@@ -666,10 +671,10 @@ fn write_token(profile: &str, token: Option<&str>) {
 fn error_text(response: reqwest::blocking::Response) -> String {
     let status = response.status();
     let text = response.text().unwrap_or_default();
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-        if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
-            return e.to_string();
-        }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
+        && let Some(e) = v.get("error").and_then(|e| e.as_str())
+    {
+        return e.to_string();
     }
     if text.is_empty() {
         format!("Request failed ({status})")
@@ -771,10 +776,10 @@ impl Shared {
         if let Ok(mut q) = EVENTS.lock() {
             q.push(ev);
         }
-        if let Ok(w) = self.wake.lock() {
-            if let Some(waker) = w.as_ref() {
-                waker();
-            }
+        if let Ok(w) = self.wake.lock()
+            && let Some(waker) = w.as_ref()
+        {
+            waker();
         }
     }
 }

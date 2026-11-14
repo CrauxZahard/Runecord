@@ -1,6 +1,5 @@
 //! Modal sheets: discovery.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn explore_sheet(s: &App, p: Palette) -> El {

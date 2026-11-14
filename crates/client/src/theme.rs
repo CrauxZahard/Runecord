@@ -7,6 +7,7 @@ pub fn color(hex: &str) -> Color {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // full token set, even where a surface has not used a token yet
 pub struct Palette {
     pub dark: bool,
     pub rail: Color,

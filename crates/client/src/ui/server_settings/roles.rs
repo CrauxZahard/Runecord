@@ -1,5 +1,3 @@
-use super::super::prelude::*;
-use super::super::*;
 use super::*;
 
 pub(crate) fn roles_view(s: &App, p: Palette) -> El {
@@ -47,14 +45,13 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
                             }
                         }
                         rune::Phase::Up => {
-                            if drag.cancelled() {
-                                if let Some((dragged, applied)) = s.role_drag {
-                                    if dragged == id {
-                                        let direction = if applied > 0 { -1 } else { 1 };
-                                        for _ in 0..applied.abs() {
-                                            s.move_selected_role(direction);
-                                        }
-                                    }
+                            if drag.cancelled()
+                                && let Some((dragged, applied)) = s.role_drag
+                                && dragged == id
+                            {
+                                let direction = if applied > 0 { -1 } else { 1 };
+                                for _ in 0..applied.abs() {
+                                    s.move_selected_role(direction);
                                 }
                             }
                             s.role_drag = None;
@@ -622,7 +619,7 @@ pub(crate) fn role_icon_row(s: &App, role: &Role, p: Palette) -> El {
                     .label("Upload role icon")
                     .fill(p.accent)
                     .hover(p.accent_hover)
-                    .on_press_tx(move |s: &mut App, tx: &mut rune::Tx| {
+                    .on_press_tx(move |_s: &mut App, tx: &mut rune::Tx| {
                         let options = rune::FileDialogOptions {
                             title: "Upload role icon".to_string(),
                             directory: None,

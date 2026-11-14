@@ -4,12 +4,12 @@ use super::*;
 
 impl App {
     pub(crate) fn trim_channel(&mut self, channel: Id) -> bool {
-        if let Some(list) = self.messages.get_mut(&channel) {
-            if list.len() > crate::cache::MAX_MESSAGES_PER_CHANNEL {
-                let drop = list.len() - crate::cache::MAX_MESSAGES_PER_CHANNEL;
-                list.drain(..drop);
-                return true;
-            }
+        if let Some(list) = self.messages.get_mut(&channel)
+            && list.len() > crate::cache::MAX_MESSAGES_PER_CHANNEL
+        {
+            let drop = list.len() - crate::cache::MAX_MESSAGES_PER_CHANNEL;
+            list.drain(..drop);
+            return true;
         }
         false
     }

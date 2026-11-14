@@ -51,12 +51,11 @@ impl App {
             if !self.mutuals.contains_key(&user) && self.mutual_requests.insert(user) {
                 self.send(Command::LoadMutuals { user });
             }
-            if let Some(activity) = self.user(user).and_then(|u| u.activity.as_ref()) {
-                if !activity.artwork_url.is_empty()
-                    && !self.images.contains_key(&activity.artwork_url)
-                {
-                    self.request_urls(vec![activity.artwork_url.clone()]);
-                }
+            if let Some(activity) = self.user(user).and_then(|u| u.activity.as_ref())
+                && !activity.artwork_url.is_empty()
+                && !self.images.contains_key(&activity.artwork_url)
+            {
+                self.request_urls(vec![activity.artwork_url.clone()]);
             }
             if self
                 .user(user)
@@ -127,11 +126,11 @@ impl App {
             changed |= self.maintenance();
         }
         self.maybe_save_cache();
-        if let Some(toast) = &self.toast {
-            if toast.until < t {
-                self.toast = None;
-                changed = true;
-            }
+        if let Some(toast) = &self.toast
+            && toast.until < t
+        {
+            self.toast = None;
+            changed = true;
         }
         if self.toast.is_some() || self.typing.values().any(|v| !v.is_empty()) {
             tx.wake_after(std::time::Duration::from_millis(200));
@@ -139,7 +138,7 @@ impl App {
         let skeleton_loading = self.logged_in
             && self.connected
             && self.screen == Screen::Guild
-            && ((self.active_channel != 0 && self.messages.get(&self.active_channel).is_none())
+            && ((self.active_channel != 0 && !self.messages.contains_key(&self.active_channel))
                 || self.guild_detail(self.active_guild).is_none()
                 || self
                     .member_state
@@ -184,7 +183,7 @@ impl App {
             }
             NetEvent::ServerChecked { url, ok, error } => self.apply_server_checked(url, ok, error),
             NetEvent::ConnectionFailed => self.apply_connection_failed(),
-            NetEvent::Inbox(inbox) => self.apply_inbox(inbox),
+            NetEvent::Inbox(inbox) => self.apply_inbox(*inbox),
             NetEvent::RoleUpdated(role) => self.apply_role_updated(role),
             NetEvent::RoleDeleted { guild, role } => self.apply_role_deleted(guild, role),
             NetEvent::Emojis(emojis) => self.apply_emojis(emojis),
@@ -200,7 +199,7 @@ impl App {
                 channel,
                 page,
                 replace,
-            } => self.apply_members_page(guild, channel, page, replace),
+            } => self.apply_members_page(guild, channel, *page, replace),
             NetEvent::MemberUpdate(member) => self.apply_member_update(member),
             NetEvent::MemberRemove { guild, user } => self.apply_member_remove(guild, user),
             NetEvent::MemberCountUpdate { guild, count } => {
@@ -217,7 +216,7 @@ impl App {
             NetEvent::MessageDelete { channel, message } => {
                 self.apply_message_delete(channel, message)
             }
-            NetEvent::VoiceState(v) => self.apply_voice_state(v),
+            NetEvent::VoiceState(v) => self.apply_voice_state(*v),
             NetEvent::Presence { user, status } => self.apply_presence(user, status),
             NetEvent::Typing {
                 channel,
@@ -242,7 +241,7 @@ impl App {
             NetEvent::Pins(messages) => self.apply_pins(messages),
             NetEvent::Bans(bans) => self.apply_bans(bans),
             NetEvent::Mutuals { user, guilds } => self.apply_mutuals(user, guilds),
-            NetEvent::GuildUpdated(summary) => self.apply_guild_updated(summary),
+            NetEvent::GuildUpdated(summary) => self.apply_guild_updated(*summary),
             NetEvent::PrunePreview { days, count } => self.apply_prune_preview(days, count),
             NetEvent::Appeals(appeals) => self.apply_appeals(appeals),
             NetEvent::AppealResolved { appeal, accepted } => {
@@ -264,8 +263,8 @@ impl App {
                 rgba,
                 frames,
             } => self.apply_image(url, width, height, rgba, frames),
-            NetEvent::Uploaded(a) => self.apply_uploaded(a),
-            NetEvent::Search(results) => self.apply_search(results),
+            NetEvent::Uploaded(a) => self.apply_uploaded(*a),
+            NetEvent::Search(results) => self.apply_search(*results),
             NetEvent::Dm(dm) => self.apply_dm(dm),
             NetEvent::DmUpdated(dm) => self.apply_dm_updated(dm),
             NetEvent::DmRemoved { channel } => self.apply_dm_removed(channel),

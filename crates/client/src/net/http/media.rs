@@ -50,32 +50,32 @@ pub(crate) fn remove_user_image(shared: &Arc<Shared>, banner: bool) {
 }
 
 pub(crate) fn fetch_image(shared: &Arc<Shared>, url: String) {
-    if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send() {
-        if let Ok(bytes) = res.bytes() {
-            if let Some(animation) = crate::image_anim::decode(&bytes) {
-                let first = animation.frames[0].rgba.clone();
-                shared.emit(NetEvent::Image {
-                    url,
-                    width: animation.width,
-                    height: animation.height,
-                    rgba: first,
-                    frames: animation.frames,
-                });
-            } else {
-                match image::load_from_memory(&bytes) {
-                    Ok(img) => {
-                        let rgba = img.to_rgba8();
-                        let (w, h) = rgba.dimensions();
-                        shared.emit(NetEvent::Image {
-                            url,
-                            width: w,
-                            height: h,
-                            rgba: rgba.into_raw(),
-                            frames: Vec::new(),
-                        });
-                    }
-                    Err(e) => shared.emit(NetEvent::Error(format!("Image: {e}"))),
+    if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send()
+        && let Ok(bytes) = res.bytes()
+    {
+        if let Some(animation) = crate::image_anim::decode(&bytes) {
+            let first = animation.frames[0].rgba.clone();
+            shared.emit(NetEvent::Image {
+                url,
+                width: animation.width,
+                height: animation.height,
+                rgba: first,
+                frames: animation.frames,
+            });
+        } else {
+            match image::load_from_memory(&bytes) {
+                Ok(img) => {
+                    let rgba = img.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    shared.emit(NetEvent::Image {
+                        url,
+                        width: w,
+                        height: h,
+                        rgba: rgba.into_raw(),
+                        frames: Vec::new(),
+                    });
                 }
+                Err(e) => shared.emit(NetEvent::Error(format!("Image: {e}"))),
             }
         }
     }
@@ -104,11 +104,7 @@ pub(crate) fn upload(shared: &Arc<Shared>, channel: Id, path: std::path::PathBuf
             let token = shared.token.lock().ok().and_then(|t| t.clone());
             let res = shared
                 .client
-                .post(format!(
-                    "{}{}",
-                    shared.base,
-                    format!("/api/channels/{channel}/upload")
-                ))
+                .post(format!("{}/api/channels/{channel}/upload", shared.base))
                 .query(&[
                     ("name", name),
                     ("content_type", content_type.to_string()),

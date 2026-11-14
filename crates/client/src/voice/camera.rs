@@ -127,17 +127,16 @@ pub(crate) fn start_camera_test() {
 }
 
 pub(crate) fn stop_camera_test() {
-    if let Some(slot) = CAMERA_TEST_STOP.get() {
-        if let Ok(mut current) = slot.lock() {
-            if let Some(stop) = current.take() {
-                stop.store(true, Ordering::Relaxed);
-            }
-        }
+    if let Some(slot) = CAMERA_TEST_STOP.get()
+        && let Ok(mut current) = slot.lock()
+        && let Some(stop) = current.take()
+    {
+        stop.store(true, Ordering::Relaxed);
     }
-    if let Some(slot) = CAMERA_TEST_FRAME.get() {
-        if let Ok(mut current) = slot.lock() {
-            *current = None;
-        }
+    if let Some(slot) = CAMERA_TEST_FRAME.get()
+        && let Ok(mut current) = slot.lock()
+    {
+        *current = None;
     }
 }
 
@@ -239,16 +238,15 @@ pub(crate) fn video_capture(
         let (status_width, status_height) = preset.resolution();
         let status = format!("{status_width}x{status_height}@{}", preset.fps()).into_bytes();
         let _ = out.try_send((status_kind, status.clone()));
-        if !low {
-            if let Some(user) = local_user() {
-                if let Some((width, height, fps)) = parse_status(&status) {
-                    note_status(user, width, height, fps);
-                    log(&format!(
-                        "self preview started user={user} at {}x{}@{}fps",
-                        width, height, fps
-                    ));
-                }
-            }
+        if !low
+            && let Some(user) = local_user()
+            && let Some((width, height, fps)) = parse_status(&status)
+        {
+            note_status(user, width, height, fps);
+            log(&format!(
+                "self preview started user={user} at {}x{}@{}fps",
+                width, height, fps
+            ));
         }
         log(&format!("video source: {kind}"));
         let mut restart = false;
@@ -266,16 +264,14 @@ pub(crate) fn video_capture(
                     Ok(n) => {
                         pending.extend_from_slice(&buffer[..n]);
                         while let Some(frame) = take_jpeg(&mut pending) {
-                            if !low {
-                                if let Some(user) = local_user() {
-                                    attach_video(user, frame.clone(), &stop);
-                                }
+                            if !low && let Some(user) = local_user() {
+                                attach_video(user, frame.clone(), &stop);
                             }
                             match out.try_send((frame_kind, frame)) {
                                 Ok(()) => {
                                     sent += 1;
                                     total += 1;
-                                    if total == 1 || total % 60 == 0 {
+                                    if total == 1 || total.is_multiple_of(60) {
                                         log(&format!(
                                             "video sent preset={} frames={total}",
                                             preset.label()
@@ -336,11 +332,9 @@ pub(crate) fn video_capture(
         ));
     }
     let _ = out.send((2, Vec::new()));
-    if !low {
-        if let Some(user) = local_user() {
-            stop_preview(user);
-            log(&format!("self preview stopped user={user}"));
-        }
+    if !low && let Some(user) = local_user() {
+        stop_preview(user);
+        log(&format!("self preview stopped user={user}"));
     }
     log("video stopped");
 }

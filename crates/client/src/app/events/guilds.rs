@@ -1,7 +1,6 @@
 //! Network event handlers: guilds.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
     pub(crate) fn apply_guild_events(&mut self, events: Vec<GuildEvent>) {
@@ -70,7 +69,7 @@ impl App {
         &mut self,
         guild: Id,
         channel: Id,
-        page: Box<MemberPage>,
+        page: MemberPage,
         replace: bool,
     ) {
         if self
@@ -80,7 +79,6 @@ impl App {
         {
             return;
         }
-        let page = *page;
         let mut next_offset = page.next_offset;
         if let Some(state) = self.member_state.get_mut(&guild) {
             state.loading = false;
@@ -208,8 +206,7 @@ impl App {
         self.explore_loading = false;
         self.modal = Modal::Explore;
     }
-    pub(crate) fn apply_guild_updated(&mut self, summary: Box<GuildSummary>) {
-        let summary = *summary;
+    pub(crate) fn apply_guild_updated(&mut self, summary: GuildSummary) {
         if let Some(existing) = self.guilds.iter_mut().find(|item| item.id == summary.id) {
             *existing = summary.clone();
         }

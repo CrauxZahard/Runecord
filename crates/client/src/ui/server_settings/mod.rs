@@ -1,8 +1,7 @@
 //! Server settings: role CRUD/reordering and member role assignment.
 
-use super::prelude::*;
 use super::*;
-use runecord_protocol::{AuditEntry, Role, RoleLink};
+use runecord_protocol::{AuditEntry, Role};
 
 mod audit;
 mod bans;

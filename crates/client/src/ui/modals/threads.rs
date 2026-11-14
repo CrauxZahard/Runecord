@@ -1,6 +1,5 @@
 //! Threads.
 
-use super::super::prelude::*;
 use super::super::*;
 
 pub(crate) fn threads_sheet(s: &App, p: Palette) -> El {

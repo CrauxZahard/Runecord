@@ -1,4 +1,3 @@
-use super::super::*;
 use super::*;
 
 pub(crate) fn keybinds_tab(s: &App, p: Palette) -> El {

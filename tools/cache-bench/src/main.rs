@@ -284,15 +284,15 @@ fn main() {
     let real_path = std::env::var("APPDATA")
         .map(std::path::PathBuf::from)
         .map(|base| base.join("Runecord").join("cache-1.json"));
-    if let Ok(path) = real_path {
-        if let Ok(real) = std::fs::read(path) {
-            println!("real_cache_bytes={}", real.len());
-            println!(
-                "real_cache_load_us={:.1}",
-                mean_ms(1_000, || {
-                    black_box(cache::load("1"));
-                }) * 1_000.0
-            );
-        }
+    if let Ok(path) = real_path
+        && let Ok(real) = std::fs::read(path)
+    {
+        println!("real_cache_bytes={}", real.len());
+        println!(
+            "real_cache_load_us={:.1}",
+            mean_ms(1_000, || {
+                black_box(cache::load("1"));
+            }) * 1_000.0
+        );
     }
 }

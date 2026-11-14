@@ -1,7 +1,6 @@
 //! Network event handlers: messages.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
     pub(crate) fn apply_messages(&mut self, channel: Id, messages: Vec<Message>, before: bool) {
@@ -83,23 +82,20 @@ impl App {
                 .as_ref()
                 .is_some_and(|channel| channel.kind == ChannelKind::Thread)
         {
-            if let Some(list) = self.channels.get_mut(&self.active_guild) {
-                if let Some(thread) = list.iter_mut().find(|item| item.id == channel_id) {
-                    if let Some(info) = thread.thread.as_mut() {
-                        info.message_count += 1;
-                    }
-                }
+            if let Some(list) = self.channels.get_mut(&self.active_guild)
+                && let Some(thread) = list.iter_mut().find(|item| item.id == channel_id)
+                && let Some(info) = thread.thread.as_mut()
+            {
+                info.message_count += 1;
             }
-            if let Some(detail) = self.guild_details.get_mut(&self.active_guild) {
-                if let Some(thread) = detail
+            if let Some(detail) = self.guild_details.get_mut(&self.active_guild)
+                && let Some(thread) = detail
                     .channels
                     .iter_mut()
                     .find(|item| item.id == channel_id)
-                {
-                    if let Some(info) = thread.thread.as_mut() {
-                        info.message_count += 1;
-                    }
-                }
+                && let Some(info) = thread.thread.as_mut()
+            {
+                info.message_count += 1;
             }
         }
         let is_dm = channel
@@ -115,12 +111,12 @@ impl App {
             self.mark_read(channel_id);
         } else if !mine && level != NotificationLevel::None {
             *self.unread.entry(channel_id).or_insert(0) += 1;
-            if let Some(guild) = channel.as_ref().and_then(|c| c.guild_id) {
-                if let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild) {
-                    summary.unread_count = summary.unread_count.saturating_add(1);
-                    if mentioned {
-                        summary.mention_count = summary.mention_count.saturating_add(1);
-                    }
+            if let Some(guild) = channel.as_ref().and_then(|c| c.guild_id)
+                && let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild)
+            {
+                summary.unread_count = summary.unread_count.saturating_add(1);
+                if mentioned {
+                    summary.mention_count = summary.mention_count.saturating_add(1);
                 }
             }
         }
@@ -166,10 +162,10 @@ impl App {
         self.request_message_images(&msg);
         self.request_user(msg.author_id);
         let channel = msg.channel_id;
-        if let Some(list) = self.messages.get_mut(&channel) {
-            if let Some(existing) = list.iter_mut().find(|x| x.id == msg.id) {
-                *existing = msg.clone();
-            }
+        if let Some(list) = self.messages.get_mut(&channel)
+            && let Some(existing) = list.iter_mut().find(|x| x.id == msg.id)
+        {
+            *existing = msg.clone();
         }
         if let Some(existing) = self.pinned.iter_mut().find(|x| x.id == msg.id) {
             *existing = msg.clone();
@@ -225,12 +221,12 @@ impl App {
             self.animations.remove(&url);
         }
     }
-    pub(crate) fn apply_uploaded(&mut self, a: Box<Attachment>) {
-        self.attachments.push(*a);
+    pub(crate) fn apply_uploaded(&mut self, a: Attachment) {
+        self.attachments.push(a);
         self.toast("Attached");
     }
-    pub(crate) fn apply_search(&mut self, results: Box<SearchResults>) {
+    pub(crate) fn apply_search(&mut self, results: SearchResults) {
         self.modal = Modal::Search;
-        self.search_results = Some(*results);
+        self.search_results = Some(results);
     }
 }

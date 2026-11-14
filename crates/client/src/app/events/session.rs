@@ -1,7 +1,6 @@
 //! Network event handlers: session.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
     pub(crate) fn apply_session(&mut self, auth: Box<AuthResponse>) {
@@ -34,10 +33,10 @@ impl App {
             .into_iter()
             .filter(|url| !url.is_empty())
             .collect();
-        if let Some(activity) = &user.activity {
-            if !activity.artwork_url.is_empty() {
-                urls.push(activity.artwork_url.clone());
-            }
+        if let Some(activity) = &user.activity
+            && !activity.artwork_url.is_empty()
+        {
+            urls.push(activity.artwork_url.clone());
         }
         self.request_urls(urls);
         self.presence.insert(user.id, user.status);

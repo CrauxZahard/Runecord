@@ -83,11 +83,7 @@ fn decode_gif(bytes: &[u8]) -> Option<Animation> {
     for frame in decoder.into_frames().take(MAX_FRAMES) {
         let frame = frame.ok()?;
         let (numer, denom) = frame.delay().numer_denom_ms();
-        let delay = if denom == 0 {
-            100
-        } else {
-            (numer / denom).max(20).min(2000)
-        };
+        let delay = numer.checked_div(denom).unwrap_or(100).clamp(20, 2000);
         let buffer = frame.buffer();
         let (width, height, rgba) =
             bounded(buffer.width(), buffer.height(), buffer.as_raw().clone())?;
@@ -139,7 +135,7 @@ fn decode_webp(bytes: &[u8]) -> Option<Animation> {
             buffer
         } else {
             let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-            for pixel in buffer.chunks_exact(3) {
+            for pixel in buffer.as_chunks::<3>().0 {
                 rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
             }
             rgba
@@ -153,7 +149,7 @@ fn decode_webp(bytes: &[u8]) -> Option<Animation> {
             return None;
         }
         frames.push(AnimFrame {
-            delay_ms: delay.max(20).min(2000),
+            delay_ms: delay.clamp(20, 2000),
             rgba,
         });
     }

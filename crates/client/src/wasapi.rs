@@ -90,12 +90,11 @@ pub fn list_output_devices() -> Vec<String> {
             };
             let count = collection.GetCount().unwrap_or(0);
             for index in 0..count {
-                if let Ok(device) = collection.Item(index) {
-                    if let Some(name) = device_name(&device) {
-                        if !name.trim().is_empty() {
-                            out.push(name);
-                        }
-                    }
+                if let Ok(device) = collection.Item(index)
+                    && let Some(name) = device_name(&device)
+                    && !name.trim().is_empty()
+                {
+                    out.push(name);
                 }
             }
         }
@@ -119,14 +118,15 @@ impl WasapiPlayer {
         let com = ComGuard::new()?;
         let device = select_device(device_name)?;
         let client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None).ok()? };
-        let mut format = WAVEFORMATEX::default();
-        format.wFormatTag = 1;
-        format.nChannels = 1;
-        format.nSamplesPerSec = 48_000;
-        format.wBitsPerSample = 16;
-        format.nBlockAlign = 2;
-        format.nAvgBytesPerSec = 96_000;
-        format.cbSize = 0;
+        let format = WAVEFORMATEX {
+            wFormatTag: 1,
+            nChannels: 1,
+            nSamplesPerSec: 48_000,
+            wBitsPerSample: 16,
+            nBlockAlign: 2,
+            nAvgBytesPerSec: 96_000,
+            cbSize: 0,
+        };
         let flags = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
         unsafe {
             client

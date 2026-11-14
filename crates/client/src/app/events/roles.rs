@@ -1,7 +1,6 @@
 //! Network event handlers: roles.
 
 use super::super::*;
-use crate::net::Command;
 
 impl App {
     pub(crate) fn apply_role_created(&mut self, role: Role) {

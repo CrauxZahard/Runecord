@@ -1,6 +1,5 @@
 //! Soundboard panel.
 
-use super::super::prelude::*;
 use super::super::*;
 
 pub(crate) fn soundboard_sheet(s: &App, p: Palette) -> El {

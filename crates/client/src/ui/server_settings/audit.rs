@@ -1,5 +1,3 @@
-use super::super::prelude::*;
-use super::super::*;
 use super::*;
 
 pub(crate) fn audit_view(s: &App, p: Palette) -> El {
@@ -135,7 +133,7 @@ pub(crate) fn audit_action(action: i32, p: Palette) -> (String, Color) {
         51 => ("Deleted webhook", p.danger),
         60 => ("Created emoji", p.green),
         61 => ("Deleted emoji", p.danger),
-        other => (return (format!("Action {other}"), p.text_muted)),
+        other => return (format!("Action {other}"), p.text_muted),
     };
     (label.to_string(), color)
 }
@@ -146,7 +144,7 @@ pub(crate) fn audit_target(s: &App, entry: &AuditEntry) -> String {
     };
     let name = audit_change_name(entry);
     match entry.action_type {
-        10 | 11 | 12 => s
+        10..=12 => s
             .guild_roles(entry.guild_id)
             .iter()
             .find(|role| role.id == target)

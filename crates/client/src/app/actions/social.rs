@@ -2,7 +2,6 @@
 
 use super::super::*;
 use crate::net::Command;
-use rune::TextEdit;
 
 impl App {
     pub fn open_invite(&mut self) {

@@ -1,6 +1,5 @@
 //! Server scheduled events.
 
-use super::super::prelude::*;
 use super::super::*;
 use chrono::{Local, TimeZone};
 use runecord_protocol::GuildEvent;

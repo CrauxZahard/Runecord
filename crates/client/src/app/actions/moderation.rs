@@ -2,7 +2,6 @@
 
 use super::super::*;
 use crate::net::Command;
-use rune::TextEdit;
 
 impl App {
     pub fn prune_now(&mut self) {

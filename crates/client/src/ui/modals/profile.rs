@@ -1,6 +1,5 @@
 ﻿//! Profile and message menus.
 
-use super::super::prelude::*;
 use super::super::*;
 
 pub(crate) fn profile_sheet(s: &App, p: Palette, id: runecord_protocol::Id) -> El {
@@ -732,7 +731,7 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
         .gap(2.0)
         .shadow(8.0, 24.0, p.shadow)
         .modal(true, |s: &mut App| s.modal = Modal::None)
-        .children(can_react.then(|| reactions))
+        .children(can_react.then_some(reactions))
         .child(el().w_full().h(1.0).fill(p.divider).my(3.0))
         .children(can_send.then(|| {
             item("Reply", false, "menu-reply", p).on_press(move |s: &mut App| {

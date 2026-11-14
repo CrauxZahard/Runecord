@@ -29,7 +29,10 @@ pub enum Modal {
     FullProfile(Id),
     EmojiPicker,
     Reaction(Id),
-    ThreadCreate { parent: Id, message: Option<Id> },
+    ThreadCreate {
+        parent: Id,
+        message: Option<Id>,
+    },
     Threads,
     EditMessage(Id),
     MessageMenu(Id),
@@ -43,23 +46,43 @@ pub enum Modal {
     CreateEvent,
     Explore,
     Privacy,
-    ConfirmKick { guild: Id, user: Id },
-    ConfirmBan { guild: Id, user: Id },
-    TimeoutMember { guild: Id, user: Id },
+    ConfirmKick {
+        guild: Id,
+        user: Id,
+    },
+    ConfirmBan {
+        guild: Id,
+        user: Id,
+    },
+    TimeoutMember {
+        guild: Id,
+        user: Id,
+    },
     Bans,
     PruneMembers,
     VideoQuality,
-    CropGuildImage { banner: bool },
-    CropUserImage { banner: bool },
-    CropDmIcon { channel: Id },
-    DmSettings { channel: Id },
+    CropGuildImage {
+        banner: bool,
+    },
+    CropUserImage {
+        banner: bool,
+    },
+    CropDmIcon {
+        channel: Id,
+    },
+    DmSettings {
+        channel: Id,
+    },
     GroupDm,
-    VoiceDevice { kind: String },
+    VoiceDevice {
+        kind: String,
+    },
     Soundboard,
     ProfileMore(Id),
     BanAppeal,
     InviteJoin,
     ServerSettings,
+    #[allow(dead_code)] // reserved for the dedicated roles screen
     Roles,
     ChannelPermissions(Id),
 }
@@ -632,6 +655,7 @@ impl App {
         app
     }
 
+    #[allow(dead_code)]
     pub fn demo() -> Self {
         let mut app = App::new();
         app.logged_in = true;
@@ -699,10 +723,11 @@ impl App {
         let roles = self.guild_roles(guild);
         let mut best: Option<&Role> = None;
         for rid in &member.roles {
-            if let Some(role) = roles.iter().find(|r| r.id == *rid) {
-                if role.color != 0 && best.is_none_or(|b| role.position > b.position) {
-                    best = Some(role);
-                }
+            if let Some(role) = roles.iter().find(|r| r.id == *rid)
+                && role.color != 0
+                && best.is_none_or(|b| role.position > b.position)
+            {
+                best = Some(role);
             }
         }
         best.map(|r| r.color)
@@ -712,6 +737,7 @@ impl App {
         self.dms.iter().find(|d| d.channel.id == channel)
     }
 
+    #[allow(dead_code)]
     pub fn presence_of(&self, id: Id) -> Presence {
         self.presence
             .get(&id)
@@ -746,6 +772,7 @@ impl App {
             .unwrap_or(0)
     }
 
+    #[allow(dead_code)]
     pub fn channel_can(&self, channel: Id, bit: u64) -> bool {
         self.channel(channel)
             .map(|c| has(c.my_permissions, bit))

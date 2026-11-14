@@ -35,7 +35,6 @@ pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
 
 /// Settings as a full-window page, matching Discord's own settings screen rather
 /// than a centred dialog.
-
 pub(crate) fn settings_page(s: &App, cx: &mut Cx<App>, p: Palette, tab: SettingsTab) -> El {
     let trailing = cx.chrome_insets().trailing;
     col()

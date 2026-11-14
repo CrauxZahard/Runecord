@@ -23,7 +23,7 @@ impl App {
     }
     pub(crate) fn apply_install_link(&mut self, code: String) {
         self.install_code = rune::TextEdit::new(code.clone());
-        if let Some(app) = self.pending_install_app.take() {
+        if let Some(_app) = self.pending_install_app.take() {
             if self.active_guild != 0 {
                 self.send(Command::InstallApplication {
                     code: code.clone(),

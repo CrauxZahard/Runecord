@@ -95,14 +95,14 @@ impl App {
                 .unwrap_or(48 * 1024 * 1024),
             Screen::Dms => 48 * 1024 * 1024,
         };
-        if let Ok(meta) = std::fs::metadata(&path) {
-            if meta.len() > limit {
-                self.toast(format!(
-                    "File is larger than {} MB. Boost the server to raise the limit.",
-                    limit / (1024 * 1024)
-                ));
-                return;
-            }
+        if let Ok(meta) = std::fs::metadata(&path)
+            && meta.len() > limit
+        {
+            self.toast(format!(
+                "File is larger than {} MB. Boost the server to raise the limit.",
+                limit / (1024 * 1024)
+            ));
+            return;
         }
         if channel == 0 {
             return;
@@ -242,23 +242,23 @@ impl App {
                 message,
                 emoji: emoji.to_string(),
             });
-        } else if let Some(list) = self.messages.get_mut(&self.active_channel) {
-            if let Some(m) = list.iter_mut().find(|m| m.id == message) {
-                if let Some(r) = m.reactions.iter_mut().find(|r| r.emoji == emoji) {
-                    r.me = !r.me;
-                    r.count = if r.me {
-                        r.count + 1
-                    } else {
-                        r.count.saturating_sub(1)
-                    };
+        } else if let Some(list) = self.messages.get_mut(&self.active_channel)
+            && let Some(m) = list.iter_mut().find(|m| m.id == message)
+        {
+            if let Some(r) = m.reactions.iter_mut().find(|r| r.emoji == emoji) {
+                r.me = !r.me;
+                r.count = if r.me {
+                    r.count + 1
                 } else {
-                    m.reactions.push(Reaction {
-                        emoji: emoji.to_string(),
-                        count: 1,
-                        me: true,
-                        user_ids: vec![self.me.id],
-                    });
-                }
+                    r.count.saturating_sub(1)
+                };
+            } else {
+                m.reactions.push(Reaction {
+                    emoji: emoji.to_string(),
+                    count: 1,
+                    me: true,
+                    user_ids: vec![self.me.id],
+                });
             }
         }
         self.mark_cache_dirty();

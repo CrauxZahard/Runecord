@@ -16,11 +16,11 @@ impl App {
                 detail.channels.push(*c);
             }
         }
-        if let (Some(forum), Some(parent)) = (self.pending_forum, forum_parent) {
-            if parent == forum {
-                self.pending_forum = None;
-                self.open_thread(id);
-            }
+        if let (Some(forum), Some(parent)) = (self.pending_forum, forum_parent)
+            && parent == forum
+        {
+            self.pending_forum = None;
+            self.open_thread(id);
         }
         if let Some(guild) = self.channel(id).and_then(|c| c.guild_id) {
             self.stale_guilds.insert(guild);
@@ -37,10 +37,10 @@ impl App {
                     list.push(*c.clone());
                 }
             }
-            if let Some(detail) = self.guild_details.get_mut(&guild) {
-                if let Some(existing) = detail.channels.iter_mut().find(|item| item.id == c.id) {
-                    *existing = *c.clone();
-                }
+            if let Some(detail) = self.guild_details.get_mut(&guild)
+                && let Some(existing) = detail.channels.iter_mut().find(|item| item.id == c.id)
+            {
+                *existing = *c.clone();
             }
         }
         self.mark_cache_dirty();

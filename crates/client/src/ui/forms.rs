@@ -108,6 +108,7 @@ pub(crate) fn modal_frame_done(
     modal_frame_inner(key, title, sub, p, body, action, p2, false)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn modal_frame_inner(
     key: &'static str,
     title: &str,

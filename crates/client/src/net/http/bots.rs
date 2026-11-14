@@ -31,10 +31,10 @@ pub(crate) fn delete_bot(shared: &Arc<Shared>, id: Id) {
     match shared.delete(&format!("/api/bots/{id}")) {
         Ok(()) => {
             shared.emit(NetEvent::Notice("Bot revoked".into()));
-            if let Ok(v) = shared.get("/api/bots") {
-                if let Ok(bots) = serde_json::from_value::<Vec<User>>(v) {
-                    shared.emit(NetEvent::Bots(bots));
-                }
+            if let Ok(v) = shared.get("/api/bots")
+                && let Ok(bots) = serde_json::from_value::<Vec<User>>(v)
+            {
+                shared.emit(NetEvent::Bots(bots));
             }
         }
         Err(e) => shared.emit(NetEvent::Error(e)),
@@ -73,10 +73,10 @@ pub(crate) fn delete_application(shared: &Arc<Shared>, id: Id) {
     match shared.delete(&format!("/api/applications/{id}")) {
         Ok(()) => {
             shared.emit(NetEvent::Notice("Application deleted".into()));
-            if let Ok(v) = shared.get("/api/applications") {
-                if let Ok(apps) = serde_json::from_value::<Vec<Application>>(v) {
-                    shared.emit(NetEvent::Applications(apps));
-                }
+            if let Ok(v) = shared.get("/api/applications")
+                && let Ok(apps) = serde_json::from_value::<Vec<Application>>(v)
+            {
+                shared.emit(NetEvent::Applications(apps));
             }
         }
         Err(e) => shared.emit(NetEvent::Error(e)),

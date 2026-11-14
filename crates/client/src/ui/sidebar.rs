@@ -322,7 +322,11 @@ pub(crate) fn category_row(cat: &Channel, s: &App, p: Palette) -> El {
             icon(&icons::CHEVRON_DOWN, 12.0)
                 .color(p.text_muted)
                 .group_opacity(if collapsed { 1.0 } else { 0.0 }, 1.0)
-                .icon_rotation(if collapsed { -1.5708 } else { 0.0 }),
+                .icon_rotation(if collapsed {
+                    -std::f32::consts::FRAC_PI_2
+                } else {
+                    0.0
+                }),
         )
         .child(
             text(cat.name.to_uppercase())

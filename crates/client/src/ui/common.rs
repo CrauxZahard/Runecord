@@ -288,7 +288,7 @@ pub(crate) fn group_label(label: &str, p: Palette) -> El {
         )
 }
 
-pub(crate) fn guild_icon(s: &App, guild: &GuildSummary, size: f32, radius: f32, p: Palette) -> El {
+pub(crate) fn guild_icon(s: &App, guild: &GuildSummary, size: f32, radius: f32, _p: Palette) -> El {
     let color = theme::color(&format!("#{:06x}", guild.icon_color));
     let base = el()
         .size(size, size)
@@ -319,7 +319,7 @@ pub(crate) fn guild_icon(s: &App, guild: &GuildSummary, size: f32, radius: f32, 
     )
 }
 
-pub(crate) fn guild_banner_el(s: &App, guild: &GuildSummary, height: f32, p: Palette) -> El {
+pub(crate) fn guild_banner_el(s: &App, guild: &GuildSummary, height: f32, _p: Palette) -> El {
     if let Some(pixels) = s
         .images
         .get(&guild.banner_url)
@@ -404,7 +404,7 @@ fn badge_icon(key: &str) -> &'static Icon {
     }
 }
 
-pub(crate) fn badge_chip(key: &str, size: f32, p: Palette) -> El {
+pub(crate) fn badge_chip(key: &str, size: f32, _p: Palette) -> El {
     let label = BADGE_KEYS
         .iter()
         .find(|(name, _)| *name == key)

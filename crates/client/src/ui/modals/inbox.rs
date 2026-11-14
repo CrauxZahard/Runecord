@@ -1,8 +1,7 @@
 //! Inbox: recent mentions and unread channels.
 
-use super::super::prelude::*;
 use super::super::*;
-use runecord_protocol::{Id, InboxEntry};
+use runecord_protocol::InboxEntry;
 
 pub(crate) fn inbox_sheet(s: &App, p: Palette) -> El {
     let inbox = s.inbox.clone().unwrap_or_default();

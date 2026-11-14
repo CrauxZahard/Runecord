@@ -46,7 +46,7 @@ pub(crate) fn list_devices() -> (Vec<String>, Vec<String>) {
 pub(crate) fn list_output_devices() -> Vec<String> {
     #[cfg(windows)]
     {
-        return crate::wasapi::list_output_devices();
+        crate::wasapi::list_output_devices()
     }
     #[cfg(not(windows))]
     {
@@ -72,12 +72,11 @@ pub(crate) fn microphone() -> Option<String> {
         .ok()?;
     let text = String::from_utf8_lossy(&output.stderr);
     for line in text.lines() {
-        if line.contains("(audio)") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
-                    return Some(line[start + 1..start + 1 + end].to_string());
-                }
-            }
+        if line.contains("(audio)")
+            && let Some(start) = line.find('"')
+            && let Some(end) = line[start + 1..].find('"')
+        {
+            return Some(line[start + 1..start + 1 + end].to_string());
         }
     }
     None
@@ -101,12 +100,11 @@ pub(crate) fn camera() -> Option<String> {
         .ok()?;
     let text = String::from_utf8_lossy(&output.stderr);
     for line in text.lines() {
-        if line.contains("(video)") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
-                    return Some(line[start + 1..start + 1 + end].to_string());
-                }
-            }
+        if line.contains("(video)")
+            && let Some(start) = line.find('"')
+            && let Some(end) = line[start + 1..].find('"')
+        {
+            return Some(line[start + 1..start + 1 + end].to_string());
         }
     }
     None

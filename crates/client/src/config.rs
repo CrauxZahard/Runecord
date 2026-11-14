@@ -89,10 +89,10 @@ pub fn effective_server_url() -> String {
 
 /// Effective URL plus the saved-file error, for the startup screen.
 pub fn startup_effective() -> Startup {
-    if let Ok(value) = std::env::var("RUNECORD_URL") {
-        if let Ok(url) = normalize(&value) {
-            return Startup { url, error: None };
-        }
+    if let Ok(value) = std::env::var("RUNECORD_URL")
+        && let Ok(url) = normalize(&value)
+    {
+        return Startup { url, error: None };
     }
     startup()
 }
@@ -122,10 +122,9 @@ pub fn server_reachable(url: &str) -> bool {
 fn endpoint(url: &str) -> Option<(String, u16)> {
     let (secure, rest) = if let Some(rest) = url.strip_prefix("https://") {
         (true, rest)
-    } else if let Some(rest) = url.strip_prefix("http://") {
-        (false, rest)
     } else {
-        return None;
+        let rest = url.strip_prefix("http://")?;
+        (false, rest)
     };
     let authority = rest.split('/').next()?;
     let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {

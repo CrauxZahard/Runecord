@@ -1,6 +1,5 @@
 //! Modal sheets: profile.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn crop_image_sheet(s: &App, p: Palette, banner: bool, user: bool, group: bool) -> El {

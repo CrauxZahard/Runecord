@@ -1,6 +1,5 @@
 //! Search and quick switcher.
 
-use super::super::prelude::*;
 use super::super::*;
 
 pub(crate) fn search_sheet(s: &App, p: Palette) -> El {

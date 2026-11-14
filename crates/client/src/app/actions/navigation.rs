@@ -239,18 +239,18 @@ impl App {
         self.send(Command::LoadInbox);
     }
 
+    #[allow(dead_code)]
     pub fn refresh_inbox(&mut self) {
         self.send(Command::LoadInbox);
     }
 
     pub fn mark_inbox_read(&mut self, channel: Id, message: Id) {
         let removed = self.unread.remove(&channel).unwrap_or(0);
-        if removed > 0 {
-            if let Some(guild) = self.channel(channel).and_then(|c| c.guild_id) {
-                if let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild) {
-                    summary.unread_count = summary.unread_count.saturating_sub(removed);
-                }
-            }
+        if removed > 0
+            && let Some(guild) = self.channel(channel).and_then(|c| c.guild_id)
+            && let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild)
+        {
+            summary.unread_count = summary.unread_count.saturating_sub(removed);
         }
         self.reads.insert(channel, Some(message));
         self.send(Command::MarkRead { channel, message });
@@ -302,12 +302,11 @@ impl App {
 
     pub fn mark_read(&mut self, channel: Id) {
         let removed = self.unread.remove(&channel).unwrap_or(0);
-        if removed > 0 {
-            if let Some(guild) = self.channel(channel).and_then(|c| c.guild_id) {
-                if let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild) {
-                    summary.unread_count = summary.unread_count.saturating_sub(removed);
-                }
-            }
+        if removed > 0
+            && let Some(guild) = self.channel(channel).and_then(|c| c.guild_id)
+            && let Some(summary) = self.guilds.iter_mut().find(|g| g.id == guild)
+        {
+            summary.unread_count = summary.unread_count.saturating_sub(removed);
         }
         let last = self
             .messages

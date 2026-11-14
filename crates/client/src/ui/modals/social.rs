@@ -1,6 +1,5 @@
 //! Modal sheets: social.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn add_friend_sheet(s: &App, p: Palette) -> El {

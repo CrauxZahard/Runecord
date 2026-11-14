@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub(crate) fn login(shared: &Arc<Shared>, username: String, password: String) {
     match shared.post("/api/login", &AuthRequest { username, password }) {
         Ok(v) => match serde_json::from_value::<AuthResponse>(v) {
-            Ok(auth) => complete_auth(&shared, auth),
+            Ok(auth) => complete_auth(shared, auth),
             Err(e) => shared.emit(NetEvent::Error(e.to_string())),
         },
         Err(e) => shared.emit(NetEvent::Error(e)),
@@ -22,7 +22,7 @@ pub(crate) fn register(
     let body = serde_json::json!({ "username": username, "display_name": display_name, "password": password });
     match shared.post("/api/register", &body) {
         Ok(v) => match serde_json::from_value::<AuthResponse>(v) {
-            Ok(auth) => complete_auth(&shared, auth),
+            Ok(auth) => complete_auth(shared, auth),
             Err(e) => shared.emit(NetEvent::Error(e.to_string())),
         },
         Err(e) => shared.emit(NetEvent::Error(e)),
@@ -39,7 +39,7 @@ pub(crate) fn logout(shared: &Arc<Shared>) {
 }
 
 pub(crate) fn bootstrap(shared: &Arc<Shared>) {
-    fetch_bootstrap(&shared)
+    fetch_bootstrap(shared)
 }
 
 pub(crate) fn update_profile_extras(
@@ -161,6 +161,7 @@ pub(crate) fn update_profile_style(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_profile(
     shared: &Arc<Shared>,
     display_name: Option<String>,

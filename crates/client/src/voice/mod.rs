@@ -295,12 +295,11 @@ pub fn set_waker(waker: rune::Waker) {
 }
 
 fn wake() {
-    if let Some(slot) = WAKER.get() {
-        if let Ok(current) = slot.lock() {
-            if let Some(waker) = current.as_ref() {
-                waker();
-            }
-        }
+    if let Some(slot) = WAKER.get()
+        && let Ok(current) = slot.lock()
+        && let Some(waker) = current.as_ref()
+    {
+        waker();
     }
 }
 
@@ -309,15 +308,14 @@ pub fn set_quality(quality: VideoQuality) {
     if let Ok(mut current) = slot.lock() {
         *current = quality;
     }
-    if let Some(session) = SESSION.get() {
-        if let Ok(current) = session.lock() {
-            if let Some(session) = current.as_ref() {
-                let _ = session.video.send(VideoCommand {
-                    kind: None,
-                    quality: Some(quality),
-                });
-            }
-        }
+    if let Some(session) = SESSION.get()
+        && let Ok(current) = session.lock()
+        && let Some(session) = current.as_ref()
+    {
+        let _ = session.video.send(VideoCommand {
+            kind: None,
+            quality: Some(quality),
+        });
     }
 }
 
@@ -448,7 +446,7 @@ static VIDEO_LATEST: OnceLock<Mutex<HashMap<Id, VideoFrame>>> = OnceLock::new();
 
 static VIDEO_STOPPED: OnceLock<Mutex<Vec<Id>>> = OnceLock::new();
 
-struct ReceiveStream {
+pub(crate) struct ReceiveStream {
     tx: Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     serial: u32,
@@ -461,17 +459,17 @@ pub fn update(base: &str, token: &str, channel: Option<Id>, mute: bool, deaf: bo
     let Ok(mut current) = slot.lock() else {
         return;
     };
-    if let Some(session) = current.as_ref() {
-        if channel == Some(session.channel) {
-            let was_muted = session.muted.load(Ordering::Relaxed);
-            let was_deafened = session.deafened.load(Ordering::Relaxed);
-            session.muted.store(mute, Ordering::Relaxed);
-            session.deafened.store(deaf, Ordering::Relaxed);
-            if was_muted != mute || was_deafened != deaf {
-                log(&format!("mute={mute} deaf={deaf}"));
-            }
-            return;
+    if let Some(session) = current.as_ref()
+        && channel == Some(session.channel)
+    {
+        let was_muted = session.muted.load(Ordering::Relaxed);
+        let was_deafened = session.deafened.load(Ordering::Relaxed);
+        session.muted.store(mute, Ordering::Relaxed);
+        session.deafened.store(deaf, Ordering::Relaxed);
+        if was_muted != mute || was_deafened != deaf {
+            log(&format!("mute={mute} deaf={deaf}"));
         }
+        return;
     }
     if let Some(old) = current.take() {
         old.stop.store(true, Ordering::Relaxed);
@@ -498,41 +496,38 @@ pub fn update(base: &str, token: &str, channel: Option<Id>, mute: bool, deaf: bo
 
 pub fn set_video(base: &str, _token: &str, channel: Option<Id>, kind: &str) {
     let _ = (base, channel);
-    if let Some(slot) = SESSION.get() {
-        if let Ok(current) = slot.lock() {
-            if let Some(session) = current.as_ref() {
-                let _ = session.video.send(VideoCommand {
-                    kind: Some(kind.to_string()),
-                    quality: None,
-                });
-            }
-        }
+    if let Some(slot) = SESSION.get()
+        && let Ok(current) = slot.lock()
+        && let Some(session) = current.as_ref()
+    {
+        let _ = session.video.send(VideoCommand {
+            kind: Some(kind.to_string()),
+            quality: None,
+        });
     }
 }
 
 pub fn shutdown() {
-    if let Some(slot) = SESSION.get() {
-        if let Ok(mut current) = slot.lock() {
-            if let Some(session) = current.take() {
-                session.stop.store(true, Ordering::Relaxed);
-            }
-        }
+    if let Some(slot) = SESSION.get()
+        && let Ok(mut current) = slot.lock()
+        && let Some(session) = current.take()
+    {
+        session.stop.store(true, Ordering::Relaxed);
     }
 }
 
 fn log(message: &str) {
-    if let Ok(path) = std::env::var("RUNECORD_VOICE_LOG") {
-        if let Ok(mut file) = std::fs::OpenOptions::new()
+    if let Ok(path) = std::env::var("RUNECORD_VOICE_LOG")
+        && let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-        {
-            let millis = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|value| value.as_millis())
-                .unwrap_or(0);
-            let _ = writeln!(file, "{millis} {message}");
-        }
+    {
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_millis())
+            .unwrap_or(0);
+        let _ = writeln!(file, "{millis} {message}");
     }
 }
 
@@ -648,22 +643,22 @@ fn run(
         let next_epoch = VIEWER_EPOCH.load(Ordering::Relaxed);
         if next_epoch != viewer_epoch {
             viewer_epoch = next_epoch;
-            if let Some(decoders) = VIDEO_DECODERS.get() {
-                if let Ok(mut decoders) = decoders.lock() {
-                    for (_, decoder) in decoders.drain() {
-                        decoder.stop.store(true, Ordering::Relaxed);
-                    }
+            if let Some(decoders) = VIDEO_DECODERS.get()
+                && let Ok(mut decoders) = decoders.lock()
+            {
+                for (_, decoder) in decoders.drain() {
+                    decoder.stop.store(true, Ordering::Relaxed);
                 }
             }
-            if let Some(frames) = VIDEO_LATEST.get() {
-                if let Ok(mut frames) = frames.lock() {
-                    frames.clear();
-                }
+            if let Some(frames) = VIDEO_LATEST.get()
+                && let Ok(mut frames) = frames.lock()
+            {
+                frames.clear();
             }
-            if let Some(meters) = VIDEO_METERS.get() {
-                if let Ok(mut meters) = meters.lock() {
-                    meters.clear();
-                }
+            if let Some(meters) = VIDEO_METERS.get()
+                && let Ok(mut meters) = meters.lock()
+            {
+                meters.clear();
             }
             log(&format!(
                 "simulcast: viewer layer {}",
@@ -704,23 +699,22 @@ fn run(
                         if let Ok(mut stopped) = stopped.lock() {
                             stopped.push(user);
                         }
-                        if let Some(meters) = VIDEO_METERS.get() {
-                            if let Ok(mut meters) = meters.lock() {
-                                meters.remove(&user);
-                            }
+                        if let Some(meters) = VIDEO_METERS.get()
+                            && let Ok(mut meters) = meters.lock()
+                        {
+                            meters.remove(&user);
                         }
-                        if let Some(decoders) = VIDEO_DECODERS.get() {
-                            if let Ok(mut decoders) = decoders.lock() {
-                                if let Some(decoder) = decoders.remove(&user) {
-                                    decoder.stop.store(true, Ordering::Relaxed);
-                                }
-                            }
+                        if let Some(decoders) = VIDEO_DECODERS.get()
+                            && let Ok(mut decoders) = decoders.lock()
+                            && let Some(decoder) = decoders.remove(&user)
+                        {
+                            decoder.stop.store(true, Ordering::Relaxed);
                         }
                         wake();
                         log(&format!("video stopped user={user}"));
-                    } else if kind == 1 && viewer != ViewQuality::Low {
-                        attach_video(user, payload, &stop);
-                    } else if kind == 4 && viewer == ViewQuality::Low {
+                    } else if (kind == 1 && viewer != ViewQuality::Low)
+                        || (kind == 4 && viewer == ViewQuality::Low)
+                    {
                         attach_video(user, payload, &stop);
                     } else if kind == 6 {
                         AUDIO_HEADER_REQUEST.store(true, Ordering::Relaxed);
@@ -810,11 +804,11 @@ fn run(
     for stream in receivers.values() {
         stream.stop.store(true, Ordering::Relaxed);
     }
-    if let Some(decoders) = VIDEO_DECODERS.get() {
-        if let Ok(mut decoders) = decoders.lock() {
-            for (_, decoder) in decoders.drain() {
-                decoder.stop.store(true, Ordering::Relaxed);
-            }
+    if let Some(decoders) = VIDEO_DECODERS.get()
+        && let Ok(mut decoders) = decoders.lock()
+    {
+        for (_, decoder) in decoders.drain() {
+            decoder.stop.store(true, Ordering::Relaxed);
         }
     }
     log(&format!("left channel {channel}"));
@@ -830,10 +824,10 @@ fn capture_encoder(
     muted: Arc<AtomicBool>,
     synth: bool,
 ) {
-    if let Some(queue) = SOUNDBOARD.get() {
-        if let Ok(mut queue) = queue.lock() {
-            queue.clear();
-        }
+    if let Some(queue) = SOUNDBOARD.get()
+        && let Ok(mut queue) = queue.lock()
+    {
+        queue.clear();
     }
     let bitrate = audio_bitrate();
     log(&format!("voice bitrate: {bitrate} kbps"));
@@ -930,7 +924,7 @@ fn capture_encoder(
         while !stop.load(Ordering::Relaxed) {
             let open_mic = !muted.load(Ordering::Relaxed);
             if open_mic {
-                for chunk in samples.chunks_exact_mut(2) {
+                for chunk in samples.as_chunks_mut::<2>().0 {
                     let value = (phase.sin() * 0.25 * 32767.0) as i16;
                     chunk.copy_from_slice(&value.to_le_bytes());
                     phase += step;
@@ -1003,8 +997,6 @@ fn capture_encoder(
 
 static SOUNDBOARD: OnceLock<Mutex<Vec<i16>>> = OnceLock::new();
 
-/// Names of the built-in soundboard effects, in the order the panel shows them.
-
 fn receive_stream(
     user: Id,
     rx: Receiver<Vec<u8>>,
@@ -1073,9 +1065,11 @@ fn receive_stream(
                         continue;
                     }
                     counter += 1;
-                    if counter % 10 == 0 {
+                    if counter.is_multiple_of(10) {
                         let rms = buffer[..n]
-                            .chunks_exact(2)
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
                             .map(|sample| {
                                 let value = i16::from_le_bytes([sample[0], sample[1]]) as f64;
                                 value * value
@@ -1095,12 +1089,11 @@ fn receive_stream(
         }
 
         let device = selected_output_device().unwrap_or_default();
-        let mut playback = None;
         #[cfg(windows)]
-        {
-            playback =
-                crate::wasapi::WasapiPlayer::start(&device, stop.clone()).map(Playback::Native);
-        }
+        let mut playback =
+            crate::wasapi::WasapiPlayer::start(&device, stop.clone()).map(Playback::Native);
+        #[cfg(not(windows))]
+        let mut playback: Option<Playback> = None;
         if playback.is_none() {
             log(if device.is_empty() {
                 "native WASAPI output unavailable; falling back to FFplay on the default endpoint"
@@ -1126,10 +1119,10 @@ fn receive_stream(
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn();
-            if let Ok(mut child) = child {
-                if let Some(stdin) = child.stdin.take() {
-                    playback = Some(Playback::Ffplay(child, stdin));
-                }
+            if let Ok(mut child) = child
+                && let Some(stdin) = child.stdin.take()
+            {
+                playback = Some(Playback::Ffplay(child, stdin));
             }
         }
         let Some(mut playback) = playback else {

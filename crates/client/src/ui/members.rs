@@ -3,6 +3,7 @@
 use super::*;
 use runecord_protocol::Role;
 
+#[allow(clippy::large_enum_variant)] // a row carries the full member snapshot
 pub(crate) enum MemberListRow {
     Header { label: String, key: String },
     Member(Member),
@@ -241,7 +242,11 @@ fn member_group_label(s: &App, label: &str, key: &str, p: Palette) -> El {
         .child(
             icon(&icons::CHEVRON_DOWN, 12.0)
                 .color(p.text_muted)
-                .icon_rotation(if collapsed { -1.5708 } else { 0.0 }),
+                .icon_rotation(if collapsed {
+                    -std::f32::consts::FRAC_PI_2
+                } else {
+                    0.0
+                }),
         )
         .child(
             text(label.to_string())

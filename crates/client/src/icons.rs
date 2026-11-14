@@ -1,6 +1,8 @@
 //! A small icon catalog in Discord's visual language. Every icon is a 24x24 body drawn in the
 //! element's colour, so `.color()` tints it.
 
+#![allow(dead_code)] // the catalog keeps glyphs that no surface uses yet
+
 use rune::Icon;
 
 macro_rules! stroke_icon {

@@ -7,7 +7,7 @@ mod events;
 mod inbox;
 mod soundboard;
 use crate::voice::{VideoQuality, ViewQuality};
-use runecord_protocol::{NotificationLevel, PrivacyLevel, Role};
+use runecord_protocol::{PrivacyLevel, Role};
 
 mod discovery;
 mod moderation;
@@ -81,12 +81,6 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
             p,
             "Delete Message",
             &format!("Are you sure you want to delete message {id}?"),
-        ),
-        Modal::ConfirmLeave(_) => simple_sheet(
-            s,
-            p,
-            "Leave Server",
-            "Are you sure you want to leave this server?",
         ),
         Modal::InviteJoin => invite_join_sheet(s, p),
         Modal::BanAppeal => ban_appeal_sheet(s, p),
@@ -168,7 +162,6 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::EditMessage(_) => "Edit message",
         Modal::MessageMenu(_) => "Message actions",
         Modal::ConfirmDelete(_) => "Delete message",
-        Modal::ConfirmLeave(_) => "Leave server",
         Modal::InviteJoin => "Join server",
         Modal::BanAppeal => "Ban appeal",
         Modal::ServerSettings | Modal::Roles => "Roles",

@@ -1,4 +1,4 @@
-﻿//! Demo seed and benchmark fixtures.
+//! Demo seed and benchmark fixtures.
 
 use super::*;
 
@@ -536,45 +536,45 @@ impl App {
 
         // Hidden benchmark hook: populate one channel with N rows so Rune can
         // report frame cost without a live server.
-        if let Ok(raw) = std::env::var("RUNECORD_BENCH_MESSAGES") {
-            if let Ok(count) = raw.parse::<usize>() {
-                self.messages.insert(211, bench_messages(count, t));
-            }
+        if let Ok(raw) = std::env::var("RUNECORD_BENCH_MESSAGES")
+            && let Ok(count) = raw.parse::<usize>()
+        {
+            self.messages.insert(211, bench_messages(count, t));
         }
-        if let Ok(raw) = std::env::var("RUNECORD_BENCH_MEMBERS") {
-            if let Ok(count) = raw.parse::<usize>() {
-                let mut list = Vec::with_capacity(count);
-                for i in 0..count {
-                    let id = 20_000 + i as Id;
-                    let user = User {
-                        id,
-                        username: format!("bench{id}"),
-                        display_name: format!("Bench {id}"),
-                        avatar_color: (i % 10) as u32,
-                        status: if i % 5 == 0 {
-                            Presence::Offline
-                        } else {
-                            Presence::Online
-                        },
-                        created_at: t,
-                        ..User::default()
-                    };
-                    self.presence.insert(id, user.status);
-                    self.users.insert(id, user.clone());
-                    list.push(Member {
-                        guild_id: 100,
-                        user,
-                        nickname: String::new(),
-                        roles: Vec::new(),
-                        joined_at: t + i as i64,
-                        timeout_until: 0,
-                    });
-                }
-                self.members.insert(100, list);
-                if let Some(state) = self.member_state.get_mut(&100) {
-                    state.total = count as u32;
-                    state.next_offset = None;
-                }
+        if let Ok(raw) = std::env::var("RUNECORD_BENCH_MEMBERS")
+            && let Ok(count) = raw.parse::<usize>()
+        {
+            let mut list = Vec::with_capacity(count);
+            for i in 0..count {
+                let id = 20_000 + i as Id;
+                let user = User {
+                    id,
+                    username: format!("bench{id}"),
+                    display_name: format!("Bench {id}"),
+                    avatar_color: (i % 10) as u32,
+                    status: if i % 5 == 0 {
+                        Presence::Offline
+                    } else {
+                        Presence::Online
+                    },
+                    created_at: t,
+                    ..User::default()
+                };
+                self.presence.insert(id, user.status);
+                self.users.insert(id, user.clone());
+                list.push(Member {
+                    guild_id: 100,
+                    user,
+                    nickname: String::new(),
+                    roles: Vec::new(),
+                    joined_at: t + i as i64,
+                    timeout_until: 0,
+                });
+            }
+            self.members.insert(100, list);
+            if let Some(state) = self.member_state.get_mut(&100) {
+                state.total = count as u32;
+                state.next_offset = None;
             }
         }
     }

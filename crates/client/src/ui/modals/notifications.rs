@@ -1,6 +1,5 @@
 //! Modal sheets: notifications.
 
-use super::super::prelude::*;
 use super::*;
 
 pub(crate) fn notify_channel_picker_sheet(s: &App, p: Palette) -> El {
