@@ -100,13 +100,13 @@ Deletes `..\Runecord-backend\data` and the saved sessions. The next launch seeds
 
 ## Architecture
 
-- **Backend** (`..\Runecord-backend`): axum + `rusqlite` (WAL), Argon2 password hashes, opaque bearer sessions, channel permission overwrites, `broadcast`-based WebSocket fan-out, uploads under `data/uploads`. Storage sits behind `store::Store`; Phase 2 adds a Postgres adapter and gateway RESUME.
-- **Client** (`crates/client`): Rune views are plain Rust. Network I/O runs on worker threads - one blocking HTTP command loop and one reconnecting gateway socket - and the UI drains a shared event queue with a `Waker` plus a low-frequency `wake_after`. No network or disk work happens inside layout.
-- **Source layout**: `main.rs` wires the app; `app/` owns state and splits into `actions`, `events`, `session`, `media`, `retention` and `seed`; `net/` splits into the HTTP and gateway workers; `ui/` has one module per surface (`rail`, `sidebar`, `chat`, `composer`, `members`, `dms`, `settings`, `modals`) plus shared `common` and `forms` primitives; `cache.rs` owns the snapshot format.
+- **Backend** (`..\Runecord-backend`): axum + `rusqlite` (WAL), Argon2 password hashes, opaque bearer sessions, channel permission overwrites, `broadcast`-based WebSocket fan-out, and encrypted media under `data/cdn`. Persistence is a concrete `store::Database` with SQL grouped by domain in `store/sqlite/*`; `media::MediaStore` owns hashing, encryption and thumbnails. Startup and failures log through `tracing` (`RUST_LOG`, default `info`). See `docs/ARCHITECTURE.md` in the backend repository.
+- **Client** (`crates/client`): one crate with a `runecord_client` library and a thin `runecord` binary. Rune views are plain Rust. Network I/O runs on worker threads - one blocking HTTP command loop and one reconnecting gateway socket - and the UI drains a shared event queue with a `Waker` plus a low-frequency `wake_after`. No network or disk work happens inside layout.
+- **Source layout**: `lib.rs`/`main.rs` launch, `bootstrap.rs` wires the app; `app/` owns state and splits into feature-grouped `actions/`, `events/`, plus `session`, `media`, `retention` and `seed`; `net/` splits into `http/`, `gateway` and the shared `Command`/`NetEvent` types; `ui/` has one module per surface (`rail`, `sidebar`, `chat`, `composer`, `members`, `dms`) with `settings/`, `server_settings/` and `modals/` grouped by feature; `voice/` splits capture, devices, camera, soundboard and video helpers; `cache.rs` owns the snapshot format.
 - **Server cache**: the backend keeps a 256-entry guild-detail LRU keyed by SQLite's write generation, a 32 MB decoded-thumbnail LRU, and a 512 MB on-disk thumbnail budget. No Redis: it is one local process, and writes invalidate by construction.
 - **Rendering**: Rune's own wgpu renderer, text layout and springs - no Electron, no web view, no JavaScript.
 - **Client cache**: a warm-start snapshot lives at `%APPDATA%\Runecord\cache-<profile>.json`. It is painted before the socket answers, then revalidated by the first bootstrap/READY. Retention is bounded: 500 messages per channel, 5,000 messages total, 8 channels per snapshot, 300 decoded images or 64 MB. Guilds are summaries in memory; guild details are LRU (6), members are paginated 100 at a time and capped at 300 per guild, and images are fetched only for the visible row range plus prefetch. Messages, members and channels use Rune's `virtual_rows`. The cache is plaintext, same trust boundary as the saved session token, and is deleted on logout/reset.
-- **Data**: `..\Runecord-backend\data\runecord.db` and `data/uploads/`. Sessions live in `%APPDATA%\Runecord\session-<profile>.txt`.
+- **Data**: `..\Runecord-backend\data\runecord.db.enc`, `data/cdn/` and `data/thumbs/`. Sessions live in `%APPDATA%\Runecord\session-<profile>.txt`.
 
 ## UI parity audit
 
@@ -135,7 +135,21 @@ Remaining Discord gaps after the full-surface audit: Nitro, boosts, badges and a
 - **Discord assets are not bundled.** The look uses Discord's metrics and palette with Inter (Rune's bundled font) and redrawn SVG icons. No Discord trademarks or `gg sans` files are included.
 - **Local-only by design.** The server binds loopback only. Multi-node/Postgres deployment is Phase 2/3 of the backend plan.
 - **Rune is pre-release.** The client path-depends on the local Rune checkout at `Documents\Default Project\rune`; Rune's `vendor/winit` and `vendor/wgpu-hal` patches are applied in this workspace `Cargo.toml`.
-- **Storage boundary is partial.** Phase 1 routes sessions/bootstrap through `Store`, but many handlers still use the SQLite connection directly; Phase 2 completes the migration.
+- **Storage boundary.** Handlers no longer embed SQL: queries live in `store/sqlite/*` and `MediaStore` owns encrypted file writes. `Database::conn()` is still exposed inside the crate for connection-scoped work; a storage trait will only return if a second backend is actually implemented.
+
+## Development
+
+Both Rust workspaces pin toolchain `1.99.1` and must pass:
+
+```bat
+cargo fmt --check
+cargo check --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo build --workspace
+```
+
+Run the same set in `..\Runecord-backend`. See `docs/ARCHITECTURE.md` for the module map, `docs/CONTRIBUTING.md` for workflow and test expectations, and `docs/DECISIONS.md` for boundary rationale.
 
 ## Build
 
