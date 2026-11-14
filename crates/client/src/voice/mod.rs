@@ -18,11 +18,22 @@ use std::time::Duration;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, connect};
 
+mod camera;
+mod devices;
+mod mic;
 /// Capture presets exposed in the voice stage. `Auto` starts at 720p and steps
 /// down when the outbound frame queue backs up, then steps back up after a
 /// stable period.
 /// What the receiver asks to see. `Auto` starts high and drops to the low
 /// simulcast layer if its decoder cannot keep up.
+mod soundboard;
+mod video;
+pub(crate) use camera::*;
+pub(crate) use devices::*;
+pub(crate) use mic::*;
+pub(crate) use soundboard::*;
+pub(crate) use video::*;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewQuality {
     Auto,
@@ -186,21 +197,36 @@ struct VideoDecoder {
 }
 
 static VIDEO_DECODERS: OnceLock<Mutex<HashMap<Id, VideoDecoder>>> = OnceLock::new();
+
 static VIDEO_METERS: OnceLock<Mutex<HashMap<Id, VideoMeter>>> = OnceLock::new();
+
 static QUALITY: OnceLock<Mutex<VideoQuality>> = OnceLock::new();
+
 static VIEWER_QUALITY: OnceLock<Mutex<ViewQuality>> = OnceLock::new();
+
 static LOCAL_USER: AtomicI64 = AtomicI64::new(0);
+
 static AUDIO_BITRATE_KBPS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(64);
+
 static INPUT_DEVICE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 static OUTPUT_DEVICE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 static CAMERA_DEVICE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 static INPUT_SENSITIVITY: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0.02f32.to_bits());
+
 static AUTO_SENSITIVITY: AtomicBool = AtomicBool::new(true);
+
 static VOICE_ACTIVITY: AtomicBool = AtomicBool::new(true);
+
 static PTT_MODE: AtomicBool = AtomicBool::new(false);
+
 static PTT_HELD: AtomicBool = AtomicBool::new(false);
+
 static PTT_POLLER: OnceLock<()> = OnceLock::new();
+
 static AUDIO_HEADER_REQUEST: AtomicBool = AtomicBool::new(false);
 
 #[cfg(windows)]
@@ -237,18 +263,28 @@ fn ensure_ptt_poller() {
         });
     });
 }
+
 static AUTO_FLOOR: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0.0005f32.to_bits());
+
 static INPUT_VOLUME: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(1.0f32.to_bits());
+
 static OUTPUT_VOLUME: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(1.0f32.to_bits());
+
 static MIC_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 static MIC_TEST_STOP: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
+
 static CAMERA_TEST_STOP: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
+
 static CAMERA_TEST_FRAME: OnceLock<Mutex<Option<rune::Pixels>>> = OnceLock::new();
+
 static CAMERA_TEST_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 static VIEWER_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 static WAKER: OnceLock<Mutex<Option<rune::Waker>>> = OnceLock::new();
 
 pub fn set_waker(waker: rune::Waker) {
@@ -377,53 +413,6 @@ fn output_volume() -> f32 {
     f32::from_bits(OUTPUT_VOLUME.load(Ordering::Relaxed))
 }
 
-fn pcm_rms(samples: &[u8]) -> f32 {
-    let mut sum = 0.0f64;
-    let mut count = 0u64;
-    for pair in samples.chunks_exact(2) {
-        let value = i16::from_le_bytes([pair[0], pair[1]]) as f64 / 32768.0;
-        sum += value * value;
-        count += 1;
-    }
-    if count == 0 {
-        0.0
-    } else {
-        (sum / count as f64).sqrt() as f32
-    }
-}
-
-fn shape_pcm(samples: &mut [u8], muted: &AtomicBool, gate: bool, synth: bool) {
-    let volume = input_volume();
-    let rms = pcm_rms(samples);
-    let ptt_blocked = PTT_MODE.load(Ordering::Relaxed) && !PTT_HELD.load(Ordering::Relaxed);
-    if gate && ptt_blocked && !muted.load(Ordering::Relaxed) {
-        samples.fill(0);
-    } else if gate
-        && !synth
-        && VOICE_ACTIVITY.load(Ordering::Relaxed)
-        && !muted.load(Ordering::Relaxed)
-    {
-        let threshold = if AUTO_SENSITIVITY.load(Ordering::Relaxed) {
-            let previous = f32::from_bits(AUTO_FLOOR.load(Ordering::Relaxed));
-            let floor = (previous * 0.95 + rms * 0.05).max(0.0005);
-            AUTO_FLOOR.store(floor.to_bits(), Ordering::Relaxed);
-            (floor * 3.5).clamp(0.008, 0.25)
-        } else {
-            input_sensitivity().max(0.001)
-        };
-        if rms < threshold {
-            samples.fill(0);
-        }
-    }
-    if (volume - 1.0).abs() > f32::EPSILON {
-        for pair in samples.chunks_exact_mut(2) {
-            let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * volume;
-            let value = value.clamp(-32768.0, 32767.0) as i16;
-            pair.copy_from_slice(&value.to_le_bytes());
-        }
-    }
-}
-
 pub fn set_audio_bitrate(kbps: u32) {
     AUDIO_BITRATE_KBPS.store(kbps.clamp(64, 384), Ordering::Relaxed);
 }
@@ -455,42 +444,9 @@ fn current_quality() -> VideoQuality {
         .unwrap_or(VideoQuality::Auto)
 }
 
-pub fn video_stats() -> HashMap<Id, (u32, u32, u32)> {
-    VIDEO_METERS
-        .get()
-        .and_then(|meters| {
-            meters.lock().ok().map(|meters| {
-                meters
-                    .iter()
-                    .map(|(user, meter)| (*user, (meter.width, meter.height, meter.fps)))
-                    .collect()
-            })
-        })
-        .unwrap_or_default()
-}
-
 static VIDEO_LATEST: OnceLock<Mutex<HashMap<Id, VideoFrame>>> = OnceLock::new();
 
 static VIDEO_STOPPED: OnceLock<Mutex<Vec<Id>>> = OnceLock::new();
-
-pub fn drain_video() -> (Vec<(Id, u32, u32, Vec<u8>)>, Vec<Id>) {
-    let frames = VIDEO_LATEST.get_or_init(|| Mutex::new(HashMap::new()));
-    let stopped = VIDEO_STOPPED.get_or_init(|| Mutex::new(Vec::new()));
-    let frames = frames
-        .lock()
-        .map(|mut frames| {
-            frames
-                .drain()
-                .map(|(user, frame)| (user, frame.width, frame.height, frame.rgba))
-                .collect()
-        })
-        .unwrap_or_default();
-    let stopped = stopped
-        .lock()
-        .map(|mut stopped| std::mem::take(&mut *stopped))
-        .unwrap_or_default();
-    (frames, stopped)
-}
 
 struct ReceiveStream {
     tx: Sender<Vec<u8>>,
@@ -868,87 +824,6 @@ fn ffmpeg_path() -> String {
     std::env::var("RUNECORD_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string())
 }
 
-fn parse_status(payload: &[u8]) -> Option<(u32, u32, u32)> {
-    let text = std::str::from_utf8(payload).ok()?;
-    let (dims, fps) = text.split_once('@')?;
-    let (width, height) = dims.split_once('x')?;
-    Some((width.parse().ok()?, height.parse().ok()?, fps.parse().ok()?))
-}
-
-fn parse_size(value: &str) -> Option<(u32, u32)> {
-    let (width, height) = value.trim().split_once(['x', 'X'])?;
-    let width = width.parse::<u32>().ok()?;
-    let height = height.parse::<u32>().ok()?;
-    (width > 0 && height > 0).then_some((width, height))
-}
-
-fn jpeg_dimensions(jpeg: &[u8]) -> Option<(u32, u32)> {
-    if jpeg.len() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
-        return None;
-    }
-    let mut index = 2usize;
-    while index + 4 <= jpeg.len() {
-        if jpeg[index] != 0xFF {
-            index += 1;
-            continue;
-        }
-        let marker = jpeg[index + 1];
-        if marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
-            index += 2;
-            continue;
-        }
-        let length = u16::from_be_bytes([jpeg[index + 2], jpeg[index + 3]]) as usize;
-        if length < 2 {
-            return None;
-        }
-        let is_sof = (0xC0..=0xCF).contains(&marker) && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
-        if is_sof && index + 9 <= jpeg.len() {
-            let height = u16::from_be_bytes([jpeg[index + 5], jpeg[index + 6]]) as u32;
-            let width = u16::from_be_bytes([jpeg[index + 7], jpeg[index + 8]]) as u32;
-            return (width > 0 && height > 0).then_some((width, height));
-        }
-        index += 2 + length;
-    }
-    None
-}
-
-fn ogg_serial(page: &[u8]) -> Option<u32> {
-    if page.len() >= 18 && page.starts_with(b"OggS") {
-        Some(u32::from_le_bytes([page[14], page[15], page[16], page[17]]))
-    } else {
-        None
-    }
-}
-
-fn stream_is_current(receivers: &HashMap<Id, ReceiveStream>, user: Id, serial: u32) -> bool {
-    receivers
-        .get(&user)
-        .is_some_and(|stream| stream.serial == serial)
-}
-
-fn take_ogg_page(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    if buffer.len() < 27 {
-        return None;
-    }
-    if &buffer[..4] != b"OggS" {
-        buffer.clear();
-        return None;
-    }
-    let segments = buffer[26] as usize;
-    if buffer.len() < 27 + segments {
-        return None;
-    }
-    let body: usize = buffer[27..27 + segments]
-        .iter()
-        .map(|value| *value as usize)
-        .sum();
-    let total = 27 + segments + body;
-    if buffer.len() < total {
-        return None;
-    }
-    Some(buffer.drain(..total).collect())
-}
-
 fn capture_encoder(
     out: Sender<(u8, Vec<u8>)>,
     stop: Arc<AtomicBool>,
@@ -1126,387 +1001,9 @@ fn capture_encoder(
     let _ = encoder.kill();
 }
 
-pub fn list_devices() -> (Vec<String>, Vec<String>) {
-    let mut audio = Vec::new();
-    let mut video = Vec::new();
-    let Ok(output) = Command::new(ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-list_devices",
-            "true",
-            "-f",
-            "dshow",
-            "-i",
-            "dummy",
-        ])
-        .output()
-    else {
-        return (audio, video);
-    };
-    let text = String::from_utf8_lossy(&output.stderr);
-    for line in text.lines() {
-        let kind = if line.contains("(audio)") {
-            Some(true)
-        } else if line.contains("(video)") {
-            Some(false)
-        } else {
-            None
-        };
-        let Some(is_audio) = kind else { continue };
-        let Some(name) = line.find('"').and_then(|start| {
-            line[start + 1..]
-                .find('"')
-                .map(|end| &line[start + 1..start + 1 + end])
-        }) else {
-            continue;
-        };
-        if is_audio {
-            audio.push(name.to_string());
-        } else {
-            video.push(name.to_string());
-        }
-    }
-    (audio, video)
-}
-
 static SOUNDBOARD: OnceLock<Mutex<Vec<i16>>> = OnceLock::new();
 
 /// Names of the built-in soundboard effects, in the order the panel shows them.
-pub fn soundboard_sounds() -> [(&'static str, &'static str, f32); 6] {
-    [
-        ("airhorn", "Airhorn", 0.9),
-        ("quack", "Quack", 0.4),
-        ("cricket", "Crickets", 0.9),
-        ("boom", "Boom", 0.7),
-        ("ding", "Ding", 0.9),
-        ("bruh", "Bruh", 0.6),
-    ]
-}
-
-/// Queues a built-in sound for the next capture chunks. Because the PCM is mixed
-/// into the outgoing stream before Opus encoding, everyone in the channel hears it.
-pub fn play_soundboard(name: &str) {
-    let pcm = soundboard_pcm(name);
-    if pcm.is_empty() {
-        return;
-    }
-    let queue = SOUNDBOARD.get_or_init(|| Mutex::new(Vec::new()));
-    if let Ok(mut queue) = queue.lock() {
-        queue.extend_from_slice(&pcm);
-        // Never let a stuck queue grow without bound.
-        let max = 48_000 * 8;
-        if queue.len() > max {
-            let excess = queue.len() - max;
-            queue.drain(..excess);
-        }
-    }
-    log(&format!("soundboard: {name}"));
-}
-
-fn mix_soundboard(pcm: &mut [u8]) -> bool {
-    let queue = SOUNDBOARD.get_or_init(|| Mutex::new(Vec::new()));
-    match queue.lock() {
-        Ok(mut queue) => mix_into(pcm, &mut queue),
-        Err(_) => false,
-    }
-}
-
-/// Mixes queued samples into little-endian s16 stereo-pair PCM, consuming what it used.
-fn mix_into(pcm: &mut [u8], queue: &mut Vec<i16>) -> bool {
-    if queue.is_empty() {
-        return false;
-    }
-    let frames = pcm.len() / 2;
-    let take = frames.min(queue.len());
-    for (index, pair) in pcm.chunks_exact_mut(2).take(take).enumerate() {
-        let base = i16::from_le_bytes([pair[0], pair[1]]) as i32;
-        let mixed = (base + queue[index] as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-        pair.copy_from_slice(&mixed.to_le_bytes());
-    }
-    queue.drain(..take);
-    true
-}
-
-fn soundboard_pcm(name: &str) -> Vec<i16> {
-    const RATE: f32 = 48_000.0;
-    let (seconds, build): (f32, fn(f32, f32) -> f32) = match name {
-        "airhorn" => (0.9, |t, d| {
-            let vibrato = 1.0 + 0.06 * (t * 42.0).sin();
-            let base = 330.0 * vibrato;
-            let saw = 2.0 * ((t * base) % 1.0) - 1.0;
-            let square = if (t * base * 2.0).fract() < 0.5 {
-                1.0
-            } else {
-                -1.0
-            };
-            let env = attack_release(t, d, 0.04, 0.25);
-            (saw * 0.45 + square * 0.3) * env * 0.55
-        }),
-        "quack" => (0.4, |t, d| {
-            let progress = t / d;
-            let freq = 760.0 - 500.0 * progress + 40.0 * (t * 28.0).sin();
-            let wobble = 0.25 * (t * 90.0).sin();
-            let env = attack_release(t, d, 0.02, 0.18);
-            ((t * freq).sin() * (1.0 + wobble)) * env * 0.5
-        }),
-        "cricket" => (0.9, |t, d| {
-            let chirp = (t * 9.0) % 1.0;
-            let gate = if chirp < 0.35 { 1.0 } else { 0.0 };
-            let env = attack_release(t, d, 0.01, 0.2);
-            ((t * 4200.0).sin() * gate) * env * 0.22
-        }),
-        "boom" => (0.7, |t, d| {
-            let env = (-t * 6.0).exp();
-            let thump = (t * (90.0 - 40.0 * t / d)).sin();
-            let noise = ((t * 12_345.0).sin() * (t * 7_777.0).sin()) * (-t * 22.0).exp();
-            (thump * env * 0.7 + noise * 0.25) * 0.8
-        }),
-        "ding" => (0.9, |t, d| {
-            let env = (-t * 5.0).exp();
-            let a = (t * 1046.5 * std::f32::consts::TAU).sin();
-            let b = (t * 1568.0 * std::f32::consts::TAU).sin() * 0.5;
-            let fade = attack_release(t, d, 0.004, 0.3);
-            (a + b) * env * fade * 0.34
-        }),
-        "bruh" => (0.6, |t, d| {
-            let progress = t / d;
-            let freq = 190.0 - 110.0 * progress;
-            let saw = 2.0 * ((t * freq) % 1.0) - 1.0;
-            let env = attack_release(t, d, 0.02, 0.2);
-            saw * env * 0.45
-        }),
-        _ => (0.0, |_, _| 0.0),
-    };
-    if seconds <= 0.0 {
-        return Vec::new();
-    }
-    let count = (RATE * seconds) as usize;
-    let mut out = Vec::with_capacity(count);
-    for index in 0..count {
-        let t = index as f32 / RATE;
-        let sample = build(t, seconds).clamp(-1.0, 1.0);
-        out.push((sample * 32767.0) as i16);
-    }
-    out
-}
-
-fn attack_release(t: f32, duration: f32, attack: f32, release: f32) -> f32 {
-    let rise = (t / attack.max(0.001)).min(1.0);
-    let fall = ((duration - t) / release.max(0.001)).clamp(0.0, 1.0);
-    rise * fall
-}
-
-pub fn list_output_devices() -> Vec<String> {
-    #[cfg(windows)]
-    {
-        return crate::wasapi::list_output_devices();
-    }
-    #[cfg(not(windows))]
-    {
-        Vec::new()
-    }
-}
-
-pub fn mic_level() -> f32 {
-    f32::from_bits(MIC_LEVEL.load(Ordering::Relaxed))
-}
-
-pub fn mic_testing() -> bool {
-    MIC_TEST_STOP
-        .get()
-        .and_then(|slot| slot.lock().ok().map(|slot| slot.is_some()))
-        .unwrap_or(false)
-}
-
-pub fn start_mic_test() {
-    stop_mic_test();
-    let stop = Arc::new(AtomicBool::new(false));
-    let slot = MIC_TEST_STOP.get_or_init(|| Mutex::new(None));
-    if let Ok(mut current) = slot.lock() {
-        *current = Some(stop.clone());
-    }
-    thread::spawn(move || {
-        let synthetic = std::env::var("RUNECORD_VOICE_SYNTH").ok().as_deref() == Some("1");
-        let device = selected_input_device().or_else(microphone);
-        let mut command = Command::new(ffmpeg_path());
-        command.args(["-hide_banner", "-loglevel", "error"]);
-        if synthetic || device.is_none() {
-            command.args([
-                "-re",
-                "-f",
-                "lavfi",
-                "-i",
-                "sine=frequency=440:sample_rate=48000",
-            ]);
-        } else if let Some(device) = device {
-            command.args(["-f", "dshow", "-i", &format!("audio={device}")]);
-        }
-        command.args(["-f", "s16le", "-ar", "48000", "-ac", "1", "pipe:1"]);
-        let Ok(mut child) = command.stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
-            log("mic test could not start");
-            return;
-        };
-        let mut buffer = [0u8; 1920];
-        if let Some(mut stdout) = child.stdout.take() {
-            while !stop.load(Ordering::Relaxed) {
-                match stdout.read_exact(&mut buffer) {
-                    Ok(()) => {
-                        let level = (pcm_rms(&buffer) * 4.0).clamp(0.0, 1.0);
-                        MIC_LEVEL.store(level.to_bits(), Ordering::Relaxed);
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        let _ = child.kill();
-        MIC_LEVEL.store(0.0f32.to_bits(), Ordering::Relaxed);
-        log("mic test stopped");
-    });
-}
-
-pub fn stop_mic_test() {
-    if let Some(slot) = MIC_TEST_STOP.get() {
-        if let Ok(mut current) = slot.lock() {
-            if let Some(stop) = current.take() {
-                stop.store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    MIC_LEVEL.store(0.0f32.to_bits(), Ordering::Relaxed);
-}
-
-pub fn camera_test_version() -> u64 {
-    CAMERA_TEST_VERSION.load(Ordering::Relaxed)
-}
-
-pub fn camera_test_frame() -> Option<rune::Pixels> {
-    CAMERA_TEST_FRAME
-        .get()
-        .and_then(|slot| slot.lock().ok().and_then(|slot| slot.clone()))
-}
-
-pub fn camera_testing() -> bool {
-    CAMERA_TEST_STOP
-        .get()
-        .and_then(|slot| slot.lock().ok().map(|slot| slot.is_some()))
-        .unwrap_or(false)
-}
-
-pub fn start_camera_test() {
-    stop_camera_test();
-    let Some(device) = selected_camera_device().or_else(camera) else {
-        log("no camera for test");
-        return;
-    };
-    let stop = Arc::new(AtomicBool::new(false));
-    let slot = CAMERA_TEST_STOP.get_or_init(|| Mutex::new(None));
-    if let Ok(mut current) = slot.lock() {
-        *current = Some(stop.clone());
-    }
-    thread::spawn(move || {
-        let Ok(mut child) = Command::new(ffmpeg_path())
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-f",
-                "dshow",
-                "-framerate",
-                "15",
-                "-i",
-                &format!("video={device}"),
-                "-an",
-                "-vf",
-                "scale=640:-2",
-                "-q:v",
-                "5",
-                "-f",
-                "mjpeg",
-                "pipe:1",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        else {
-            log("camera test could not start");
-            return;
-        };
-        let mut buffer = [0u8; 65536];
-        let mut pending = Vec::new();
-        log(&format!("camera test started device={device}"));
-        if let Some(mut stdout) = child.stdout.take() {
-            while !stop.load(Ordering::Relaxed) {
-                match stdout.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        pending.extend_from_slice(&buffer[..n]);
-                        while let Some(frame) = take_jpeg(&mut pending) {
-                            if let Ok(image) = image::load_from_memory(&frame) {
-                                let rgba = image.to_rgba8();
-                                let (width, height) = rgba.dimensions();
-                                let pixels = rune::Pixels::new();
-                                pixels.set(width, height, rgba.into_raw());
-                                let slot = CAMERA_TEST_FRAME.get_or_init(|| Mutex::new(None));
-                                if let Ok(mut current) = slot.lock() {
-                                    *current = Some(pixels);
-                                }
-                                CAMERA_TEST_VERSION.fetch_add(1, Ordering::Relaxed);
-                                log(&format!("camera test frame {width}x{height}"));
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        let _ = child.kill();
-        log("camera test stopped");
-    });
-}
-
-pub fn stop_camera_test() {
-    if let Some(slot) = CAMERA_TEST_STOP.get() {
-        if let Ok(mut current) = slot.lock() {
-            if let Some(stop) = current.take() {
-                stop.store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    if let Some(slot) = CAMERA_TEST_FRAME.get() {
-        if let Ok(mut current) = slot.lock() {
-            *current = None;
-        }
-    }
-}
-
-fn microphone() -> Option<String> {
-    if let Some(device) = selected_input_device() {
-        return Some(device);
-    }
-    let output = Command::new(ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-list_devices",
-            "true",
-            "-f",
-            "dshow",
-            "-i",
-            "dummy",
-        ])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stderr);
-    for line in text.lines() {
-        if line.contains("(audio)") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
-                    return Some(line[start + 1..start + 1 + end].to_string());
-                }
-            }
-        }
-    }
-    None
-}
 
 fn receive_stream(
     user: Id,
@@ -1694,542 +1191,8 @@ fn receive_stream(
     let _ = decoder.kill();
 }
 
-fn attach_video(user: Id, frame: Vec<u8>, session_stop: &Arc<AtomicBool>) {
-    let decoders = VIDEO_DECODERS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = match decoders.lock() {
-        Ok(map) => map,
-        Err(_) => return,
-    };
-    if let Some(decoder) = map.get(&user) {
-        if let Ok(mut latest) = decoder.latest.lock() {
-            *latest = Some(frame);
-        }
-        let _ = decoder.signal.try_send(());
-        return;
-    }
-    let (native_width, native_height) = jpeg_dimensions(&frame).unwrap_or((1280, 720));
-    let latest = Arc::new(Mutex::new(Some(frame)));
-    let (signal, signal_rx) = mpsc::sync_channel(1);
-    let decoder_stop = Arc::new(AtomicBool::new(false));
-    map.insert(
-        user,
-        VideoDecoder {
-            latest: latest.clone(),
-            signal: signal.clone(),
-            stop: decoder_stop.clone(),
-        },
-    );
-    drop(map);
-    let session_stop = session_stop.clone();
-    thread::spawn(move || {
-        video_decoder(
-            user,
-            latest,
-            signal_rx,
-            session_stop,
-            decoder_stop,
-            native_width,
-            native_height,
-        )
-    });
-}
-
-fn video_decoder(
-    user: Id,
-    latest: Arc<Mutex<Option<Vec<u8>>>>,
-    signal: mpsc::Receiver<()>,
-    session_stop: Arc<AtomicBool>,
-    stop: Arc<AtomicBool>,
-    native_width: u32,
-    native_height: u32,
-) {
-    let capped = std::env::var("RUNECORD_VIDEO_DECODE_CAP")
-        .ok()
-        .and_then(|value| parse_size(&value));
-    let (width, height) = capped.unwrap_or((native_width, native_height));
-    let mut args: Vec<String> = vec![
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-        "-fflags".into(),
-        "nobuffer".into(),
-        "-flags".into(),
-        "low_delay".into(),
-        "-probesize".into(),
-        "32".into(),
-        "-analyzeduration".into(),
-        "0".into(),
-        "-f".into(),
-        "image2pipe".into(),
-        "-vcodec".into(),
-        "mjpeg".into(),
-        "-i".into(),
-        "pipe:0".into(),
-    ];
-    if capped.is_some() {
-        args.extend([
-            "-vf".into(),
-            format!(
-                "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
-            ),
-        ]);
-    }
-    args.extend([
-        "-f".into(),
-        "rawvideo".into(),
-        "-pix_fmt".into(),
-        "rgba".into(),
-        "-flush_packets".into(),
-        "1".into(),
-        "pipe:1".into(),
-    ]);
-    log(&format!(
-        "video decoder user={user} native={native_width}x{native_height} output={width}x{height}"
-    ));
-    let mut child = match Command::new(ffmpeg_path())
-        .args(&args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => {
-            log(&format!("video decoder unavailable: {error}"));
-            video_decoder_fallback(user, latest, signal, session_stop, stop);
-            return;
-        }
-    };
-    let (Some(mut stdin), Some(mut stdout)) = (child.stdin.take(), child.stdout.take()) else {
-        let _ = child.kill();
-        return;
-    };
-
-    // Write the newest pending JPEG continuously so the demuxer can read
-    // ahead; reading in this thread lets FFmpeg decode at its own pace.
-    let writer_latest = latest.clone();
-    let writer_stop = stop.clone();
-    let writer_session = session_stop.clone();
-    let writer = thread::spawn(move || {
-        loop {
-            if writer_stop.load(Ordering::Relaxed) || writer_session.load(Ordering::Relaxed) {
-                break;
-            }
-            let frame = writer_latest
-                .lock()
-                .ok()
-                .and_then(|mut latest| latest.take());
-            if let Some(jpeg) = frame {
-                if stdin.write_all(&jpeg).is_err() {
-                    break;
-                }
-                continue;
-            }
-            match signal.recv_timeout(Duration::from_millis(100)) {
-                Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-    });
-
-    let mut buffer = vec![0u8; (width * height * 4) as usize];
-    let mut logged = false;
-    loop {
-        if stop.load(Ordering::Relaxed) || session_stop.load(Ordering::Relaxed) {
-            break;
-        }
-        if stdout.read_exact(&mut buffer).is_err() {
-            break;
-        }
-        if !logged {
-            logged = true;
-            log(&format!("video decoded user={user} {}x{}", width, height));
-        }
-        store_decoded(user, width, height, &buffer);
-    }
-    let _ = child.kill();
-    let _ = writer.join();
-    log(&format!("video decoder stopped user={user}"));
-}
-
-fn video_decoder_fallback(
-    user: Id,
-    latest: Arc<Mutex<Option<Vec<u8>>>>,
-    signal: mpsc::Receiver<()>,
-    session_stop: Arc<AtomicBool>,
-    stop: Arc<AtomicBool>,
-) {
-    loop {
-        if stop.load(Ordering::Relaxed) || session_stop.load(Ordering::Relaxed) {
-            break;
-        }
-        match signal.recv_timeout(Duration::from_millis(200)) {
-            Ok(()) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-        }
-        let jpeg = latest.lock().ok().and_then(|mut latest| latest.take());
-        let Some(jpeg) = jpeg else {
-            continue;
-        };
-        if let Ok(image) = image::load_from_memory(&jpeg) {
-            let rgba = image.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            store_decoded(user, width, height, &rgba.into_raw());
-        }
-    }
-}
-
-fn note_status(user: Id, width: u32, height: u32, fps: u32) {
-    let meters = VIDEO_METERS.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut meters) = meters.lock() {
-        let now = std::time::Instant::now();
-        let meter = meters.entry(user).or_insert(VideoMeter {
-            width,
-            height,
-            frames: 0,
-            started: now,
-            fps,
-            target: fps,
-            slow: 0,
-        });
-        meter.width = width;
-        meter.height = height;
-        meter.fps = fps;
-        meter.target = fps;
-        meter.frames = 0;
-        meter.started = now;
-    }
-    wake();
-}
-
-fn stop_preview(user: Id) {
-    if let Some(frames) = VIDEO_LATEST.get() {
-        if let Ok(mut frames) = frames.lock() {
-            frames.remove(&user);
-        }
-    }
-    if let Some(meters) = VIDEO_METERS.get() {
-        if let Ok(mut meters) = meters.lock() {
-            meters.remove(&user);
-        }
-    }
-    if let Some(decoders) = VIDEO_DECODERS.get() {
-        if let Ok(mut decoders) = decoders.lock() {
-            if let Some(decoder) = decoders.remove(&user) {
-                decoder.stop.store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    if let Some(stopped) = VIDEO_STOPPED.get() {
-        if let Ok(mut stopped) = stopped.lock() {
-            stopped.push(user);
-        }
-    }
-    wake();
-}
-
-fn store_decoded(user: Id, width: u32, height: u32, rgba: &[u8]) {
-    let frames = VIDEO_LATEST.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut frames) = frames.lock() {
-        frames.insert(
-            user,
-            VideoFrame {
-                width,
-                height,
-                rgba: rgba.to_vec(),
-            },
-        );
-    }
-    let meters = VIDEO_METERS.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(mut meters) = meters.lock() {
-        let now = std::time::Instant::now();
-        let Some(meter) = meters.get_mut(&user) else {
-            wake();
-            return;
-        };
-        meter.frames += 1;
-        let elapsed = meter.started.elapsed().as_secs_f64();
-        if elapsed >= 2.0 {
-            meter.fps = (meter.frames as f64 / elapsed).round() as u32;
-            log(&format!(
-                "video decoded user={user} fps={} frames={} elapsed={elapsed:.2}",
-                meter.fps, meter.frames
-            ));
-            if current_viewer_quality() == ViewQuality::Auto && meter.target >= 24 && meter.fps < 15
-            {
-                meter.slow += 1;
-                if meter.slow >= 2 {
-                    log("simulcast: auto switching to data saver");
-                    set_viewer_quality(ViewQuality::Low);
-                }
-            } else {
-                meter.slow = 0;
-            }
-            meter.frames = 0;
-            meter.started = now;
-        }
-    }
-    wake();
-}
-
-fn capture_args(kind: &str, quality: VideoQuality) -> Vec<String> {
-    let (width, height) = quality.resolution();
-    let fps = quality.fps().to_string();
-    let synthetic = std::env::var("RUNECORD_VIDEO_SYNTH").ok().as_deref() == Some("1");
-    let mut args: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into()];
-    if synthetic {
-        args.extend([
-            "-re".into(),
-            "-f".into(),
-            "lavfi".into(),
-            "-i".into(),
-            format!("testsrc=size={width}x{height}:rate={fps}"),
-        ]);
-    } else if kind == "screen" {
-        args.extend([
-            "-f".into(),
-            "gdigrab".into(),
-            "-framerate".into(),
-            fps.clone(),
-            "-i".into(),
-            "desktop".into(),
-        ]);
-    } else {
-        let Some(device) = camera() else {
-            log("no camera found");
-            return args;
-        };
-        log(&format!("camera device: {device}"));
-        args.extend([
-            "-f".into(),
-            "dshow".into(),
-            "-framerate".into(),
-            fps.clone(),
-            "-i".into(),
-            format!("video={device}"),
-        ]);
-    }
-    args.extend([
-        "-an".into(),
-        "-vf".into(),
-        format!("scale={width}:-2"),
-        "-r".into(),
-        fps,
-        "-q:v".into(),
-        quality.qscale().to_string(),
-        "-b:v".into(),
-        format!("{}k", quality.target_kbps()),
-        "-f".into(),
-        "mjpeg".into(),
-        "pipe:1".into(),
-    ]);
-    args
-}
-
-fn video_capture(
-    out: mpsc::SyncSender<(u8, Vec<u8>)>,
-    kind: String,
-    stop: Arc<AtomicBool>,
-    video_stop: Arc<AtomicBool>,
-    quality: VideoQuality,
-    low: bool,
-) {
-    let auto = quality == VideoQuality::Auto && !low;
-    let mut preset = if low {
-        VideoQuality::P360
-    } else if auto {
-        VideoQuality::P720
-    } else {
-        quality
-    };
-    let frame_kind: u8 = if low { 4 } else { 1 };
-    let status_kind: u8 = if low { 5 } else { 3 };
-    loop {
-        let (width, height) = preset.resolution();
-        log(&format!(
-            "video capture: {} {}x{}@{}fps q{} target={}kbps",
-            preset.label(),
-            width,
-            height,
-            preset.fps(),
-            preset.qscale(),
-            preset.target_kbps()
-        ));
-        let mut child = match Command::new(ffmpeg_path())
-            .args(capture_args(&kind, preset))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            Ok(child) => child,
-            Err(error) => {
-                log(&format!("video error: {error}"));
-                return;
-            }
-        };
-        let (status_width, status_height) = preset.resolution();
-        let status = format!("{status_width}x{status_height}@{}", preset.fps()).into_bytes();
-        let _ = out.try_send((status_kind, status.clone()));
-        if !low {
-            if let Some(user) = local_user() {
-                if let Some((width, height, fps)) = parse_status(&status) {
-                    note_status(user, width, height, fps);
-                    log(&format!(
-                        "self preview started user={user} at {}x{}@{}fps",
-                        width, height, fps
-                    ));
-                }
-            }
-        }
-        log(&format!("video source: {kind}"));
-        let mut restart = false;
-        if let Some(mut stdout) = child.stdout.take() {
-            let mut buffer = [0u8; 65536];
-            let mut pending: Vec<u8> = Vec::new();
-            let mut sent = 0u32;
-            let mut total = 0u64;
-            let mut dropped = 0u32;
-            let mut window = std::time::Instant::now();
-            let mut changed_at = std::time::Instant::now();
-            while !stop.load(Ordering::Relaxed) && !video_stop.load(Ordering::Relaxed) {
-                match stdout.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        pending.extend_from_slice(&buffer[..n]);
-                        while let Some(frame) = take_jpeg(&mut pending) {
-                            if !low {
-                                if let Some(user) = local_user() {
-                                    attach_video(user, frame.clone(), &stop);
-                                }
-                            }
-                            match out.try_send((frame_kind, frame)) {
-                                Ok(()) => {
-                                    sent += 1;
-                                    total += 1;
-                                    if total == 1 || total % 60 == 0 {
-                                        log(&format!(
-                                            "video sent preset={} frames={total}",
-                                            preset.label()
-                                        ));
-                                    }
-                                }
-                                Err(mpsc::TrySendError::Full(_)) => dropped += 1,
-                                Err(mpsc::TrySendError::Disconnected(_)) => {
-                                    let _ = child.kill();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
-                if window.elapsed() >= Duration::from_secs(2) {
-                    let total = sent + dropped;
-                    if auto && total > 0 {
-                        let ratio = dropped as f64 / total as f64;
-                        log(&format!(
-                            "video window preset={} sent={sent} dropped={dropped} drop_ratio={ratio:.2}",
-                            preset.label()
-                        ));
-                        let down = preset.step_down();
-                        let up = preset.step_up();
-                        if ratio > 0.2 && down != preset {
-                            preset = down;
-                            restart = true;
-                        } else if ratio == 0.0
-                            && up != preset
-                            && changed_at.elapsed() >= Duration::from_secs(12)
-                        {
-                            preset = up;
-                            restart = true;
-                        }
-                    }
-                    sent = 0;
-                    dropped = 0;
-                    window = std::time::Instant::now();
-                    if restart {
-                        changed_at = std::time::Instant::now();
-                        break;
-                    }
-                }
-            }
-        }
-        let _ = child.kill();
-        if !restart || stop.load(Ordering::Relaxed) || video_stop.load(Ordering::Relaxed) {
-            break;
-        }
-        log(&format!(
-            "video quality changed: {} {}x{}@{}fps",
-            preset.label(),
-            preset.resolution().0,
-            preset.resolution().1,
-            preset.fps()
-        ));
-    }
-    let _ = out.send((2, Vec::new()));
-    if !low {
-        if let Some(user) = local_user() {
-            stop_preview(user);
-            log(&format!("self preview stopped user={user}"));
-        }
-    }
-    log("video stopped");
-}
-
-fn camera() -> Option<String> {
-    if let Some(device) = selected_camera_device() {
-        return Some(device);
-    }
-    let output = Command::new(ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-list_devices",
-            "true",
-            "-f",
-            "dshow",
-            "-i",
-            "dummy",
-        ])
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&output.stderr);
-    for line in text.lines() {
-        if line.contains("(video)") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
-                    return Some(line[start + 1..start + 1 + end].to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn take_jpeg(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    let start = buffer.windows(2).position(|pair| pair == [0xFF, 0xD8])?;
-    if start > 0 {
-        buffer.drain(..start);
-    }
-    let end = buffer.windows(2).position(|pair| pair == [0xFF, 0xD9])?;
-    Some(buffer.drain(..end + 2).collect())
-}
-
 fn ffplay_path() -> String {
     std::env::var("RUNECORD_FFPLAY").unwrap_or_else(|_| "ffplay".to_string())
-}
-
-fn scale_pcm(samples: &[u8], volume: f32) -> Vec<u8> {
-    if (volume - 1.0).abs() < f32::EPSILON {
-        return samples.to_vec();
-    }
-    let mut out = samples.to_vec();
-    for pair in out.chunks_exact_mut(2) {
-        let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * volume;
-        let value = value.clamp(-32768.0, 32767.0) as i16;
-        pair.copy_from_slice(&value.to_le_bytes());
-    }
-    out
 }
 
 #[cfg(test)]
