@@ -7,9 +7,7 @@
 //! retained messages (12 channels x 240). The real 13 KB cache is measured
 //! separately when a profile cache exists.
 
-#[path = "../../../crates/client/src/cache.rs"]
-mod cache;
-
+use runecord_client::cache;
 use runecord_protocol::{
     Attachment, Bootstrap, Channel, ChannelKind, GuildDetail, GuildSummary, Member, Message,
     Presence, User,
@@ -111,6 +109,7 @@ fn snapshot() -> cache::Snapshot {
             unread_count: 0,
             mention_count: 0,
             created_at: 1,
+            ..GuildSummary::default()
         };
         if details.len() < 6 {
             details.push(GuildDetail {
@@ -137,15 +136,14 @@ fn snapshot() -> cache::Snapshot {
             unread: Default::default(),
             emojis: Vec::new(),
             voice_states: Vec::new(),
+            ..Bootstrap::default()
         },
         details,
         messages,
         active_guild: 100,
         active_channel: 100_000,
         active_dm: 0,
-        dm_home: false,
-        dm_screen: false,
-        last_guild_channel: HashMap::new(),
+        ..Default::default()
     }
 }
 
@@ -271,6 +269,7 @@ fn main() {
             nickname: String::new(),
             roles: vec![900],
             joined_at: 1,
+            ..Member::default()
         })
         .collect();
     println!(

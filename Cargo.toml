@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/client"]
+members = ["crates/client", "tools/cache-bench"]
 
 # Rune is pre-release and built from the local checkout. Its vendored winit/wgpu-hal patches
 # must be applied by every workspace that builds it.

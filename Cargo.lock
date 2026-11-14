@@ -3190,6 +3190,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "runecord-cache-bench"
+version = "0.1.0"
+dependencies = [
+ "runecord",
+ "runecord-protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "runecord-protocol"
 version = "0.1.0"
 dependencies = [

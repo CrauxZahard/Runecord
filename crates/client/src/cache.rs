@@ -37,7 +37,7 @@ pub struct CachedChannel {
 }
 
 /// Everything needed to paint the shell before the server answers.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Snapshot {
     pub version: u32,
     pub saved_at: i64,
