@@ -1,4 +1,4 @@
-//! Profile and message menus.
+﻿//! Profile and message menus.
 
 use super::super::prelude::*;
 use super::super::*;
@@ -710,7 +710,7 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
     };
 
     let mut reactions = row().gap(2.0).px(4.0).py(2.0);
-    for emoji in ["🔥", "😂", "💜", "👍", "👀", "🎉"] {
+    for emoji in ["≡ƒöÑ", "≡ƒÿé", "≡ƒÆ£", "≡ƒæì", "≡ƒæÇ", "≡ƒÄë"] {
         reactions = reactions.child(
             text(emoji)
                 .font(TextStyle::new(20.0, 400.0))

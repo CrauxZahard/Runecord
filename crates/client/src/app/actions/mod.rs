@@ -4,14 +4,14 @@ use super::*;
 use crate::net::Command;
 use rune::TextEdit;
 
-mod navigation;
-mod messages;
-mod guilds;
-mod media;
-mod moderation;
-mod social;
 mod account;
 mod admin;
+mod guilds;
+mod media;
+mod messages;
+mod moderation;
+mod navigation;
+mod social;
 
 fn timeout_seconds(value: u64, unit: TimeoutUnit) -> u64 {
     value.min(unit.max_value()) * unit.seconds()
