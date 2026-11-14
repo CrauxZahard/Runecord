@@ -18,21 +18,37 @@ const FONTS: &[&[u8]] = &[
     include_bytes!("../../../assets/fonts/IBMPlexMono-Regular.ttf"),
 ];
 
-pub fn run() {
-    #[cfg(feature = "embedded-server")]
-    crate::embedded::ensure_backend();
-
+/// The window, taskbar, tray and toast icon, next to the working directory or the executable.
+fn icon_path() -> std::path::PathBuf {
     let icon = std::path::PathBuf::from("assets/icon.png");
-    let icon = if icon.exists() {
+    if icon.exists() {
         icon
     } else {
         std::env::current_exe()
             .ok()
             .and_then(|e| e.parent().map(|d| d.join("assets").join("icon.png")))
             .unwrap_or(icon)
-    };
+    }
+}
+
+/// Scales the app icon to the 32 px tray size.
+fn tray_icon(bytes: &[u8]) -> Option<rune::TrayIcon> {
+    let image = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let image = image::imageops::resize(&image, 32, 32, image::imageops::FilterType::Lanczos3);
+    Some(rune::TrayIcon::rgba(32, 32, image.into_raw()))
+}
+
+pub fn run() {
+    #[cfg(feature = "embedded-server")]
+    crate::embedded::ensure_backend();
+
+    let icon_path = icon_path();
+    let icon_bytes = std::fs::read(&icon_path).ok();
+    if let Some(bytes) = icon_bytes.as_deref() {
+        let _ = rune::set_app_icon(bytes.to_vec());
+    }
     let _ = rune_notify::register(
-        &rune_notify::Identity::new("com.runecord.local", "Runecord").icon(icon),
+        &rune_notify::Identity::new("com.runecord.local", "Runecord").icon(icon_path),
     );
     let spec = rune::AppSpec {
         min_size: Some((960.0, 640.0)),
@@ -320,21 +336,27 @@ pub fn run() {
     };
     let app = rune::App::new(spec).titlebar(rune::Titlebar::new(32.0));
 
-    let mut rgba = Vec::with_capacity(32 * 32 * 4);
-    for y in 0..32 {
-        for x in 0..32 {
-            let dx = x as f32 - 15.5;
-            let dy = y as f32 - 15.5;
-            if dx * dx + dy * dy <= 15.0 * 15.0 {
-                rgba.extend_from_slice(&[88, 101, 242, 255]);
-            } else {
-                rgba.extend_from_slice(&[0, 0, 0, 0]);
+    let tray_icon = icon_bytes
+        .as_deref()
+        .and_then(tray_icon)
+        .unwrap_or_else(|| {
+            let mut rgba = Vec::with_capacity(32 * 32 * 4);
+            for y in 0..32 {
+                for x in 0..32 {
+                    let dx = x as f32 - 15.5;
+                    let dy = y as f32 - 15.5;
+                    if dx * dx + dy * dy <= 15.0 * 15.0 {
+                        rgba.extend_from_slice(&[88, 101, 242, 255]);
+                    } else {
+                        rgba.extend_from_slice(&[0, 0, 0, 0]);
+                    }
+                }
             }
-        }
-    }
+            rune::TrayIcon::rgba(32, 32, rgba)
+        });
     let handle = app.handle();
     let _tray = rune::Tray::new(
-        rune::TraySpec::new("runecord", "Runecord", rune::TrayIcon::rgba(32, 32, rgba))
+        rune::TraySpec::new("runecord", "Runecord", tray_icon)
             .tooltip("Runecord")
             .menu(vec![
                 rune::TrayItem::action("open", "Open Runecord"),
