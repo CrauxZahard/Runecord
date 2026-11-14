@@ -10,10 +10,10 @@ path = "src/main.rs"
 
 [dependencies]
 runecord-protocol = { path = "../../../Runecord-backend/crates/protocol" }
-rune = { path = "C:/Users/ADVAN/Documents/Default Project/rune/crates/rune" }
-rune-kit = { path = "C:/Users/ADVAN/Documents/Default Project/rune/crates/rune-kit", default-features = false, features = ["markdown"] }
-rune-motion = { path = "C:/Users/ADVAN/Documents/Default Project/rune/crates/rune-motion" }
-rune-notify = { path = "C:/Users/ADVAN/Documents/Default Project/rune/crates/rune-notify" }
+rune = { path = "../../../rune/crates/rune" }
+rune-kit = { path = "../../../rune/crates/rune-kit", default-features = false, features = ["markdown"] }
+rune-motion = { path = "../../../rune/crates/rune-motion" }
+rune-notify = { path = "../../../rune/crates/rune-notify" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

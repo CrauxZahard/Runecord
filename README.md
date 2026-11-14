@@ -15,7 +15,11 @@ Runecord/                 frontend repo (this one)
   crates/server           HTTP API, WebSocket gateway, SQLite store
   migrations/             numbered SQL schema
   data/                   runtime database + uploads
+
+..\rune\                  Rune framework checkout (path dependency)
 ```
+
+Both siblings are required: the manifests use only relative paths, so the framework can live anywhere as long as `..\rune` resolves to it. On Windows a directory junction is enough if your Rune checkout is elsewhere.
 
 ## Run it
 
