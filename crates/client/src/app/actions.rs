@@ -1611,6 +1611,10 @@ impl App {
         self.sync_profile_edits();
         self.password_current.clear();
         self.password_new.clear();
+        if tab == SettingsTab::Application {
+            self.server_url_saved = crate::config::stored_server_url();
+            self.server_url = TextEdit::new(self.server_url_saved.clone());
+        }
         self.modal = Modal::Settings(tab);
         if tab == SettingsTab::Bots {
             self.send(Command::LoadBots);
@@ -1619,6 +1623,42 @@ impl App {
         if tab == SettingsTab::Voice {
             self.refresh_voice_devices();
             self.apply_voice_settings();
+        }
+    }
+
+    pub fn save_server_url(&mut self) {
+        match crate::config::save_server_url(&self.server_url.text) {
+            Ok((url, changed)) => {
+                self.server_url = TextEdit::new(url.clone());
+                self.server_url_saved = url.clone();
+                if changed {
+                    self.toast("Server saved. Restart Runecord to connect to it.");
+                } else {
+                    self.toast("That server URL is already saved.");
+                }
+            }
+            Err(message) => self.toast(message),
+        }
+    }
+
+    pub fn reset_server_url(&mut self) {
+        self.server_url = TextEdit::new(crate::config::DEFAULT_SERVER_URL.to_string());
+        self.save_server_url();
+    }
+
+    pub fn restart_app(&mut self) {
+        if rune::is_headless() {
+            self.toast("Restart Runecord from the app window.");
+            return;
+        }
+        let Ok(exe) = std::env::current_exe() else {
+            self.toast("Could not find the Runecord executable.");
+            return;
+        };
+        let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+        match std::process::Command::new(exe).args(args).spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(error) => self.toast(format!("Could not restart: {error}")),
         }
     }
 

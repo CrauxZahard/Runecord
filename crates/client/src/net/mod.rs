@@ -7,8 +7,6 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub const DEFAULT_URL: &str = "http://127.0.0.1:47800";
-
 #[derive(Clone, Debug)]
 pub enum Command {
     Login {
@@ -775,7 +773,7 @@ pub fn drain_events() -> Vec<NetEvent> {
 
 pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
     let (cmd_tx, cmd_rx) = mpsc::channel::<Command>();
-    let base = std::env::var("RUNECORD_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
+    let base = crate::config::effective_server_url();
     let profile = fast_profile
         .or_else(|| std::env::var("RUNECORD_PROFILE").ok())
         .unwrap_or_else(|| "1".to_string());

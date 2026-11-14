@@ -2,6 +2,7 @@
 
 mod app;
 mod cache;
+mod config;
 mod icons;
 mod image_anim;
 mod net;
@@ -57,6 +58,9 @@ fn main() {
             }),
             ("settings", |s: &mut App| {
                 s.open_settings(SettingsTab::Appearance)
+            }),
+            ("app-settings", |s: &mut App| {
+                s.open_settings(SettingsTab::Application)
             }),
             ("notifications", |s: &mut App| {
                 s.open_settings(SettingsTab::Notifications)

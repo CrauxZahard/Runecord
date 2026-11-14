@@ -254,7 +254,7 @@ fn auth_view(s: &App, p: Palette) -> El {
                 .center_y()
                 .child(el().size(8.0, 8.0).radius(4.0).fill(p.yellow))
                 .child(
-                    text("Waiting for the local server on 127.0.0.1:47800")
+                    text(format!("Waiting for the server at {}", s.server_base))
                         .font(theme::TINY)
                         .color(p.text_faint),
                 ),

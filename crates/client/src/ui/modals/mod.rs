@@ -3274,7 +3274,7 @@ pub(crate) fn invite_sheet(s: &App, p: Palette) -> El {
     let code = s.invite_code.clone();
     let url = code
         .as_ref()
-        .map(|c| format!("http://127.0.0.1:47800/invite/{c}"));
+        .map(|c| format!("{}/invite/{c}", s.server_base));
     let body = col()
         .w_full()
         .gap(12.0)
