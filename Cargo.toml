@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/client"]
+
+# Rune is pre-release and built from the local checkout. Its vendored winit/wgpu-hal patches
+# must be applied by every workspace that builds it.
+[patch.crates-io]
+wgpu-hal = { path = "C:/Users/ADVAN/Documents/Default Project/rune/vendor/wgpu-hal" }
+winit = { path = "C:/Users/ADVAN/Documents/Default Project/rune/vendor/winit" }
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+codegen-units = 16
+incremental = true

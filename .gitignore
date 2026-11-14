@@ -1,0 +1,28 @@
+# Rust build output
+/target/
+**/target/
+
+# Local runtime data and generated screenshot evidence
+/data/
+/shots/
+
+# .NET helper build output
+**/bin/
+**/obj/
+
+# Logs and local environment
+*.log
+.env
+.env.*
+
+# Crash dumps
+*.pdb
+*.dSYM/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
