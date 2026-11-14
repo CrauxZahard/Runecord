@@ -125,6 +125,25 @@ impl App {
         if self.toast.is_some() || self.typing.values().any(|v| !v.is_empty()) {
             tx.wake_after(std::time::Duration::from_millis(200));
         }
+        let skeleton_loading = self.logged_in
+            && self.connected
+            && self.screen == Screen::Guild
+            && ((self.active_channel != 0 && self.messages.get(&self.active_channel).is_none())
+                || self.guild_detail(self.active_guild).is_none()
+                || self
+                    .member_state
+                    .get(&self.active_guild)
+                    .is_some_and(|state| {
+                        state.loading
+                            && self
+                                .members
+                                .get(&self.active_guild)
+                                .is_none_or(|members| members.is_empty())
+                    }));
+        if skeleton_loading {
+            changed = true;
+            tx.wake_after(std::time::Duration::from_millis(33));
+        }
         changed
     }
 
@@ -234,6 +253,13 @@ impl App {
             NetEvent::GuildEventDeleted { guild, event } => {
                 let _ = guild;
                 self.guild_events.retain(|item| item.id != event);
+            }
+            NetEvent::ServerChecked { url, ok, error } => {
+                self.apply_checked_server(url, ok, error);
+            }
+            NetEvent::ConnectionFailed => {
+                self.server_unreachable = true;
+                self.connected = false;
             }
             NetEvent::Inbox(inbox) => {
                 if self.modal == Modal::Inbox {
@@ -509,6 +535,9 @@ impl App {
             NetEvent::Connected(up) => {
                 self.connected = up;
                 self.connecting = !up;
+                if up {
+                    self.server_unreachable = false;
+                }
                 if self.me.id != 0 {
                     let status = if up {
                         Presence::Online

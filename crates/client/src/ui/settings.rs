@@ -1602,9 +1602,21 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                         .center_y()
                         .child(button(
                             "server-url-save",
-                            "Save Changes",
-                            if dirty { p.accent } else { p.rail },
-                            if dirty { Color::WHITE } else { p.text_faint },
+                            if s.server_checking {
+                                "Checking…"
+                            } else {
+                                "Save Changes"
+                            },
+                            if dirty && !s.server_checking {
+                                p.accent
+                            } else {
+                                p.rail
+                            },
+                            if dirty && !s.server_checking {
+                                Color::WHITE
+                            } else {
+                                p.text_faint
+                            },
                             |s: &mut App| s.save_server_url(),
                         ))
                         .child(button(
@@ -1628,6 +1640,18 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                                 .color(p.yellow)
                         })),
                 )
+                .children(s.server_config_error.clone().map(|message| {
+                    text(format!("Saved setting: {message}"))
+                        .wrap()
+                        .font(theme::TINY)
+                        .color(p.danger)
+                }))
+                .children(s.server_url_error.clone().map(|message| {
+                    text(message)
+                        .wrap()
+                        .font(theme::TINY)
+                        .color(p.danger)
+                }))
                 .child(el().w_full().h(1.0).fill(p.divider))
                 .child(
                     text("CURRENT SESSION")

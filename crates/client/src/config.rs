@@ -25,12 +25,57 @@ fn config_path() -> Option<PathBuf> {
 
 /// The URL stored by the Application settings, falling back to the local server.
 pub fn stored_server_url() -> String {
-    let stored = config_path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str::<Config>(&text).ok())
-        .map(|config| config.server_url)
-        .unwrap_or_default();
-    normalize(&stored).unwrap_or_else(|_| DEFAULT_SERVER_URL.to_string())
+    startup().url
+}
+
+pub struct Startup {
+    pub url: String,
+    pub error: Option<String>,
+}
+
+/// Reads the saved endpoint once at launch. A hand-edited invalid value falls
+/// back to the local default but is reported so the auth screen can explain
+/// why the client is not connected.
+pub fn startup() -> Startup {
+    let Some(path) = config_path() else {
+        return Startup {
+            url: DEFAULT_SERVER_URL.to_string(),
+            error: None,
+        };
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Startup {
+            url: DEFAULT_SERVER_URL.to_string(),
+            error: None,
+        };
+    };
+    let config: Config = match serde_json::from_str(&text) {
+        Ok(config) => config,
+        Err(_) => {
+            return Startup {
+                url: DEFAULT_SERVER_URL.to_string(),
+                error: Some(
+                    "The saved server setting can't be read; using the local default.".into(),
+                ),
+            };
+        }
+    };
+    if config.server_url.trim().is_empty() {
+        return Startup {
+            url: DEFAULT_SERVER_URL.to_string(),
+            error: None,
+        };
+    }
+    match normalize(&config.server_url) {
+        Ok(url) => Startup { url, error: None },
+        Err(reason) => Startup {
+            url: DEFAULT_SERVER_URL.to_string(),
+            error: Some(format!(
+                "The saved server URL “{}” is invalid ({reason}). Using the local default.",
+                config.server_url.trim()
+            )),
+        },
+    }
 }
 
 /// The URL this process should use. `RUNECORD_URL` wins so harness runs can
@@ -42,10 +87,62 @@ pub fn effective_server_url() -> String {
         .unwrap_or_else(stored_server_url)
 }
 
+/// Effective URL plus the saved-file error, for the startup screen.
+pub fn startup_effective() -> Startup {
+    if let Ok(value) = std::env::var("RUNECORD_URL") {
+        if let Ok(url) = normalize(&value) {
+            return Startup { url, error: None };
+        }
+    }
+    startup()
+}
+
 /// Whether the app should start the bundled backend. A configured remote
 /// deployment must not spawn a second server on this machine.
 pub fn uses_bundled_server(url: &str) -> bool {
     normalize(url).is_ok_and(|url| url == DEFAULT_SERVER_URL)
+}
+
+/// Quick startup TCP probe. It does not authenticate; it only distinguishes a
+/// refused or unroutable endpoint from one that is listening, so the auth screen
+/// can say the client can't connect instead of waiting forever.
+pub fn server_reachable(url: &str) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let Some((host, port)) = endpoint(url) else {
+        return false;
+    };
+    let Ok(addresses) = (host.as_str(), port).to_socket_addrs() else {
+        return false;
+    };
+    addresses.into_iter().any(|address| {
+        TcpStream::connect_timeout(&address, std::time::Duration::from_millis(600)).is_ok()
+    })
+}
+
+fn endpoint(url: &str) -> Option<(String, u16)> {
+    let (secure, rest) = if let Some(rest) = url.strip_prefix("https://") {
+        (true, rest)
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        (false, rest)
+    } else {
+        return None;
+    };
+    let authority = rest.split('/').next()?;
+    let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
+        let (host, after) = bracketed.split_once(']')?;
+        let port = after.strip_prefix(':');
+        (host.to_string(), port)
+    } else if let Some((host, port)) = authority.rsplit_once(':') {
+        (host.to_string(), Some(port))
+    } else {
+        (authority.to_string(), None)
+    };
+    let port = match port {
+        Some(port) => port.parse().ok()?,
+        None if secure => 443,
+        None => 80,
+    };
+    Some((host, port))
 }
 
 pub fn normalize(input: &str) -> Result<String, String> {
@@ -146,7 +243,7 @@ fn clear_sessions() {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SERVER_URL, normalize, uses_bundled_server};
+    use super::{DEFAULT_SERVER_URL, endpoint, normalize, uses_bundled_server};
 
     #[test]
     fn server_urls_are_normalized_and_validated() {
@@ -179,5 +276,14 @@ mod tests {
         assert!(uses_bundled_server("http://127.0.0.1:47800/"));
         assert!(!uses_bundled_server("https://chat.example.com"));
         assert!(!uses_bundled_server("http://127.0.0.1:47801"));
+        assert_eq!(
+            endpoint("https://chat.example.com"),
+            Some(("chat.example.com".into(), 443))
+        );
+        assert_eq!(
+            endpoint("http://127.0.0.1:47993/base"),
+            Some(("127.0.0.1".into(), 47993))
+        );
+        assert_eq!(endpoint("http://[::1]:47800"), Some(("::1".into(), 47800)));
     }
 }

@@ -639,6 +639,100 @@ pub(crate) fn developer_bar(s: &App, p: Palette) -> El {
         )
 }
 
+fn skeleton_alpha(clock: f64) -> f32 {
+    0.45 + 0.3 * ((clock * 2.2).sin() * 0.5 + 0.5) as f32
+}
+
+pub(crate) fn skeleton_bar(width: f32, height: f32, p: Palette, clock: f64) -> El {
+    el().w(width)
+        .h(height)
+        .radius(height / 2.0)
+        .fill(p.rail_hover.alpha(skeleton_alpha(clock)))
+}
+
+pub(crate) fn skeleton_channel_rows(count: usize, p: Palette, clock: f64) -> El {
+    let mut rows = col().w_full().gap(2.0);
+    for index in 0..count {
+        let label = 70.0 + ((index * 29) % 70) as f32;
+        rows = rows.child(
+            row()
+                .w_full()
+                .h(34.0)
+                .px(10.0)
+                .gap(8.0)
+                .center_y()
+                .child(
+                    el().size(18.0, 18.0)
+                        .radius(9.0)
+                        .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
+                )
+                .child(skeleton_bar(label, 9.0, p, clock)),
+        );
+    }
+    rows
+}
+
+pub(crate) fn skeleton_member_rows(count: usize, p: Palette, clock: f64) -> El {
+    let mut rows = col().w_full().gap(2.0);
+    for index in 0..count {
+        let label = 80.0 + ((index * 23) % 60) as f32;
+        rows = rows.child(
+            row()
+                .w_full()
+                .h(46.0)
+                .px(10.0)
+                .gap(12.0)
+                .center_y()
+                .child(
+                    el().size(32.0, 32.0)
+                        .radius(16.0)
+                        .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
+                )
+                .child(
+                    col()
+                        .grow(1.0)
+                        .gap(6.0)
+                        .child(skeleton_bar(label, 9.0, p, clock))
+                        .child(skeleton_bar(label * 0.7, 7.0, p, clock)),
+                ),
+        );
+    }
+    rows
+}
+
+pub(crate) fn skeleton_message_rows(count: usize, p: Palette, clock: f64) -> El {
+    let mut rows = col().w_full().gap(18.0).padding(16.0);
+    for index in 0..count {
+        let name = 90.0 + ((index * 31) % 70) as f32;
+        let body = 320.0 + ((index * 61) % 190) as f32;
+        rows = rows.child(
+            row()
+                .w_full()
+                .gap(12.0)
+                .child(
+                    el().size(40.0, 40.0)
+                        .radius(20.0)
+                        .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
+                )
+                .child(
+                    col()
+                        .grow(1.0)
+                        .gap(7.0)
+                        .child(
+                            row()
+                                .gap(8.0)
+                                .center_y()
+                                .child(skeleton_bar(name, 10.0, p, clock))
+                                .child(skeleton_bar(54.0, 8.0, p, clock)),
+                        )
+                        .child(skeleton_bar(body, 9.0, p, clock))
+                        .child(skeleton_bar(body * 0.55, 9.0, p, clock)),
+                ),
+        );
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::{day_divider_label, same_day};

@@ -44,13 +44,7 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
         .gap(1.0);
     let channels = s.guild_channels(s.active_guild);
     if channels.is_empty() && s.guild_detail(s.active_guild).is_none() {
-        list = list.child(
-            row().h(30.0).px(8.0).center_y().child(
-                text("Loading channels…")
-                    .font(theme::SMALL)
-                    .color(p.text_faint),
-            ),
-        );
+        list = list.child(skeleton_channel_rows(6, p, s.clock));
     }
     let mut ordered: Vec<&Channel> = channels.iter().collect();
     ordered.sort_by_key(|c| c.position);

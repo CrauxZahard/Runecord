@@ -1627,17 +1627,57 @@ impl App {
     }
 
     pub fn save_server_url(&mut self) {
-        match crate::config::save_server_url(&self.server_url.text) {
-            Ok((url, changed)) => {
-                self.server_url = TextEdit::new(url.clone());
-                self.server_url_saved = url.clone();
+        let url = match crate::config::normalize(&self.server_url.text) {
+            Ok(url) => url,
+            Err(message) => {
+                self.server_url_error = Some(message.clone());
+                self.toast(message);
+                return;
+            }
+        };
+        if self.server_checking {
+            return;
+        }
+        if self.net.is_none() {
+            let message = "Runecord can't validate a server without a network session.";
+            self.server_url_error = Some(message.into());
+            self.toast(message);
+            return;
+        }
+        self.server_url_error = None;
+        self.server_checking = true;
+        self.pending_server_url = Some(url.clone());
+        self.send(Command::CheckServer { url });
+    }
+
+    pub fn apply_checked_server(&mut self, url: String, ok: bool, error: Option<String>) {
+        if self.pending_server_url.as_deref() != Some(url.as_str()) {
+            return;
+        }
+        self.server_checking = false;
+        self.pending_server_url = None;
+        if !ok {
+            let reason = error.unwrap_or_else(|| "The server did not answer.".into());
+            self.server_url_error = Some(format!("Can’t connect to {url}: {reason}"));
+            self.toast("Can’t connect to that server");
+            return;
+        }
+        match crate::config::save_server_url(&url) {
+            Ok((saved, changed)) => {
+                self.server_url = TextEdit::new(saved.clone());
+                self.server_url_saved = saved;
+                self.server_config_error = None;
+                self.server_url_error = None;
                 if changed {
                     self.toast("Server saved. Restart Runecord to connect to it.");
                 } else {
                     self.toast("That server URL is already saved.");
                 }
             }
-            Err(message) => self.toast(message),
+            Err(message) => {
+                self.server_url_error = Some(message.clone());
+                self.toast(message);
+            }
         }
     }
 

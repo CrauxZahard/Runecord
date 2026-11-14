@@ -31,6 +31,9 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let p = palette(s.dark);
     cx.caption_color(if s.dark { Color::WHITE } else { Color::BLACK });
     if !s.logged_in {
+        if let Modal::Settings(tab) = s.modal {
+            return settings_page(s, cx, p, tab);
+        }
         return auth_view(s, p);
     }
     if let Modal::Settings(tab) = s.modal {
@@ -247,7 +250,57 @@ fn auth_view(s: &App, p: Palette) -> El {
             ),
     );
 
-    if !s.connected {
+    let connection_failed = s.server_config_error.is_some() || s.server_unreachable;
+    if connection_failed {
+        card = card.child(
+            col()
+                .key("auth-server-error")
+                .w_full()
+                .gap(5.0)
+                .child(
+                    row()
+                        .gap(6.0)
+                        .center_y()
+                        .child(el().size(8.0, 8.0).radius(4.0).fill(p.danger))
+                        .child(
+                            text("Runecord can’t connect to the server")
+                                .font(theme::SMALL_MED)
+                                .color(p.danger),
+                        ),
+                )
+                .child(
+                    text(s.server_base.clone())
+                        .font(theme::TINY)
+                        .color(p.text_muted)
+                        .truncate(),
+                )
+                .child(
+                    text(s.server_config_error.clone().unwrap_or_else(|| {
+                        "Check that the server is running and that this address is correct.".into()
+                    }))
+                    .wrap()
+                    .font(theme::TINY)
+                    .color(p.text_muted),
+                )
+                .child(
+                    el().key("auth-server-settings")
+                        .h(28.0)
+                        .px(10.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Open Application Settings")
+                        .fill(p.rail_hover)
+                        .hover(p.card_hover)
+                        .on_press(|s: &mut App| s.open_settings(SettingsTab::Application))
+                        .child(
+                            text("Open Application Settings")
+                                .font(theme::TINY)
+                                .color(p.text_link),
+                        ),
+                ),
+        );
+    } else if !s.connected {
         card = card.child(
             row()
                 .gap(6.0)

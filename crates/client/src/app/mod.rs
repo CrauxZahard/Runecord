@@ -170,6 +170,11 @@ pub struct App {
     pub server_base: String,
     pub server_url: TextEdit,
     pub server_url_saved: String,
+    pub server_config_error: Option<String>,
+    pub server_url_error: Option<String>,
+    pub server_checking: bool,
+    pub pending_server_url: Option<String>,
+    pub server_unreachable: bool,
     pub toast: Option<Toast>,
     pub attachments: Vec<Attachment>,
     pub clock: f64,
@@ -362,11 +367,16 @@ pub struct AnimationPlayer {
 impl App {
     pub fn new() -> Self {
         let headless = rune::is_headless() && std::env::var_os("RUNECORD_LIVE").is_none();
-        let server_base = crate::config::effective_server_url();
+        let startup = crate::config::startup_effective();
+        let server_base = startup.url;
+        let server_config_error = startup.error;
         let server_url_saved = crate::config::stored_server_url();
         if !headless && crate::config::uses_bundled_server(&server_base) {
             ensure_server();
         }
+        let server_unreachable = !headless
+            && server_config_error.is_none()
+            && !crate::config::server_reachable(&server_base);
         let profile_name = profile().unwrap_or_else(|| "1".to_string());
         // Only paint a snapshot when a session token exists. A logged-out
         // profile must never look logged in just because an old cache exists.
@@ -419,6 +429,11 @@ impl App {
             server_base,
             server_url: TextEdit::new(server_url_saved.clone()),
             server_url_saved,
+            server_config_error,
+            server_url_error: None,
+            server_checking: false,
+            pending_server_url: None,
+            server_unreachable,
             toast: None,
             attachments: Vec::new(),
             clock: 0.0,

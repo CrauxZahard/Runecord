@@ -3,6 +3,7 @@
 use super::*;
 pub(crate) fn ws_worker(shared: Arc<Shared>) {
     let mut connected = false;
+    let mut failed = false;
     loop {
         let token = shared.token.lock().ok().and_then(|t| t.clone());
         let Some(token) = token else {
@@ -40,6 +41,7 @@ pub(crate) fn ws_worker(shared: Arc<Shared>) {
         };
         match tungstenite::connect(request) {
             Ok((mut socket, _)) => {
+                failed = false;
                 if !connected {
                     shared.emit(NetEvent::Connected(true));
                     connected = true;
@@ -172,6 +174,9 @@ pub(crate) fn ws_worker(shared: Arc<Shared>) {
                 if connected {
                     shared.emit(NetEvent::Connected(false));
                     connected = false;
+                } else if !failed {
+                    shared.emit(NetEvent::ConnectionFailed);
+                    failed = true;
                 }
                 std::thread::sleep(Duration::from_secs(1));
             }

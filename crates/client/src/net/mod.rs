@@ -91,6 +91,9 @@ pub enum Command {
         guild: Id,
         event: Id,
     },
+    CheckServer {
+        url: String,
+    },
     UpdateProfileExtras {
         activity: Option<ProfileActivity>,
         connections: Vec<ProfileConnection>,
@@ -575,6 +578,12 @@ pub enum NetEvent {
         guild: Id,
         event: Id,
     },
+    ServerChecked {
+        url: String,
+        ok: bool,
+        error: Option<String>,
+    },
+    ConnectionFailed,
     Dm(Box<DmChannel>),
     VoiceState(Box<VoiceState>),
     Error(String),
@@ -593,7 +602,16 @@ impl Net {
 
     pub fn set_waker(&self, waker: rune::Waker) {
         if let Ok(mut w) = self.wake.lock() {
-            *w = Some(waker);
+            *w = Some(waker.clone());
+        }
+        // A worker can enqueue an event just before the app installs its waker.
+        // Wake once so that event is drained rather than waiting for the next one.
+        if EVENTS
+            .lock()
+            .map(|queue| !queue.is_empty())
+            .unwrap_or(false)
+        {
+            waker();
         }
     }
 }
@@ -791,7 +809,6 @@ pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
     });
 
     if shared.token.lock().map(|t| t.is_some()).unwrap_or(false) {
-        shared.emit(NetEvent::Connected(true));
         // Never block app construction on a network round trip. A warm cache
         // paints immediately; the gateway READY normally revalidates it. If the
         // socket is slow, a delayed bootstrap acts as the fallback.

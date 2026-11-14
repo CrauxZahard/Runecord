@@ -14,11 +14,14 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     if channel.kind == ChannelKind::Forum {
         return forum_view(s, &channel, p, header);
     }
+    let loaded = s.messages.contains_key(&channel.id);
     let empty = s
         .messages
         .get(&channel.id)
         .is_some_and(|messages| messages.is_empty());
-    let list = if empty {
+    let list = if !loaded {
+        skeleton_message_rows(4, p, s.clock)
+    } else if empty {
         empty_channel_intro(s, &channel, p)
     } else {
         message_list(s, &channel, p)

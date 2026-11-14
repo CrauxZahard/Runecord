@@ -277,6 +277,53 @@ pub(crate) fn http_worker(shared: Arc<Shared>, rx: mpsc::Receiver<Command>) {
                     Err(e) => shared.emit(NetEvent::Error(e)),
                 }
             }
+            Command::CheckServer { url } => {
+                let target = format!("{}/api/version", url.trim_end_matches('/'));
+                let result = shared
+                    .client
+                    .get(target)
+                    .timeout(Duration::from_secs(6))
+                    .send();
+                match result {
+                    Ok(response) if response.status().is_success() => {
+                        let body: serde_json::Value =
+                            response.json().unwrap_or(serde_json::Value::Null);
+                        let ok =
+                            body.get("name").and_then(|value| value.as_str()) == Some("runecord");
+                        shared.emit(NetEvent::ServerChecked {
+                            url,
+                            ok,
+                            error: if ok {
+                                None
+                            } else {
+                                Some(
+                                    "That address answered, but it is not a Runecord server."
+                                        .into(),
+                                )
+                            },
+                        });
+                    }
+                    Ok(response) => shared.emit(NetEvent::ServerChecked {
+                        url,
+                        ok: false,
+                        error: Some(format!(
+                            "The server answered with HTTP {}.",
+                            response.status().as_u16()
+                        )),
+                    }),
+                    Err(error) => shared.emit(NetEvent::ServerChecked {
+                        url,
+                        ok: false,
+                        error: Some(if error.is_timeout() {
+                            "The server did not answer in time.".into()
+                        } else if error.is_connect() {
+                            "The connection was refused.".into()
+                        } else {
+                            error.to_string()
+                        }),
+                    }),
+                }
+            }
             Command::UpdateProfileStyle {
                 effect,
                 nameplate,

@@ -167,21 +167,25 @@ pub(crate) fn member_list(s: &App, p: Palette, top_inset: f32) -> El {
     );
     if let Some(state) = state {
         if state.loading {
-            let kit = rune_kit::Kit::neutral(p.dark);
-            list = list.child(
-                row()
-                    .key("members-loading")
-                    .w_full()
-                    .h(32.0)
-                    .gap(8.0)
-                    .center()
-                    .child(rune_kit::Spinner::new().size(14.0).build(&kit))
-                    .child(
-                        text("Loading members…")
-                            .font(theme::SMALL)
-                            .color(p.text_faint),
-                    ),
-            );
+            if members.is_empty() {
+                list = list.child(skeleton_member_rows(8, p, s.clock));
+            } else {
+                let kit = rune_kit::Kit::neutral(p.dark);
+                list = list.child(
+                    row()
+                        .key("members-loading")
+                        .w_full()
+                        .h(32.0)
+                        .gap(8.0)
+                        .center()
+                        .child(rune_kit::Spinner::new().size(14.0).build(&kit))
+                        .child(
+                            text("Loading members…")
+                                .font(theme::SMALL)
+                                .color(p.text_faint),
+                        ),
+                );
+            }
         } else if state.next_offset.is_some() {
             list = list.child(
                 row()

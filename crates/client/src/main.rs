@@ -59,6 +59,18 @@ fn main() {
             ("settings", |s: &mut App| {
                 s.open_settings(SettingsTab::Appearance)
             }),
+            ("skeletons", |s: &mut App| {
+                s.logged_in = true;
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 211;
+                s.messages.clear();
+                s.guild_details.clear();
+                s.members.clear();
+                if let Some(state) = s.member_state.get_mut(&100) {
+                    state.loading = true;
+                }
+            }),
             ("app-settings", |s: &mut App| {
                 s.open_settings(SettingsTab::Application)
             }),
