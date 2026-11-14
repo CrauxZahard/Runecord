@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>404 — Runecord</title>
+  <meta name="description" content="That page is not in the Runecord manual.">
+  <meta name="theme-color" content="#020617">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('runecord-theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.6A8.6 8.6 0 0 1 9.4 4 8.6 8.6 0 1 0 20 14.6Z"/></symbol>
+  </svg>
+
+  <header class="site-head">
+    <div class="wrap head-inner">
+      <a class="brand" href="index.html" aria-label="Runecord home">
+        <img src="assets/img/logo.svg" width="34" height="34" alt="">
+        <span class="brand-name">RUNECORD</span>
+      </a>
+      <div class="head-actions">
+        <button class="icon-btn theme-toggle" type="button" aria-label="Switch to light theme" title="Switch theme">
+          <svg class="icon icon-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+          <svg class="icon icon-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm" href="index.html">BACK TO SITE</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="notfound" id="main">
+    <div class="hero-grid-bg" aria-hidden="true"></div>
+    <div class="wrap">
+      <p class="eyebrow"><span class="eyebrow-index">404</span> PAGE NOT FOUND</p>
+      <h1>OFF THE<br><span class="mark">GRID.</span></h1>
+      <p class="notfound-lede">That page is not in the manual. It may have moved, or the URL may be wrong.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="index.html">RETURN HOME</a>
+        <a class="btn btn-ghost btn-lg" href="../Runecord-backend/">DEVELOPER PORTAL</a>
+      </div>
+      <div class="notfound-path">
+        <span>REQUESTED PATH</span>
+        <code id="notfound-path">/</code>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap foot-base">
+      <span>© <span id="year">2026</span> RUNECORD</span>
+      <span>404 / NOT AFFILIATED WITH DISCORD INC.</span>
+    </div>
+  </footer>
+
+  <script src="assets/js/site.js"></script>
+  <script>
+    (function () {
+      var path = document.getElementById('notfound-path');
+      if (path) path.textContent = window.location.pathname;
+    })();
+  </script>
+</body>
+</html>

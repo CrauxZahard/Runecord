@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Runecord — Chat that runs on your machine</title>
+  <meta name="description" content="Runecord is a self-hosted, GPU-native chat client with servers, channels, voice, video and DMs. Built in Rust on Rune. Your machine, your data, your rules.">
+  <meta name="theme-color" content="#020617">
+  <link rel="canonical" href="https://crauxzahard.github.io/Runecord/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Runecord — Chat that runs on your machine">
+  <meta property="og:description" content="A self-hosted, GPU-native chat client with servers, channels, voice and DMs. Built in Rust on Rune.">
+  <meta property="og:url" content="https://crauxzahard.github.io/Runecord/">
+  <meta property="og:image" content="https://crauxzahard.github.io/Runecord/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://crauxzahard.github.io/Runecord/assets/img/og.png">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/img/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>
+    (function () {
+      document.documentElement.classList.add('js');
+      try {
+        if (localStorage.getItem('runecord-theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.8-.8L3 21l1.9-5.4A8.3 8.3 0 0 1 4 11.5 8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5Z"/><path d="M8.5 11.5h.01M12.5 11.5h.01M16.5 11.5h.01"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5M8.5 21.5h7"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.4c0 4.6 3.1 8.1 7.5 9.6 4.4-1.5 7.5-5 7.5-9.6V6L12 3Z"/><path d="m8.8 11.8 2.2 2.2 4.3-4.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.6-3.5 3-5.4 6.2-5.4s5.6 1.9 6.2 5.4"/><path d="M16 5.2a3.3 3.3 0 0 1 0 6.4M17.6 14.9c2.2.5 3.6 2.2 4 5.1"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3.2 13.7 8 18.5 9.7 13.7 11.4 12 16.2 10.3 11.4 5.5 9.7 10.3 8 12 3.2Z"/><path d="M18.5 15.5 19.4 18l2.5.9-2.5.9-.9 2.5-.9-2.5L15 18.9l2.5-.9.9-2.5Z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10" width="15" height="10.5" rx="2.5"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10M12 14.2v2.3"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="7" rx="2"/><rect x="3.5" y="13" width="17" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h5M11 16.5h5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10.5 12 15l5-4.5"/><path d="M4 18.5v1A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-1"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5 10.7 4.4v7.1H3V5.5Zm0 13L10.7 19.6v-7.1H3v6ZM11.7 4.2 21 3v8.5h-9.3V4.2Zm0 15.6L21 21v-8.5h-9.3v7.3Z"/></symbol>
+    <symbol id="i-apple" viewBox="0 0 24 24"><path d="M16.6 12.7c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-3-.8-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.8 1.1 9 .8 1.1 1.7 2.3 2.9 2.2 1.2 0 1.6-.7 3.1-.7s1.8.7 3 .7c1.3 0 2.1-1.1 2.9-2.2.9-1.3 1.3-2.5 1.3-2.6-.1 0-2.9-1.1-2.9-4.6ZM14.5 6c.6-.8 1.1-1.9 1-2.9-.9 0-2 .6-2.7 1.4-.6.7-1.1 1.9-1 2.9 1 .1 2-.6 2.7-1.4Z"/></symbol>
+    <symbol id="i-android" viewBox="0 0 24 24"><path d="M7.2 8.4h9.6c.6 0 1 .4 1 1v8.2c0 .7-.5 1.2-1.2 1.2h-.8v2.3a1.3 1.3 0 0 1-2.6 0v-2.3h-2.4v2.3a1.3 1.3 0 0 1-2.6 0v-2.3h-.8c-.7 0-1.2-.5-1.2-1.2V9.4c0-.6.4-1 1-1ZM4.8 9.1c.7 0 1.2.5 1.2 1.2v4.4a1.2 1.2 0 1 1-2.4 0v-4.4c0-.7.5-1.2 1.2-1.2Zm14.4 0c.7 0 1.2.5 1.2 1.2v4.4a1.2 1.2 0 1 1-2.4 0v-4.4c0-.7.5-1.2 1.2-1.2ZM8.3 4.2l-1-1.7M15.7 4.2l1-1.7M8 7.4a4.6 4.6 0 0 1 8 0H8Z"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.6 2 12.2c0 4.5 2.9 8.3 6.8 9.7.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5a10.1 10.1 0 0 0 6.8-9.7C22 6.6 17.5 2 12 2Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.6A8.6 8.6 0 0 1 9.4 4 8.6 8.6 0 1 0 20 14.6Z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5L8 5.5Z"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12.5" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol>
+  </svg>
+
+  <div class="meta-bar" aria-hidden="true">
+    <span>RUNECORD / FIELD MANUAL</span>
+    <span>RUST + RUNE</span>
+    <span>BUILD 0.1.0 / 2026</span>
+  </div>
+
+  <header class="site-head" id="top">
+    <div class="wrap head-inner">
+      <a class="brand" href="index.html" aria-label="Runecord home">
+        <img src="assets/img/logo.svg" width="34" height="34" alt="">
+        <span class="brand-name">RUNECORD</span>
+        <span class="brand-build">/ 0.1.0</span>
+      </a>
+
+      <nav class="nav" id="nav" aria-label="Main navigation">
+        <a href="#features">FEATURES</a>
+        <a href="#voice">VOICE</a>
+        <a href="#community">COMMUNITY</a>
+        <a href="#download">DOWNLOAD</a>
+        <a href="../Runecord-backend/">DEVELOPERS</a>
+        <a class="nav-icon" href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener" aria-label="Runecord on GitHub">
+          <svg class="icon"><use href="#i-github"/></svg>
+        </a>
+      </nav>
+
+      <div class="head-actions">
+        <button class="icon-btn theme-toggle" type="button" aria-label="Switch to light theme" title="Switch theme">
+          <svg class="icon icon-sun"><use href="#i-sun"/></svg>
+          <svg class="icon icon-moon"><use href="#i-moon"/></svg>
+        </button>
+        <a class="btn btn-primary btn-sm head-dl" href="#download">DOWNLOAD</a>
+        <button class="icon-btn menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav">
+          <svg class="icon menu-open"><use href="#i-menu"/></svg>
+          <svg class="icon menu-close"><use href="#i-close"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="hero-grid-bg" aria-hidden="true"></div>
+      <div class="hero-orbit" aria-hidden="true"></div>
+
+      <div class="wrap hero-layout">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-index">01</span> SELF-HOSTED CHAT / DESKTOP</p>
+          <h1>
+            <span>YOUR CHAT.</span>
+            <span>YOUR MACHINE.</span>
+            <span class="mark">YOUR RULES.</span>
+          </h1>
+          <p class="hero-lede">Runecord is a Discord-style chat client with servers, channels, voice, DMs and a Rust backend that runs where you do. No cloud account, and nothing in the request path you don't control.</p>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="#download">
+              <svg class="icon"><use href="#i-download"/></svg>
+              DOWNLOAD BUILD
+            </a>
+            <a class="btn btn-ghost btn-lg" href="../Runecord-backend/">
+              DEVELOPER API
+              <svg class="icon"><use href="#i-up"/></svg>
+            </a>
+          </div>
+
+          <dl class="hero-specs">
+            <div><dt>PLATFORMS</dt><dd>Windows / macOS / Android</dd></div>
+            <div><dt>RUNTIME</dt><dd>Rust + Rune</dd></div>
+            <div><dt>STORAGE</dt><dd>Local / AES-256-GCM</dd></div>
+          </dl>
+        </div>
+
+        <figure class="hero-figure">
+          <div class="figure-meta">
+            <span>FIG. 01 — RUNE LOUNGE</span>
+            <span>DESKTOP CLIENT / 2720 × 1720</span>
+          </div>
+          <div class="screen">
+            <div class="screen-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="screen-title">RUNECORD / RUNE LOUNGE</span>
+              <span class="screen-size">1440 × 900</span>
+            </div>
+            <img src="assets/img/screens/hero-1600.jpg" srcset="assets/img/screens/hero-800.jpg 800w, assets/img/screens/hero-1600.jpg 1600w" sizes="(max-width: 980px) 94vw, 660px" width="1600" height="1012" alt="The Runecord desktop client showing a busy chat channel with messages, reactions and a member list">
+          </div>
+          <figcaption>
+            <span>01 / SERVER RAIL</span>
+            <span>02 / MESSAGE ROWS</span>
+            <span>03 / PRESENCE</span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="wrap ticker" aria-label="Product capabilities">
+        <span>SERVERS</span><span>CHANNELS</span><span>THREADS</span><span>VOICE</span><span>VIDEO</span><span>ROLES</span><span>DMS</span><span>SEARCH</span><span>EVENTS</span><span>WEBHOOKS</span>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <header class="section-head">
+          <div class="sec-label"><span>[ 02 ]</span> CAPABILITIES</div>
+          <div class="sec-copy">
+            <h2>Six things it does properly.</h2>
+            <p>These are the parts that decide whether a chat client is livable after the first week.</p>
+          </div>
+        </header>
+
+        <div class="index-list">
+          <a class="index-row reveal" href="#chat">
+            <span class="index-num">01</span>
+            <h3>Messaging</h3>
+            <p>Channels, threads, reactions, pins and search. The message list stays smooth in long channels.</p>
+            <span class="index-tag">REALTIME</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#voice">
+            <span class="index-num">02</span>
+            <h3>Voice &amp; video</h3>
+            <p>Camera, screen share, soundboard, push-to-talk and per-person volume.</p>
+            <span class="index-tag">AUDIO / VIDEO</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#community">
+            <span class="index-num">03</span>
+            <h3>Roles &amp; permissions</h3>
+            <p>Channel overwrites, timeouts, kicks, bans, prune previews, appeals and audit entries.</p>
+            <span class="index-tag">MODERATION</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#community">
+            <span class="index-num">04</span>
+            <h3>Friends &amp; DMs</h3>
+            <p>Presence, group DMs, read state and one inbox for mentions and unread messages.</p>
+            <span class="index-tag">SOCIAL</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#community">
+            <span class="index-num">05</span>
+            <h3>Profiles</h3>
+            <p>Avatars, banners, effects, nameplates, role icons and custom status.</p>
+            <span class="index-tag">IDENTITY</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#local">
+            <span class="index-num">06</span>
+            <h3>Self-hosted</h3>
+            <p>Encrypted SQLite, hashed tokens and zero cloud dependencies.</p>
+            <span class="index-tag">STORAGE</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" id="chat">
+      <div class="wrap case-grid">
+        <div class="case-copy reveal">
+          <div class="sec-label"><span>[ 03 ]</span> MESSAGING</div>
+          <h2>Messages keep their place.</h2>
+          <p>Threads branch without noise, reactions land instantly, and a virtualized row list keeps long channels responsive. Search reaches the history you already have.</p>
+          <ul class="bullets">
+            <li>Channels, threads, forums and pins</li>
+            <li>Reactions, mentions and full-text search</li>
+            <li>Attachments, embeds and encrypted uploads</li>
+          </ul>
+          <a class="link-arrow" href="../Runecord-backend/api-reference.html">OPEN THE API REFERENCE <svg class="icon"><use href="#i-up"/></svg></a>
+        </div>
+        <figure class="case-figure reveal">
+          <div class="screen">
+            <div class="screen-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="screen-title"># RUNE DESIGN NOTES</span>
+              <span class="screen-size">THREAD / 03 REPLIES</span>
+            </div>
+            <img src="assets/img/screens/chat-1600.jpg" srcset="assets/img/screens/chat-800.jpg 800w, assets/img/screens/chat-1600.jpg 1600w" sizes="(max-width: 900px) 94vw, 700px" width="1600" height="1012" loading="lazy" alt="A Runecord thread inside a channel with replies and a member list">
+          </div>
+          <figcaption><span>FIG. 02</span> THREAD VIEW / RUNE LOUNGE</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="case reverse" id="voice">
+      <div class="wrap case-grid">
+        <figure class="case-figure reveal">
+          <div class="screen">
+            <div class="screen-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="screen-title">VOICE / GENERAL</span>
+              <span class="screen-size">CAMERA + SCREEN SHARE</span>
+            </div>
+            <img src="assets/img/screens/voice-1600.jpg" srcset="assets/img/screens/voice-800.jpg 800w, assets/img/screens/voice-1600.jpg 1600w" sizes="(max-width: 900px) 94vw, 700px" width="1600" height="1012" loading="lazy" alt="A Runecord voice channel with two participants, one sharing their screen">
+          </div>
+          <figcaption><span>FIG. 03</span> VOICE ROOM / TWO PARTICIPANTS</figcaption>
+        </figure>
+        <div class="case-copy reveal">
+          <div class="sec-label"><span>[ 04 ]</span> VOICE</div>
+          <h2>A room, not a call.</h2>
+          <p>Join a voice channel and talk. Share a screen, turn on the camera, or fire a soundboard clip while your mic is muted. Voice state syncs to every client in the server.</p>
+          <ul class="bullets">
+            <li>Camera, screen share and simulcast</li>
+            <li>Push-to-talk, sensitivity and mic test</li>
+            <li>Soundboard and per-user volume</li>
+          </ul>
+          <a class="link-arrow" href="../Runecord-backend/gateway.html">READ THE GATEWAY <svg class="icon"><use href="#i-up"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="case" id="community">
+      <div class="wrap case-grid">
+        <div class="case-copy reveal">
+          <div class="sec-label"><span>[ 05 ]</span> COMMUNITIES</div>
+          <h2>Moderation leaves a paper trail.</h2>
+          <p>Roles, invites, discovery, scheduled events, timeouts, prune previews, ban appeals and audit entries. All of it ships with the server.</p>
+          <ul class="bullets">
+            <li>Role hierarchies, icons and channel overwrites</li>
+            <li>Invites, discovery and scheduled events</li>
+            <li>Audit log, bans, timeouts and appeals</li>
+          </ul>
+          <a class="link-arrow" href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener">VIEW THE SOURCE <svg class="icon"><use href="#i-up"/></svg></a>
+        </div>
+        <figure class="case-figure reveal">
+          <div class="screen">
+            <div class="screen-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="screen-title"># SHOWCASE / FORUM</span>
+              <span class="screen-size">ROLE-GROUPED MEMBERS</span>
+            </div>
+            <img src="assets/img/screens/forum-1600.jpg" srcset="assets/img/screens/forum-800.jpg 800w, assets/img/screens/forum-1600.jpg 1600w" sizes="(max-width: 900px) 94vw, 700px" width="1600" height="1012" loading="lazy" alt="A Runecord forum channel with posts and a role-grouped member list">
+          </div>
+          <figcaption><span>FIG. 04</span> FORUM CHANNEL / RUNE LOUNGE</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="manifesto" aria-label="Runecord at a glance">
+      <div class="wrap manifesto-grid">
+        <div class="manifesto-item reveal"><strong>~09</strong><span>MB CLIENT MEMORY</span></div>
+        <div class="manifesto-item reveal"><strong>120</strong><span>FPS GPU-NATIVE UI</span></div>
+        <div class="manifesto-item reveal"><strong>00</strong><span>CLOUD SERVICES</span></div>
+        <div class="manifesto-item reveal"><strong>AES-256</strong><span>ENCRYPTED AT REST</span></div>
+      </div>
+    </section>
+
+    <section class="section local" id="local">
+      <div class="wrap local-grid">
+        <div class="local-copy reveal">
+          <div class="sec-label"><span>[ 06 ]</span> LOCAL-FIRST</div>
+          <h2>The server is yours.<br>So is the database.</h2>
+          <p>Runecord stores its database and uploads in a folder you control. The database and CDN files are sealed with AES-256-GCM; session and bot tokens are stored as hashes.</p>
+          <ul class="bullets">
+            <li>Key generated on first launch</li>
+            <li>Encrypted flushes after writes</li>
+            <li>Reverse-proxy friendly gateway and voice sockets</li>
+          </ul>
+        </div>
+
+        <div class="local-panel reveal">
+          <div class="flow" aria-label="Data flow">
+            <span>CLIENT</span><i>→</i><span>LOCAL API</span><i>→</i><span>AES-256 DB</span>
+          </div>
+          <div class="terminal">
+            <div class="term-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="term-title">run.bat</span>
+            </div>
+            <pre><code><span class="term-prompt">$</span> run.bat
+<span class="term-ok">[ok]</span> backend  <span class="term-str">127.0.0.1:47800</span>
+<span class="term-ok">[ok]</span> client window opened
+<span class="term-key">[key]</span> data/runecord.db.enc
+<span class="term-warn">[note]</span> keep data/key.bin</code></pre>
+          </div>
+          <div class="local-facts">
+            <div><span>DATA DIR</span><code>data/</code></div>
+            <div><span>TRANSPORT</span><code>HTTP + WS</code></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="download" id="download">
+      <div class="wrap">
+        <header class="download-head">
+          <div class="sec-label"><span>[ 07 ]</span> BUILDS</div>
+          <div class="download-copy">
+            <h2>Installers are in the queue.</h2>
+            <p>Windows and macOS builds are being packaged and signed. Android follows the desktop clients. The source runs today.</p>
+          </div>
+        </header>
+
+        <div class="platform-table-wrap">
+          <table class="platform-table">
+            <thead>
+              <tr><th>Platform</th><th>Target</th><th>Arch</th><th>Status</th><th>Build</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><span class="platform-ico"><svg class="icon"><use href="#i-windows"/></svg></span> Windows</th>
+                <td data-label="Target">Desktop client</td>
+                <td data-label="Arch">x64</td>
+                <td data-label="Status"><span class="status queued">QUEUED</span></td>
+                <td data-label="Build">
+                  <span class="tooltip" tabindex="0" role="group" aria-label="Download for Windows. Installer coming soon." data-tip="Installer coming soon">
+                    <button class="btn btn-primary dl-btn" type="button" disabled>DOWNLOAD <span class="soon">SOON</span></button>
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row"><span class="platform-ico"><svg class="icon"><use href="#i-apple"/></svg></span> macOS</th>
+                <td data-label="Target">Desktop client</td>
+                <td data-label="Arch">Apple silicon</td>
+                <td data-label="Status"><span class="status queued">QUEUED</span></td>
+                <td data-label="Build">
+                  <span class="tooltip" tabindex="0" role="group" aria-label="Download for macOS. Installer coming soon." data-tip="Installer coming soon">
+                    <button class="btn btn-primary dl-btn" type="button" disabled>DOWNLOAD <span class="soon">SOON</span></button>
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row"><span class="platform-ico"><svg class="icon"><use href="#i-android"/></svg></span> Android</th>
+                <td data-label="Target">Mobile client</td>
+                <td data-label="Arch">arm64</td>
+                <td data-label="Status"><span class="status planned">PLANNED</span></td>
+                <td data-label="Build">
+                  <span class="tooltip" tabindex="0" role="group" aria-label="Download for Android. App coming soon." data-tip="Android app coming soon">
+                    <button class="btn btn-primary dl-btn" type="button" disabled>DOWNLOAD <span class="soon">SOON</span></button>
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="download-note">Until installers land: <a href="https://github.com/CrauxZahard/Runecord#run-it" target="_blank" rel="noopener">build from source <svg class="icon"><use href="#i-up"/></svg></a></p>
+      </div>
+    </section>
+
+    <section class="section faq" id="faq">
+      <div class="wrap faq-layout">
+        <div class="faq-aside reveal">
+          <div class="sec-label"><span>[ 08 ]</span> ANSWERS</div>
+          <h2>Read this first.</h2>
+          <p>Still curious? The source and the developer docs are open.</p>
+          <a class="link-arrow" href="../Runecord-backend/">DEVELOPER PORTAL <svg class="icon"><use href="#i-up"/></svg></a>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">01</span> Is Runecord a Discord client?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>No. Runecord never talks to Discord. It is an independent, self-hosted client with a familiar desktop layout. It is not affiliated with or endorsed by Discord Inc.</p></div>
+          </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">02</span> Do I need my own server?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>The desktop client talks to the Runecord backend. Run both with one launcher on the same machine, or host the backend on a box you control and point the client at that URL.</p></div>
+          </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">03</span> Where is my data?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>In the backend's <code>data/</code> folder. The database and uploads are encrypted with AES-256-GCM, and tokens are stored as hashes. Keep <code>key.bin</code> safe: without it the data cannot be read.</p></div>
+          </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">04</span> What does it cost?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>Nothing. Runecord is self-hosted and has no subscription, cloud account or usage fees. You pay for the hardware you run it on.</p></div>
+          </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">05</span> Can I build bots and integrations?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>Yes. Bot accounts, an HTTP API, a native WebSocket gateway and a Discord-compatible <code>/api/v1</code> surface with a matching <code>/gateway/v1</code>.</p></div>
+          </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">06</span> When are installers ready?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>Desktop builds first, Android after. Until then, the repository has a working source build and launcher scripts.</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap cta-grid">
+        <div class="cta-copy reveal">
+          <div class="sec-label light"><span>[ 09 ]</span> TAKE IT</div>
+          <h2>RUN IT LOCALLY.<br>READ THE SOURCE.</h2>
+        </div>
+        <div class="cta-actions reveal">
+          <a class="btn btn-invert btn-lg" href="#download">DOWNLOAD BUILD <svg class="icon"><use href="#i-download"/></svg></a>
+          <a class="btn btn-outline-light btn-lg" href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener"><svg class="icon"><use href="#i-github"/></svg> STAR ON GITHUB</a>
+        </div>
+        <img class="cta-logo" src="assets/img/logo.svg" width="220" height="220" alt="" aria-hidden="true">
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="index.html" aria-label="Runecord home">
+          <img src="assets/img/logo.svg" width="32" height="32" alt="">
+          <span class="brand-name">RUNECORD</span>
+        </a>
+        <p>A self-hosted chat client built with Rust and Rune. Your machine, your data, your rules.</p>
+        <p class="foot-fine">NOT AFFILIATED WITH DISCORD INC.</p>
+      </div>
+      <div class="foot-col">
+        <h4>PRODUCT</h4>
+        <a href="#features">Features</a>
+        <a href="#voice">Voice &amp; video</a>
+        <a href="#community">Communities</a>
+        <a href="#download">Download</a>
+      </div>
+      <div class="foot-col">
+        <h4>DEVELOPERS</h4>
+        <a href="../Runecord-backend/">Developer portal</a>
+        <a href="../Runecord-backend/getting-started.html">Getting started</a>
+        <a href="../Runecord-backend/api-reference.html">API reference</a>
+        <a href="../Runecord-backend/gateway.html">Gateway</a>
+      </div>
+      <div class="foot-col">
+        <h4>PROJECT</h4>
+        <a href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener">Client source</a>
+        <a href="https://github.com/CrauxZahard/Runecord-backend" target="_blank" rel="noopener">Backend source</a>
+        <a href="../Runecord-backend/">Developer docs</a>
+        <a href="#top">Back to top</a>
+      </div>
+    </div>
+    <div class="wrap foot-base">
+      <span>© <span id="year">2026</span> RUNECORD</span>
+      <span>BUILT WITH RUST + RUNE / SELF-HOSTED</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/js/site.js"></script>
+</body>
+</html>
