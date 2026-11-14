@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 runecord-protocol = { path = "../../../Runecord-backend/crates/protocol" }
+runecord-server = { path = "../../../Runecord-backend/crates/server", optional = true }
 rune = { path = "../../../rune/crates/rune" }
 rune-kit = { path = "../../../rune/crates/rune-kit", default-features = false, features = ["markdown"] }
 rune-motion = { path = "../../../rune/crates/rune-motion" }
@@ -26,6 +27,19 @@ image-webp = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
 urlencoding = "2"
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
+[features]
+# Packaging feature: bundles the backend into the client process so a single
+# executable is enough. The default build still expects a separate server.
+embedded-server = [
+    "dep:runecord-server",
+    "dep:tokio",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+]
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

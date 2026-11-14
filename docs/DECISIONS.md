@@ -195,3 +195,25 @@ reviewable commits.
 **Consequences.** Moves can be verified by `cargo test` plus diff review, and
 regressions are attributable to a single behavioural change. Tests were kept
 and expanded, never removed or relaxed.
+
+## 15. Single-executable packaging is an opt-in feature
+
+**Context.** The client and server are separate processes by design, but a
+downloadable desktop app should open from one double-click without a launcher
+or a visible console. Shipping a wrapper executable that spawns
+`runecord-server.exe` was rejected: it is still a launcher, and a stray console
+or orphaned child process is easy to hit.
+
+**Decision.** Add the `embedded-server` feature. It links `runecord-server`
+and starts it on a loopback thread inside the client process; the app uses the
+same HTTP and WebSocket endpoints as before, just against a local server it
+owns. The feature is off by default; `build.bat` enables it and stages
+`dist\Runecord.exe`.
+
+**Consequences.** One process, one window, no launcher. The binary is larger
+and the packaging build pulls axum, rusqlite and image into the client graph,
+so development builds and the default two-process release stay slim. Embedded
+mode is limited to literal loopback URLs; remote servers still require an
+external deployment, and a missing/invalid key falls back to the existing
+startup errors. The server writes to `%APPDATA%\Runecord\server` instead of the
+repository's `data/`.

@@ -7,6 +7,8 @@ mod app;
 pub mod bootstrap;
 pub mod cache;
 mod config;
+#[cfg(feature = "embedded-server")]
+mod embedded;
 mod icons;
 mod image_anim;
 mod net;

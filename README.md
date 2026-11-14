@@ -157,11 +157,24 @@ Run the same set in `..\Runecord-backend`. See `docs/ARCHITECTURE.md` for the mo
 build.bat
 ```
 
-builds both repositories. `run.bat` builds and launches the debug binaries, so it always shows the current source; use the commands below for release builds.
+builds both repositories and stages a double-clickable test build in `dist\`:
+
+- `dist\Runecord.exe` — the client with the backend embedded in the same
+  process. Double-clicking it opens the app directly: no launcher, no console
+  window, no child process.
+- `dist\runecord-server.exe` — the standalone backend, for hosting separately.
+
+The embedded server keeps its encrypted database, key, media and log under
+`%APPDATA%\Runecord\server`, so `dist\` stays portable and disposable.
+
+For development, `run.bat` still builds and launches the two debug binaries so
+each run shows the current source. The two-process release build remains
+available without the packaging feature:
 
 ```bat
-cargo build --release -p runecord            :: frontend
+cargo build --release -p runecord            :: client only
 ..\Runecord-backend\run-server.bat           :: backend (dev)
+cargo build --release -p runecord --features embedded-server   :: single file
 ```
 
 For headless UI checks the client supports Rune's tooling:

@@ -26,6 +26,16 @@ client by path from `..\Runecord-backend\crates\protocol`).
 | `..\Runecord-backend\crates\server` | HTTP API, gateway, storage |
 | `..\rune` | Rune UI framework (path dependency) |
 
+### Packaging mode
+
+The default build is two processes: start `runecord-server`, then the client.
+The opt-in `embedded-server` feature links the server crate and starts it on a
+loopback thread inside the client process, so `dist\Runecord.exe` is a single
+double-clickable application. Embedded mode only activates when the configured
+URL is a literal loopback address without a running Runecord server; remote
+URLs and `localhost` keep the normal two-process behaviour. See
+`docs/DECISIONS.md` for the trade-off.
+
 ## Client layers
 
 The client is one crate with a thin binary. `src/main.rs` calls

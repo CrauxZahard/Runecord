@@ -5,6 +5,7 @@
 # Local runtime data and generated screenshot evidence
 /data/
 /shots/
+/dist/
 
 # .NET helper build output
 **/bin/

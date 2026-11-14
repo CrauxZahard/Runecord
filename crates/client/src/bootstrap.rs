@@ -19,6 +19,9 @@ const FONTS: &[&[u8]] = &[
 ];
 
 pub fn run() {
+    #[cfg(feature = "embedded-server")]
+    crate::embedded::ensure_backend();
+
     let icon = std::path::PathBuf::from("assets/icon.png");
     let icon = if icon.exists() {
         icon
