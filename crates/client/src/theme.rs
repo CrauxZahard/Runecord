@@ -1,4 +1,4 @@
-//! Discord's palette and type scale, as tokens.
+//! Runecord's palette and type scale, as tokens.
 
 use rune::{Color, TextStyle};
 
@@ -181,4 +181,56 @@ pub fn avatar_color_value(seed: u32) -> u32 {
         0x7289da,
     ];
     COLORS[(seed as usize) % COLORS.len()]
+}
+
+fn parse_hex(value: &str) -> Option<u32> {
+    u32::from_str_radix(value.trim_start_matches('#'), 16).ok()
+}
+
+/// Encode a custom nameplate. Kept inside the existing `nameplate: String`
+/// field so no schema change is needed: `p:rrggbb` is a solid primary colour,
+/// `g:rrggbb:rrggbb` is a primary -> secondary gradient.
+pub fn encode_nameplate(primary: u32, secondary: u32, gradient: bool) -> String {
+    if gradient {
+        format!("g:{primary:06x}:{secondary:06x}")
+    } else {
+        format!("p:{primary:06x}")
+    }
+}
+
+/// (primary, secondary, is_gradient)
+pub fn nameplate_values(kind: &str) -> Option<(u32, u32, bool)> {
+    match kind {
+        "midnight" => Some((0x8ea2ff, 0x5865f2, true)),
+        "aurora" => Some((0x1db954, 0x00d4ff, true)),
+        "sunset" => Some((0xff73fa, 0xfaa61a, true)),
+        "candy" => Some((0xff73fa, 0xffb3fd, true)),
+        _ => {
+            let mut parts = kind.split(':');
+            match parts.next()? {
+                "p" => {
+                    let primary = parse_hex(parts.next()?)?;
+                    Some((primary, primary, false))
+                }
+                "g" => {
+                    let primary = parse_hex(parts.next()?)?;
+                    let secondary = parse_hex(parts.next()?)?;
+                    Some((primary, secondary, true))
+                }
+                _ => None,
+            }
+        }
+    }
+}
+
+/// Nameplate colours for the profile. The name is drawn in the primary colour,
+/// with the secondary colour faded in toward the bottom for gradients.
+pub fn nameplate_colors(kind: &str) -> Option<(Color, Color, bool)> {
+    nameplate_values(kind).map(|(primary, secondary, gradient)| {
+        (
+            color(&format!("#{primary:06x}")),
+            color(&format!("#{secondary:06x}")),
+            gradient,
+        )
+    })
 }

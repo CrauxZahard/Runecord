@@ -111,8 +111,8 @@ pub(crate) fn explore_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("explore")
-        .w(680.0)
-        .h(540.0)
+        .w(sheet_w(680.0))
+        .h(sheet_h(540.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -256,8 +256,8 @@ pub(crate) fn pins_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("pins")
-        .w(540.0)
-        .h(560.0)
+        .w(sheet_w(540.0))
+        .h(sheet_h(560.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -471,7 +471,7 @@ pub(crate) fn privacy_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("privacy")
-        .w(520.0)
+        .w(sheet_w(520.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)

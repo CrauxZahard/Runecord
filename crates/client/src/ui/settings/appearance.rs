@@ -63,6 +63,44 @@ pub(crate) fn appearance_tab(s: &App, p: Palette) -> El {
         .w_full()
         .gap(16.0)
         .child(settings_title("Appearance", "Theme applies instantly and is remembered for this profile.", p))
+        .child(text("LANGUAGE").font(theme::SECTION).color(p.text_muted))
+        .child({
+            let mut chips = row().w_full().gap(8.0).flex_wrap();
+            for locale in crate::i18n::locales() {
+                let selected = crate::i18n::locale() == locale;
+                chips = chips.child(
+                    el().key(format!("locale-{}", locale.tag()))
+                        .h(32.0)
+                        .px(12.0)
+                        .radius(4.0)
+                        .center()
+                        .role("radio")
+                        .label(locale.label())
+                        .checked(selected)
+                        .fill(if selected { p.accent } else { p.card })
+                        .hover(p.card_hover)
+                        .on_press(move |s: &mut App| s.set_locale(locale))
+                        .child(
+                            text(locale.label())
+                                .font(theme::SMALL_MED)
+                                .color(if selected { Color::WHITE } else { p.text_muted }),
+                        ),
+                );
+            }
+            chips
+        })
+        .child(
+            text({
+                let (done, total) = crate::i18n::coverage();
+                if done == 0 {
+                    "English is the source language; picking another translates the navigation and settings chrome.".to_string()
+                } else {
+                    format!("{done} of {total} navigation strings translated.")
+                }
+            })
+            .font(theme::TINY)
+            .color(p.text_faint),
+        )
         .child(text("THEME").font(theme::SECTION).color(p.text_muted))
         .child(row().gap(16.0).child(theme_card("Dark", true)).child(theme_card("Light", false)))
         .child(

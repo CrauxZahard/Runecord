@@ -133,6 +133,7 @@ impl App {
             true
         };
         let wants_toast = channel_allows && global_allows;
+        #[cfg(not(target_arch = "wasm32"))]
         if wants_toast && !mine && !rune::is_headless() && !rune_notify::app_focused() {
             let title = if is_dm {
                 self.user_name(author_id)
@@ -154,6 +155,8 @@ impl App {
                     .info("channel", channel_id.to_string()),
             );
         }
+        #[cfg(target_arch = "wasm32")]
+        let _ = (wants_toast, mine);
         self.trim_channel(channel_id);
         self.mark_cache_dirty();
     }

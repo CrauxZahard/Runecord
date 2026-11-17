@@ -60,7 +60,7 @@ pub(crate) fn threads_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("threads-sheet")
-        .w(480.0)
+        .w(sheet_w(480.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(16.0)
@@ -113,7 +113,7 @@ pub(crate) fn thread_create_sheet(s: &App, p: Palette, parent: Id, message: Opti
         .is_some_and(|channel| channel.kind == ChannelKind::Forum);
     let mut form = col()
         .key("thread-create")
-        .w(440.0)
+        .w(sheet_w(440.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)
@@ -179,6 +179,38 @@ pub(crate) fn thread_create_sheet(s: &App, p: Palette, parent: Id, message: Opti
                 .padding(10.0)
                 .on_edit(|s: &mut App| &mut s.thread_body),
         );
+        let tags: Vec<runecord_protocol::ForumTag> = s
+            .forum_tags
+            .iter()
+            .filter(|tag| tag.channel_id == parent)
+            .cloned()
+            .collect();
+        if !tags.is_empty() {
+            let mut chips = row().gap(6.0).flex_wrap();
+            for tag in tags {
+                let id = tag.id;
+                let selected = s.thread_tag_ids.contains(&id);
+                chips = chips.child(
+                    el().key(format!("thread-tag-{id}"))
+                        .h(26.0)
+                        .px(10.0)
+                        .radius(13.0)
+                        .center()
+                        .role("checkbox")
+                        .label(format!("Tag post with {}", tag.name))
+                        .checked(selected)
+                        .fill(if selected { p.accent } else { p.input })
+                        .hover(p.card_hover)
+                        .on_press(move |s: &mut App| s.toggle_thread_tag(id))
+                        .child(
+                            text(format!("{}{}", tag.emoji, tag.name))
+                                .font(theme::TINY)
+                                .color(if selected { Color::WHITE } else { p.text_muted }),
+                        ),
+                );
+            }
+            form = form.child(chips);
+        }
     }
     form.child(
         row()

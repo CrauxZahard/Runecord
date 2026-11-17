@@ -63,10 +63,9 @@ pub(crate) fn image_section(s: &App, guild: &GuildSummary, banner: bool, p: Pale
     } else {
         "SERVER ICON"
     };
-    let locked = banner && guild.boost_level < 2;
-    let description = if locked {
-        "Unlocks at Boost Level 2 (7 Boosts). Landscape, ideally 16:9."
-    } else if banner {
+    // Every image perk is unlocked; reputation no longer gates server images.
+    let locked = false;
+    let description = if banner {
         "Shown at the top of the channel list and on invites. Landscape, ideally 16:9."
     } else {
         "Shown in the server rail, invites and settings. Square, at least 128×128."
@@ -128,22 +127,22 @@ pub(crate) fn image_section(s: &App, guild: &GuildSummary, banner: bool, p: Pale
                 if locked {
                     return;
                 }
-                let options = rune::FileDialogOptions {
-                    title: if banner {
-                        "Upload server banner".to_string()
+                let kind = if banner {
+                    crate::files::PickKind::GuildBanner
+                } else {
+                    crate::files::PickKind::GuildIcon
+                };
+                crate::files::open(
+                    tx,
+                    kind.clone(),
+                    if banner {
+                        "Upload server banner"
                     } else {
-                        "Upload server icon".to_string()
+                        "Upload server icon"
                     },
-                    directory: None,
-                    file_name: None,
-                    filters: Vec::new(),
-                }
-                .filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]);
-                tx.open_file(options, move |s: &mut App, result, _| {
-                    if let Ok(Some(path)) = result {
-                        s.begin_guild_image_crop(path, banner);
-                    }
-                });
+                    &["png", "jpg", "jpeg", "gif", "webp"],
+                    move |s, path| s.accept_picked_path(kind.clone(), path),
+                );
             })
             .child(text(upload_label).font(theme::SMALL_MED).color(if locked {
                 p.text_faint
@@ -196,7 +195,10 @@ pub(crate) fn image_section(s: &App, guild: &GuildSummary, banner: bool, p: Pale
                         if locked {
                             s.toast("Server banners unlock at Boost Level 2 (7 Boosts)");
                         } else {
-                            s.begin_guild_image_crop(file.clone(), banner);
+                            s.begin_guild_image_crop(
+                                crate::net::UploadSource::Path(file.clone()),
+                                banner,
+                            );
                         }
                     }
                 })
@@ -254,20 +256,7 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
         ((boosts.saturating_sub(prev_level)) as f32 / (next_level - prev_level) as f32)
             .clamp(0.0, 1.0)
     };
-    let next_kbps = match level {
-        0 => 128,
-        1 => 256,
-        2 => 384,
-        _ => 384,
-    };
-    let next_mb = match level {
-        0 => 64,
-        1 => 96,
-        2 => 128,
-        _ => 128,
-    };
     let current_mb = guild.upload_limit_bytes / (1024 * 1024);
-    let remaining = next_level.saturating_sub(boosts);
     let perk_row = |locked: bool, label: String, detail: String, p: Palette| {
         row()
             .w_full()
@@ -291,36 +280,33 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                     .grow(1.0),
             )
     };
-    let mut perk_rows = col()
+    let perk_rows = col()
         .w_full()
         .gap(2.0)
         .child(perk_row(
             false,
             format!("{} kbps voice", guild.voice_kbps),
-            "Opus bitrate for everyone in this server".to_string(),
+            "Unlocked - top voice quality for everyone".to_string(),
             p,
         ))
         .child(perk_row(
             false,
             format!("{current_mb} MB uploads"),
-            "Per-file upload cap".to_string(),
+            "Unlocked - the highest file cap".to_string(),
+            p,
+        ))
+        .child(perk_row(
+            false,
+            "Animated server icon and banner".to_string(),
+            "Unlocked".to_string(),
+            p,
+        ))
+        .child(perk_row(
+            false,
+            "Custom role icons".to_string(),
+            "Unlocked".to_string(),
             p,
         ));
-    if level < 3 {
-        perk_rows = perk_rows
-            .child(perk_row(
-                true,
-                format!("{next_kbps} kbps voice"),
-                format!("{remaining} more Boosts for Level {}", level + 1),
-                p,
-            ))
-            .child(perk_row(
-                true,
-                format!("{next_mb} MB uploads"),
-                format!("{remaining} more Boosts for Level {}", level + 1),
-                p,
-            ));
-    }
     let badge = el()
         .h(22.0)
         .px(8.0)
@@ -407,7 +393,7 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                         .gap(8.0)
                         .child(icon(&icons::SPARKLES, 20.0).color(boost_pink))
                         .child(
-                            text("Server Boosts")
+                            text("Server Reputation")
                                 .font(theme::TITLE)
                                 .color(p.text_bright)
                                 .grow(1.0),
@@ -420,13 +406,10 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                         .center_y()
                         .gap(8.0)
                         .child(
-                            text(format!(
-                                "{boosts} {}",
-                                if boosts == 1 { "Boost" } else { "Boosts" }
-                            ))
-                            .font(theme::NAME)
-                            .color(p.text_bright)
-                            .grow(1.0),
+                            text(format!("{boosts} Reputation"))
+                                .font(theme::NAME)
+                                .color(p.text_bright)
+                                .grow(1.0),
                         )
                         .children((level < 3).then(|| {
                             text(format!("{next_level} for Level {}", level + 1))
@@ -450,13 +433,34 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                         .gap(8.0)
                         .children([(1u32, 2u32), (2, 7), (3, 14)].map(|(tier, at)| {
                             let reached = level >= tier;
-                            text(format!("Level {tier} · {at}"))
+                            text(format!("Level {tier} · {at} rep"))
                                 .font(theme::TINY)
                                 .color(if reached { boost_pink } else { p.text_faint })
                                 .grow(1.0)
                         })),
                 )
                 .child(perk_rows)
+                .children(
+                    (!guild.boosted_by_me && guild.reputation_cooldown_until > now_ms()).then(
+                        || {
+                            let days = ((guild.reputation_cooldown_until - now_ms()) as f64
+                                / (24.0 * 60.0 * 60.0 * 1000.0))
+                                .ceil();
+                            text(format!("Your reputation can move in {days} day(s)."))
+                                .font(theme::TINY)
+                                .color(p.yellow)
+                        },
+                    ),
+                )
+                .children(
+                    (!guild.boosted_by_me
+                        && now_ms().saturating_sub(s.me.created_at) < 30 * 24 * 60 * 60 * 1000)
+                        .then(|| {
+                            text("Your account must be one month old to give reputation.")
+                                .font(theme::TINY)
+                                .color(p.text_faint)
+                        }),
+                )
                 .child(row().w_full().justify_end().child(if guild.boosted_by_me {
                     el().key("overview-unboost")
                         .h(34.0)
@@ -464,11 +468,15 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                         .radius(4.0)
                         .center()
                         .role("button")
-                        .label("Remove Boost")
+                        .label("Remove Reputation")
                         .fill(p.rail)
                         .hover(p.danger.alpha(0.2))
                         .on_press(|s: &mut App| s.set_boost(false))
-                        .child(text("Remove Boost").font(theme::SMALL_MED).color(p.danger))
+                        .child(
+                            text("Remove Reputation")
+                                .font(theme::SMALL_MED)
+                                .color(p.danger),
+                        )
                 } else {
                     el().key("overview-boost")
                         .h(34.0)
@@ -476,12 +484,12 @@ pub(crate) fn overview_view(s: &App, p: Palette) -> El {
                         .radius(4.0)
                         .center()
                         .role("button")
-                        .label("Boost Server")
+                        .label("Give Reputation")
                         .fill(boost_pink)
                         .hover(boost_pink.alpha(0.85))
                         .on_press(|s: &mut App| s.set_boost(true))
                         .child(
-                            text("Boost Server")
+                            text("Give Reputation")
                                 .font(theme::SMALL_MED)
                                 .color(Color::WHITE),
                         )

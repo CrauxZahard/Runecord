@@ -217,3 +217,102 @@ mode is limited to literal loopback URLs; remote servers still require an
 external deployment, and a missing/invalid key falls back to the existing
 startup errors. The server writes to `%APPDATA%\Runecord\server` instead of the
 repository's `data/`.
+
+## 16. Free reputation replaces paid boosts, and ids are snowflakes
+
+**Context.** The product has no paid features, but the schema and UI carried
+the familiar boost levels, 48-128 MB upload gates and role-icon/banner tiers from
+the original clone. Separately, every entity used a small row counter, so ids
+could collide across restarts and could not carry mention syntax.
+
+**Decision.** Migration `0027_reputation` adds `guild_reputation` and
+`reputation_cooldowns` and copies existing boosts across. An account older than
+30 days may assign one reputation; moving it waits seven days. Reputation keeps
+the familiar 2/7/14 level display, but every perk is unlocked: 128 MB uploads,
+384 kbps voice, server banners and role icons. `next_id` now emits
+snowflake ids (`(ms since 2015) << 22 | sequence`), so new users, guilds, channels,
+roles and messages share one time-ordered id space. Existing demo rows keep
+their historical ids.
+
+**Consequences.** No billing or entitlement code is needed. Older `/boost`
+routes stay as aliases for `/reputation`. Clients can render and resolve
+`<@id>` and `<#id>` mentions, and their unread mention queries already match the
+same snowflake ids.
+
+## 17. Forwards are snapshots, not live links
+
+**Context.** Forwarding copies a message into another channel while still
+showing where it came from.
+
+**Decision.** A forward is a new message row whose content and attachments are
+copied from the source, plus a nullable `forwarded_from` pointer used only for
+the "Forwarded from #channel by author" header. The source can be deleted
+without breaking the forward. The client offers a channel/DM picker from the
+message menu; the server enforces `View Channel` on the source and
+`Send Messages` on the target.
+
+**Consequences.** Forwarded attachments are duplicated, so deleting the
+original media does not remove the forward's copy. Editing the original does
+not update existing forwards, matching a snapshot model.
+
+## 18. Polls are message attachments
+
+**Context.** Polls belong to a message and update in place as votes arrive.
+
+**Decision.** Store poll metadata, options and votes in `polls`,
+`poll_options` and `poll_votes`, keyed by message id. `Message.poll` is
+assembled by the message mapper, so every existing message path (list, search,
+reply, pin, gateway) carries polls without a second endpoint shape. Votes
+broadcast `MessageUpdate`. Single-choice voting replaces the voter's previous
+option; multiple-choice toggles each option. Expiry is checked on read and on
+vote.
+
+**Consequences.** Message and channel deletion remove the poll, its options and
+its votes with the message rows.
+
+## 19. Scheduled messages are server-side timers
+
+**Context.** A scheduled message must arrive even if the author closes the
+client.
+
+**Decision.** Store scheduled messages in `scheduled_messages`; the existing
+two-second server maintenance loop delivers due rows through the normal
+`create_message` path and broadcasts `MessageCreate`. The client only creates,
+lists and cancels schedules. Delivery rechecks `Send Messages` at send time, so
+a user who loses permission cannot post through a stale schedule.
+
+**Consequences.** Delivery is within roughly two seconds of the chosen time.
+The client must stay connected to see the list update, but the server owns the
+timer and the message still lands when no client is open.
+
+## 20. Link previews are server-fetched and bounded
+
+**Context.** Rich previews need remote HTML metadata, but the server is
+loopback-only and must not become an internal-network proxy.
+
+**Decision.** On send, the server looks for the first public `http(s)` URL,
+fetches at most 256 KB with a four-second timeout, and extracts OpenGraph or
+Twitter card metadata plus `<title>`. Localhost, loopback, private, link-local
+and `172.16/12` hosts are rejected. Embeds are stored with the message and
+loaded by the normal message mapper. Image embeds are cached by the client
+through the existing image pipeline.
+
+**Consequences.** A slow or hostile page cannot hold the send request beyond
+the timeout. Redirects to private hosts are not revalidated by the simple
+resolver, so a hardened deployment should add redirect-host checks before
+exposing the server beyond a trusted network.
+
+## 21. Message components are a thin bot surface
+
+**Context.** Buttons belong to bot/app messages and either open a URL or
+send an interaction.
+
+**Decision.** Store components in `message_components`, load them through the
+message mapper, and render them under the message body. Link buttons open the
+URL; interaction buttons POST to
+`/api/messages/{message}/components/{custom_id}`, which broadcasts
+`InteractionCreate` for bots. Only bot-authored messages may create components,
+through `/api/channels/{id}/components`.
+
+**Consequences.** The client has no component editor; bots own the component
+payload. Component rows are removed with their message or channel.

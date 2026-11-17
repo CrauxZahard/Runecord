@@ -84,6 +84,14 @@ pub struct Snapshot {
     pub voice_auto_sensitivity: bool,
     #[serde(default = "default_voice_mode")]
     pub voice_mode: String,
+    #[serde(default)]
+    pub voice_noise_suppression: bool,
+    #[serde(default = "default_ptt_key")]
+    pub ptt_key: u32,
+}
+
+fn default_ptt_key() -> u32 {
+    0x77
 }
 
 fn default_volume() -> f32 {
@@ -113,11 +121,7 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 static WRITER: OnceLock<mpsc::Sender<Job>> = OnceLock::new();
 
 fn cache_path(profile: &str) -> Option<PathBuf> {
-    let base = std::env::var("APPDATA")
-        .ok()
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())?;
-    Some(base.join("Runecord").join(format!("cache-{profile}.json")))
+    Some(crate::paths::data_dir()?.join(format!("cache-{profile}.json")))
 }
 
 fn now_ms() -> i64 {
@@ -175,6 +179,13 @@ fn writer() -> &'static mpsc::Sender<Job> {
 }
 
 /// Queue a snapshot write. Serialization and disk IO happen on the writer thread.
+///
+/// A browser has no filesystem and cannot spawn a thread, so the web build
+/// keeps everything in memory and skips the disk cache entirely.
+#[cfg(target_arch = "wasm32")]
+pub fn save(_profile: &str, _snapshot: Snapshot) {}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save(profile: &str, snapshot: Snapshot) {
     let Some(path) = cache_path(profile) else {
         return;

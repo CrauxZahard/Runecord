@@ -89,7 +89,7 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
 
     col()
         .key("sidebar")
-        .w(240.0)
+        .w(s.sidebar_width)
         .h_full()
         .fill(p.sidebar)
         .children((!guild.banner_url.is_empty()).then(|| guild_banner_el(s, &guild, 104.0, p)))
@@ -112,11 +112,15 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
                         .gap(8.0)
                         .center_y()
                         .role("button")
-                        .label("Events")
+                        .label(crate::i18n::t("Events"))
                         .hover(p.sidebar_hover)
                         .on_press(|s: &mut App| s.open_events())
                         .child(icon(&icons::CLOCK, 16.0).color(p.text_muted))
-                        .child(text("Events").font(theme::SMALL_MED).color(p.text)),
+                        .child(
+                            text(crate::i18n::t("Events"))
+                                .font(theme::SMALL_MED)
+                                .color(p.text),
+                        ),
                 )
                 .child(
                     row()
@@ -128,14 +132,18 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
                         .gap(8.0)
                         .center_y()
                         .role("button")
-                        .label("Members")
+                        .label(crate::i18n::t("Members"))
                         .hover(p.sidebar_hover)
                         .on_press(|s: &mut App| {
                             s.open_server_settings();
                             s.server_tab = crate::app::ServerTab::Members;
                         })
                         .child(icon(&icons::USERS, 16.0).color(p.text_muted))
-                        .child(text("Members").font(theme::SMALL_MED).color(p.text)),
+                        .child(
+                            text(crate::i18n::t("Members"))
+                                .font(theme::SMALL_MED)
+                                .color(p.text),
+                        ),
                 )
                 .child(
                     row()
@@ -155,7 +163,7 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
                         })
                         .child(icon(&icons::SETTINGS, 16.0).color(p.text_muted))
                         .child(
-                            text("Channels & Roles")
+                            text(crate::i18n::t("Channels & Roles"))
                                 .font(theme::SMALL_MED)
                                 .color(p.text),
                         ),
@@ -343,17 +351,13 @@ pub(crate) fn category_row(cat: &Channel, s: &App, p: Palette) -> El {
                 .label(format!("Create channel in {}", cat.name))
                 .help("Create Channel")
                 .hover(p.sidebar_hover)
-                .on_press(move |s: &mut App| {
-                    s.create_parent = Some(id);
-                    s.profile_edit.clear();
-                    s.modal = Modal::CreateChannel;
-                })
+                .on_press(move |s: &mut App| s.open_create_channel(Some(id)))
                 .child(icon(&icons::PLUS, 14.0).color(p.text_muted))
         }))
 }
 
 fn push_voice_users(rows: &mut Vec<ChannelListRow>, channel: &Channel, s: &App) {
-    if channel.kind != ChannelKind::Voice {
+    if !channel.kind.is_voice_like() {
         return;
     }
     let mut users: Vec<Id> = s
@@ -388,7 +392,15 @@ fn voice_user_row(user_id: Id, s: &App, p: Palette) -> El {
         .label(format!("{} connected to voice", user.display_name))
         .hover(p.sidebar_hover)
         .on_press(move |s: &mut App| s.modal = Modal::Profile(user_id))
-        .child(avatar_status(&user, 20.0, p, p.sidebar, true))
+        .children({
+            let speaking = crate::voice::user_speaking(user_id);
+            let avatar = avatar_status(&user, 20.0, p, p.sidebar, true);
+            [if speaking {
+                avatar.border(2.0, p.green)
+            } else {
+                avatar
+            }]
+        })
         .child(
             text(user.display_name.clone())
                 .font(theme::TINY)
@@ -404,7 +416,7 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
     let unread = s.unread.get(&ch.id).copied().unwrap_or(0);
     let id = ch.id;
     let ic = match ch.kind {
-        ChannelKind::Voice => &icons::VOICE,
+        ChannelKind::Voice | ChannelKind::Stage => &icons::VOICE,
         ChannelKind::Announcement => &icons::MEGAPHONE,
         ChannelKind::Forum => &icons::FORUM,
         ChannelKind::Thread => &icons::THREAD,
@@ -412,6 +424,7 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
     };
     let kind_label = match ch.kind {
         ChannelKind::Voice => "Voice channel",
+        ChannelKind::Stage => "Stage channel",
         ChannelKind::Announcement => "Announcement channel",
         ChannelKind::Forum => "Forum channel",
         ChannelKind::Thread => "Thread",
@@ -420,7 +433,7 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
     };
     let manage =
         has(ch.my_permissions, perm::MANAGE_CHANNELS) || s.guild_can(perm::MANAGE_CHANNELS);
-    let subtitle = if ch.kind == ChannelKind::Voice {
+    let subtitle = if ch.kind.is_voice_like() {
         if !ch.status.is_empty() {
             Some(ch.status.clone())
         } else if manage {
@@ -456,37 +469,12 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
         } else {
             p.sidebar_hover
         })
-        .on_secondary_press(move |_s: &mut App, press, tx: &mut rune::Tx| {
-            if !rune::popup_menu_supported() {
-                return;
-            }
-            let mut menu = rune::PopupMenu::new()
-                .item(rune::PopupItem::new("open", "Open Channel"))
-                .item(rune::PopupItem::new("copy", "Copy Link"))
-                .item(rune::PopupItem::new("mute", "Mute Channel"));
-            if manage {
-                menu = menu
-                    .separator()
-                    .item(rune::PopupItem::new("edit", "Edit Channel"))
-                    .item(rune::PopupItem::new("perms", "Edit Permissions"))
-                    .item(rune::PopupItem::new("delete", "Delete Channel"));
-            }
-            tx.popup_menu(
-                menu,
-                press,
-                move |s: &mut App, picked, tx: &mut rune::Tx| match picked {
-                    Some("open") => {
-                        s.screen = Screen::Guild;
-                        s.switch_channel(id);
-                    }
-                    Some("copy") => tx.copy(format!("runecord://channel/{id}")),
-                    Some("mute") => s.mute_channel(id),
-                    Some("edit") => s.open_channel_edit(id),
-                    Some("perms") => s.modal = Modal::ChannelPermissions(id),
-                    Some("delete") => s.confirm_delete_channel(id),
-                    _ => {}
-                },
-            );
+        .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Channel(id),
+                x: press.x,
+                y: press.y,
+            });
         })
         .on_press(move |s: &mut App| {
             s.screen = Screen::Guild;
@@ -553,7 +541,17 @@ pub(crate) fn user_panel(s: &App, p: Palette) -> El {
         .fill(p.user_panel)
         .role("group")
         .label("Your account controls")
-        .child(avatar_status(&s.me, 32.0, p, p.user_panel, true))
+        .child(
+            el().key("my-status")
+                .size(32.0, 32.0)
+                .radius(16.0)
+                .center()
+                .role("button")
+                .label("Set your status")
+                .help("Set your status")
+                .on_press(|s: &mut App| s.modal = Modal::StatusPicker)
+                .child(avatar_status(&s.me, 32.0, p, p.user_panel, true)),
+        )
         .child(
             col()
                 .grow(1.0)

@@ -1,6 +1,7 @@
 //! App actions split by feature.
 
 use super::super::*;
+use crate::app::save_export;
 use crate::net::Command;
 use rune::TextEdit;
 
@@ -15,6 +16,21 @@ impl App {
         crate::voice::set_output_volume(self.voice_output_volume);
         crate::voice::set_voice_activity(self.voice_mode == "voice");
         crate::voice::set_push_to_talk(self.voice_mode == "ptt");
+        crate::voice::set_noise_suppression(self.voice_noise_suppression);
+        crate::voice::set_push_to_talk_key(self.ptt_key);
+    }
+
+    pub fn set_noise_suppression(&mut self, enabled: bool) {
+        self.voice_noise_suppression = enabled;
+        crate::voice::set_noise_suppression(enabled);
+        self.mark_cache_dirty();
+    }
+
+    pub fn set_push_to_talk_key(&mut self, code: u32) {
+        self.ptt_key = code;
+        self.ptt_capture = false;
+        crate::voice::set_push_to_talk_key(code);
+        self.mark_cache_dirty();
     }
 
     pub fn refresh_voice_devices(&mut self) {
@@ -98,57 +114,57 @@ impl App {
             avatar_decoration: Some(self.profile_decoration.clone()),
             custom_status: Some(custom_status),
             bio: Some(bio),
-            color: None,
-            avatar_border: None,
-            banner_color: None,
+            color: Some(self.profile_color),
+            avatar_border: Some(self.profile_border),
+            banner_color: Some(self.profile_banner_color),
+        });
+        self.send(Command::UpdateProfileStyle {
+            effect: self.profile_effect.clone(),
+            nameplate: self.profile_nameplate.clone(),
+            widget: self.profile_widget.clone(),
         });
         self.toast("Profile saved");
     }
 
+    /// Whether the profile drafts differ from the saved account.
+    pub fn profile_dirty(&self) -> bool {
+        self.profile_display.text.trim() != self.me.display_name
+            || self.profile_pronouns.text.trim() != self.me.pronouns
+            || self.profile_bio.text.trim() != self.me.bio
+            || self.profile_status.text.trim() != self.me.custom_status
+            || self.profile_badges.len() != self.me.badges.len()
+            || self
+                .me
+                .badges
+                .iter()
+                .any(|badge| !self.profile_badges.contains(badge))
+            || self.profile_decoration != self.me.avatar_decoration
+            || self.profile_effect != self.me.profile_effect
+            || self.profile_nameplate != self.me.nameplate
+            || self.profile_widget != self.me.profile_widget
+            || self.profile_color != self.me.avatar_color
+            || self.profile_border != self.me.avatar_border
+            || self.profile_banner_color != self.me.banner_color
+    }
+
     pub fn set_avatar_color(&mut self, color: u32) {
-        self.send(Command::UpdateProfile {
-            display_name: None,
-            pronouns: None,
-            badges: None,
-            avatar_decoration: None,
-            custom_status: None,
-            bio: None,
-            color: Some(color),
-            avatar_border: None,
-            banner_color: None,
-        });
+        self.profile_color = color;
     }
 
     pub fn set_avatar_border(&mut self, color: u32) {
-        self.send(Command::UpdateProfile {
-            display_name: None,
-            pronouns: None,
-            badges: None,
-            avatar_decoration: None,
-            custom_status: None,
-            bio: None,
-            color: None,
-            avatar_border: Some(color),
-            banner_color: None,
-        });
+        self.profile_border = color;
     }
 
     pub fn set_banner_color(&mut self, color: u32) {
-        self.send(Command::UpdateProfile {
-            display_name: None,
-            pronouns: None,
-            badges: None,
-            avatar_decoration: None,
-            custom_status: None,
-            bio: None,
-            color: None,
-            avatar_border: None,
-            banner_color: Some(color),
-        });
+        self.profile_banner_color = color;
     }
 
     pub fn select_settings_tab(&mut self, tab: SettingsTab) {
         self.settings_tab = tab;
+        self.mobile_settings = true;
+        // The view renders the tab stored in the modal; without this the nav
+        // click only moved a field nobody read, so settings felt unclickable.
+        self.modal = Modal::Settings(tab);
         if tab == SettingsTab::Bots {
             self.send(Command::LoadBots);
             self.send(Command::LoadApplications);
@@ -211,8 +227,21 @@ impl App {
     }
 
     pub fn open_server_settings(&mut self) {
+        // Discord hides server settings from members without any management
+        // permission; don't open (and don't let them edit) when unauthorized.
+        if !self.can_open_server_settings() {
+            self.toast("You don't have permission to manage this server.");
+            return;
+        }
         self.modal = Modal::ServerSettings;
         self.server_tab = ServerTab::Overview;
+        if !self.can_manage_tab(self.server_tab) {
+            self.server_tab = [ServerTab::Roles, ServerTab::Members, ServerTab::Bans, ServerTab::Audit]
+                .into_iter()
+                .find(|tab| self.can_manage_tab(*tab))
+                .unwrap_or(ServerTab::Overview);
+        }
+        self.mobile_server_settings = false;
         self.sync_server_overview();
         self.ensure_guild(self.active_guild);
         if self.active_guild != 0 {
@@ -270,7 +299,12 @@ impl App {
     }
 
     pub fn select_server_tab(&mut self, tab: ServerTab) {
+        if !self.can_manage_tab(tab) {
+            self.toast("You don't have permission to view that section.");
+            return;
+        }
         self.server_tab = tab;
+        self.mobile_server_settings = true;
         match tab {
             ServerTab::Audit => self.load_audit(false),
             ServerTab::Bans => {
@@ -284,6 +318,18 @@ impl App {
                 });
             }
             ServerTab::Overview => self.sync_server_overview(),
+            ServerTab::AutoMod => self.send(Command::LoadAutoMod {
+                guild: self.active_guild,
+            }),
+            ServerTab::Templates => self.send(Command::LoadTemplates {
+                guild: self.active_guild,
+            }),
+            ServerTab::Integrations => {
+                self.webhook_token = None;
+                self.send(Command::LoadWebhooks {
+                    guild: self.active_guild,
+                });
+            }
             _ => {}
         }
     }
@@ -308,7 +354,34 @@ impl App {
         self.send(Command::LoadAudit {
             guild: self.active_guild,
             before,
+            actor: self.audit_actor,
+            action: self.audit_action,
         });
+    }
+
+    pub fn set_audit_actor(&mut self, actor: Option<Id>) {
+        self.audit_actor = actor;
+        self.load_audit(false);
+    }
+
+    pub fn set_audit_action(&mut self, action: Option<i32>) {
+        self.audit_action = action;
+        self.load_audit(false);
+    }
+
+    pub fn export_audit(&mut self) {
+        let mut csv = String::from("id,action,actor,target,created_at\n");
+        for entry in &self.audit {
+            let target = entry.target_id.map(|id| id.to_string()).unwrap_or_default();
+            csv.push_str(&format!(
+                "{},{},{},{},{}\n",
+                entry.id, entry.action_type, entry.actor_id, target, entry.created_at
+            ));
+        }
+        match save_export("audit-log.csv", &csv) {
+            Ok(path) => self.toast(format!("Saved {path}")),
+            Err(e) => self.toast(format!("Export failed: {e}")),
+        }
     }
 
     pub fn select_role(&mut self, id: Id) {
@@ -334,11 +407,11 @@ impl App {
         });
     }
 
-    pub fn upload_role_icon(&mut self, role: Id, path: std::path::PathBuf) {
+    pub fn upload_role_icon(&mut self, role: Id, source: crate::net::UploadSource) {
         self.send(Command::UploadRoleIcon {
             guild: self.active_guild,
             role,
-            path,
+            source,
         });
     }
 
@@ -494,16 +567,99 @@ impl App {
     }
 
     pub fn apply_slash_command(&mut self, name: &str) {
-        self.composer.clear();
-        self.composer.insert(&format!("/{name} "));
+        let Some(command) = self
+            .commands
+            .iter()
+            .find(|command| command.name.eq_ignore_ascii_case(name))
+            .cloned()
+        else {
+            return;
+        };
+        let options = command
+            .options
+            .get("options")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        self.slash_values = options.iter().map(|_| TextEdit::new("")).collect();
+        self.slash_command = Some(command);
+        self.modal = Modal::SlashCommand;
     }
 
-    pub fn create_emoji_from_path(&mut self, path: std::path::PathBuf) {
-        let name = if self.emoji_name.text.trim().is_empty() {
-            path.file_stem()
+    pub fn run_slash_command(&mut self) {
+        let Some(command) = self.slash_command.clone() else {
+            return;
+        };
+        let schema = command
+            .options
+            .get("options")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut values = serde_json::Map::new();
+        for (index, option) in schema.iter().enumerate() {
+            let name = option
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("value");
+            let value = self
+                .slash_values
+                .get(index)
+                .map(|edit| edit.text.trim().to_string())
+                .unwrap_or_default();
+            if value.is_empty()
+                && option
+                    .get("required")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+            {
+                self.toast(format!("Fill in {name}"));
+                return;
+            }
+            if !value.is_empty() {
+                values.insert(name.to_string(), serde_json::Value::String(value));
+            }
+        }
+        let channel = match self.screen {
+            Screen::Guild => self.active_channel,
+            Screen::Dms => self.active_dm,
+        };
+        if channel == 0 {
+            return;
+        }
+        let response = command
+            .options
+            .get("response")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Command ran.")
+            .to_string();
+        self.send(Command::InvokeCommand {
+            channel,
+            command: command.name,
+            options: serde_json::Value::Object(values),
+            response,
+        });
+        self.modal = Modal::None;
+        self.composer.clear();
+        self.slash_command = None;
+        self.slash_values.clear();
+    }
+
+    pub fn create_emoji_from_path(&mut self, source: crate::net::UploadSource) {
+        let stem = match &source {
+            crate::net::UploadSource::Path(path) => path
+                .file_stem()
                 .and_then(|stem| stem.to_str())
                 .unwrap_or("emoji")
-                .to_lowercase()
+                .to_string(),
+            crate::net::UploadSource::Bytes { name, .. } => name
+                .rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or("emoji")
+                .to_string(),
+        };
+        let name = if self.emoji_name.text.trim().is_empty() {
+            stem.to_lowercase()
                 .chars()
                 .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
                 .collect::<String>()
@@ -517,7 +673,8 @@ impl App {
         self.send(Command::CreateEmoji {
             guild: self.active_guild,
             name,
-            path,
+            sticker: self.emoji_sticker,
+            source,
         });
         self.emoji_name.clear();
     }

@@ -36,6 +36,7 @@ impl App {
             username,
             display_name,
             password,
+            signup_code: self.auth_code.text.trim().to_string(),
         });
     }
 
@@ -44,8 +45,20 @@ impl App {
         save_theme(dark);
     }
 
+    pub fn set_locale(&mut self, locale: crate::i18n::Locale) {
+        crate::i18n::set_locale(locale);
+        crate::i18n::save_locale(locale);
+    }
+
+    /// Starts a notify-only release check from Settings → Application.
+    pub fn check_updates(&mut self) {
+        self.update_status = crate::update::Status::Checking;
+        crate::update::start(true);
+    }
+
     pub fn open_settings(&mut self, tab: SettingsTab) {
         self.settings_tab = tab;
+        self.mobile_settings = false;
         self.sync_profile_edits();
         self.password_current.clear();
         self.password_new.clear();
@@ -145,6 +158,12 @@ impl App {
         self.profile_pronouns = TextEdit::new(self.me.pronouns.clone());
         self.profile_badges = self.me.badges.iter().cloned().collect();
         self.profile_decoration = self.me.avatar_decoration.clone();
+        self.profile_effect = self.me.profile_effect.clone();
+        self.profile_nameplate = self.me.nameplate.clone();
+        self.profile_widget = self.me.profile_widget.clone();
+        self.profile_color = self.me.avatar_color;
+        self.profile_border = self.me.avatar_border;
+        self.profile_banner_color = self.me.banner_color;
         self.profile_bio = TextEdit::new(self.me.bio.clone());
         self.profile_status = TextEdit::new(self.me.custom_status.clone());
         let activity = self.me.activity.clone().unwrap_or_default();
@@ -158,27 +177,65 @@ impl App {
     }
 
     pub fn set_profile_effect(&mut self, effect: &str) {
-        self.send(Command::UpdateProfileStyle {
-            effect: effect.to_string(),
-            nameplate: self.me.nameplate.clone(),
-            widget: self.me.profile_widget.clone(),
-        });
+        self.profile_effect = effect.to_string();
     }
 
     pub fn set_profile_nameplate(&mut self, nameplate: &str) {
-        self.send(Command::UpdateProfileStyle {
-            effect: self.me.profile_effect.clone(),
-            nameplate: nameplate.to_string(),
-            widget: self.me.profile_widget.clone(),
-        });
+        self.profile_nameplate = nameplate.to_string();
+    }
+
+    fn nameplate_parts(&self) -> (u32, u32, bool) {
+        crate::theme::nameplate_values(&self.profile_nameplate)
+            .unwrap_or((
+                crate::theme::avatar_color_value(0),
+                crate::theme::avatar_color_value(4),
+                true,
+            ))
+    }
+
+    pub fn set_nameplate_gradient(&mut self, gradient: bool) {
+        let (primary, secondary, _) = self.nameplate_parts();
+        self.profile_nameplate = crate::theme::encode_nameplate(primary, secondary, gradient);
+    }
+
+    pub fn set_nameplate_primary(&mut self, color: u32) {
+        if color == 0 {
+            self.profile_nameplate.clear();
+            return;
+        }
+        let (_, secondary, gradient) = self.nameplate_parts();
+        self.profile_nameplate = crate::theme::encode_nameplate(
+            color,
+            if secondary == 0 { color } else { secondary },
+            gradient,
+        );
+    }
+
+    pub fn set_nameplate_secondary(&mut self, color: u32) {
+        if color == 0 {
+            return;
+        }
+        let (primary, _, gradient) = self.nameplate_parts();
+        self.profile_nameplate = crate::theme::encode_nameplate(primary, color, gradient);
     }
 
     pub fn set_profile_widget(&mut self, widget: &str) {
-        self.send(Command::UpdateProfileStyle {
-            effect: self.me.profile_effect.clone(),
-            nameplate: self.me.nameplate.clone(),
-            widget: widget.to_string(),
-        });
+        self.profile_widget = widget.to_string();
+    }
+
+    pub fn set_my_presence(&mut self, status: Presence) {
+        self.my_presence = status;
+        self.me.status = status;
+        self.presence.insert(self.me.id, status);
+        if let Some(user) = self.users.get_mut(&self.me.id) {
+            user.status = status;
+        }
+        for list in self.members.values_mut() {
+            if let Some(member) = list.iter_mut().find(|m| m.user.id == self.me.id) {
+                member.user.status = status;
+            }
+        }
+        self.mark_cache_dirty();
     }
 
     pub fn save_profile_activity(&mut self) {
@@ -222,8 +279,8 @@ impl App {
         self.toast("Activity cleared");
     }
 
-    pub fn upload_activity_artwork(&mut self, path: std::path::PathBuf) {
-        self.send(Command::UploadActivityArtwork { path });
+    pub fn upload_activity_artwork(&mut self, source: crate::net::UploadSource) {
+        self.send(Command::UploadActivityArtwork { source });
     }
 
     pub fn remove_activity_artwork(&mut self) {
@@ -245,7 +302,12 @@ impl App {
             self.toast("That connection is already listed");
             return;
         }
-        connections.push(ProfileConnection { kind, name });
+        connections.push(ProfileConnection {
+            kind,
+            name,
+            url: self.profile_connection_url.text.trim().to_string(),
+            verified: false,
+        });
         connections.truncate(6);
         self.send(Command::UpdateProfileExtras {
             activity: self.me.activity.clone(),
@@ -253,6 +315,21 @@ impl App {
         });
         self.profile_connection_kind.clear();
         self.profile_connection_name.clear();
+    }
+
+    pub fn request_connection_code(&mut self) {
+        self.send(Command::ConnectionChallenge);
+    }
+
+    pub fn verify_connection(&mut self) {
+        let kind = self.profile_connection_kind.text.trim().to_lowercase();
+        let handle = self.profile_connection_name.text.trim().to_string();
+        let url = self.profile_connection_url.text.trim().to_string();
+        if kind.is_empty() || handle.is_empty() || url.is_empty() {
+            self.toast("Pick a service, a handle and a profile URL");
+            return;
+        }
+        self.send(Command::VerifyConnection { kind, handle, url });
     }
 
     pub fn remove_profile_connection(&mut self, kind: String, name: String) {
@@ -273,32 +350,10 @@ impl App {
         if !self.profile_badges.remove(badge) {
             self.profile_badges.insert(badge.to_string());
         }
-        self.send(Command::UpdateProfile {
-            display_name: None,
-            pronouns: None,
-            badges: Some(self.profile_badges.iter().cloned().collect()),
-            avatar_decoration: None,
-            custom_status: None,
-            bio: None,
-            color: None,
-            avatar_border: None,
-            banner_color: None,
-        });
     }
 
     pub fn set_avatar_decoration(&mut self, decoration: &str) {
         self.profile_decoration = decoration.to_string();
-        self.send(Command::UpdateProfile {
-            display_name: None,
-            pronouns: None,
-            badges: None,
-            avatar_decoration: Some(decoration.to_string()),
-            custom_status: None,
-            bio: None,
-            color: None,
-            avatar_border: None,
-            banner_color: None,
-        });
     }
 
     pub fn open_group_dm(&mut self) {
@@ -327,16 +382,16 @@ impl App {
         self.send(Command::RenameDm { channel, name });
     }
 
-    pub fn begin_dm_icon_crop(&mut self, channel: Id, path: std::path::PathBuf) {
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+    pub fn begin_dm_icon_crop(&mut self, channel: Id, source: crate::net::UploadSource) {
+        let bytes = match source.read() {
+            Ok((_, bytes)) => bytes,
             Err(error) => {
-                self.toast(format!("Could not read image: {error}"));
+                self.toast(error);
                 return;
             }
         };
         if crate::image_anim::is_animated(&bytes) {
-            self.send(Command::UploadDmIcon { channel, path });
+            self.send(Command::UploadDmIcon { channel, source });
             self.toast("Uploading animated group icon.");
             return;
         }

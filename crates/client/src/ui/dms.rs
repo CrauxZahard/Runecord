@@ -45,11 +45,12 @@ pub(crate) fn dm_avatar(
         return el()
             .size(size, size)
             .radius(size / 2.0)
+            .center()
             .clip_rounded(size / 2.0)
             .pixels_fit(pixels, rune::SurfaceFit::Fill);
     }
     let inner = (size * 0.72).max(12.0);
-    let mut stack = row().size(size, size).center_y();
+    let mut stack = row().size(size, size).center();
     for (index, user) in dm.recipients.iter().take(3).enumerate() {
         let mut avatar = avatar_status(user, inner, p, ring, show_status);
         if index > 0 {
@@ -142,6 +143,8 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
                         .size(24.0, 24.0)
                         .radius(4.0)
                         .center()
+                        .role("button")
+                        .label("Create a DM")
                         .hover(p.sidebar_hover)
                         .help("Create DM")
                         .on_press(|s: &mut App| s.toast("Pick a friend to start a DM"))
@@ -193,6 +196,7 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
                         .on_press(|s: &mut App| {
                             s.dm_home = true;
                             s.add_friend_open = false;
+                            s.mobile_chat = true;
                         })
                         .child(icon(&icons::HOME, 20.0).color(p.interactive))
                         .child(
@@ -204,7 +208,7 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
                 })
                 .child(
                     row()
-                        .key("dm-nitro")
+                        .key("dm-premium")
                         .w_full()
                         .h(34.0)
                         .px(10.0)
@@ -213,31 +217,17 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
                         .center_y()
                         .hover(p.sidebar_hover)
                         .role("button")
-                        .label("Nitro")
-                        .on_press(|s: &mut App| s.toast("Nitro is local-only in this build"))
-                        .child(icon(&icons::GIFT, 20.0).color(p.text_muted))
+                        .label("All features unlocked")
+                        .on_press(|s: &mut App| {
+                            s.toast("Every premium perk is unlocked in this build")
+                        })
+                        .child(icon(&icons::SPARKLES, 20.0).color(p.text_muted))
                         .child(
-                            text("Nitro")
+                            text("All Unlocked")
                                 .font(theme::BODY)
                                 .color(p.text_muted)
                                 .grow(1.0),
                         ),
-                )
-                .child(
-                    row()
-                        .key("dm-shop")
-                        .w_full()
-                        .h(34.0)
-                        .px(10.0)
-                        .radius(5.0)
-                        .gap(10.0)
-                        .center_y()
-                        .hover(p.sidebar_hover)
-                        .role("button")
-                        .label("Shop")
-                        .on_press(|s: &mut App| s.toast("Shop is not available in this build"))
-                        .child(icon(&icons::COMPASS, 20.0).color(p.text_muted))
-                        .child(text("Shop").font(theme::BODY).color(p.text_muted).grow(1.0)),
                 ),
         )
         .child(el().w_full().h(1.0).fill(p.divider).my(4.0))
@@ -258,6 +248,13 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
 
 pub(crate) fn dm_main(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     if s.dm_home {
+        if mobile() {
+            return col().key("dm-main").w_full().h_full().child(friends_page(
+                s,
+                p,
+                cx.chrome_insets().trailing,
+            ));
+        }
         row()
             .grow(1.0)
             .min_w(0.0)
@@ -319,12 +316,12 @@ fn active_now_panel(s: &App, p: Palette) -> El {
                 .items_center()
                 .gap(8.0)
                 .child(
-                    text("It's quiet for now…")
+                    text("It's quiet for nowâ€¦")
                         .font(theme::NAME)
                         .color(p.text_bright),
                 )
                 .child(
-                    text("When a friend starts an activity—like playing a game or hanging out on voice—we'll show it here!")
+                    text("When a friend starts an activityâ€”like playing a game or hanging out on voiceâ€”we'll show it here!")
                         .font(theme::TINY)
                         .color(p.text_muted)
                         .max_lines(4),
@@ -334,106 +331,110 @@ fn active_now_panel(s: &App, p: Palette) -> El {
 
 pub(crate) fn friends_page(s: &App, p: Palette, insets_trailing: f32) -> El {
     let tabs = [(0u8, "Online"), (1, "All"), (2, "Pending"), (3, "Blocked")];
-    let mut tab_row = row().gap(8.0).h_full().center_y();
-    for (i, label) in tabs {
-        let selected = !s.add_friend_open && s.friend_tab == i;
-        tab_row = tab_row.child(
-            el().key(format!("friend-tab-{i}"))
-                .h(32.0)
-                .px(8.0)
-                .radius(4.0)
-                .center()
-                .fill(if selected {
-                    p.selected
-                } else {
-                    Color::TRANSPARENT
-                })
-                .hover(p.sidebar_hover)
-                .on_press(move |s: &mut App| {
-                    s.friend_tab = i;
-                    s.add_friend_open = false;
-                })
-                .child(text(label).font(theme::SMALL_MED).color(if selected {
-                    p.text_bright
-                } else {
-                    p.text_muted
-                })),
-        );
-    }
+    let make_tabs = || {
+        let mut tab_row = row().gap(8.0).h_full().center_y();
+        for (i, label) in tabs {
+            let selected = !s.add_friend_open && s.friend_tab == i;
+            tab_row = tab_row.child(
+                el().key(format!("friend-tab-{i}"))
+                    .h(32.0)
+                    .px(8.0)
+                    .radius(4.0)
+                    .center()
+                    .fill(if selected {
+                        p.selected
+                    } else {
+                        Color::TRANSPARENT
+                    })
+                    .hover(p.sidebar_hover)
+                    .on_press(move |s: &mut App| {
+                        s.friend_tab = i;
+                        s.add_friend_open = false;
+                    })
+                    .child(text(label).font(theme::SMALL_MED).color(if selected {
+                        p.text_bright
+                    } else {
+                        p.text_muted
+                    })),
+            );
+        }
+        tab_row
+    };
 
+    let title_row = row()
+        .gap(8.0)
+        .center_y()
+        .child(icon(&icons::USERS, 24.0).color(p.text_faint))
+        .child(text("Friends").font(theme::NAME).color(p.text_bright));
+    let add_friend = el()
+        .key("add-friend-open")
+        .h(32.0)
+        .px(12.0)
+        .radius(4.0)
+        .center()
+        .role("button")
+        .label("Add Friend")
+        .fill(p.green)
+        .hover(p.green.alpha(0.85))
+        .on_press(|s: &mut App| s.add_friend_open = true)
+        .child(
+            text("Add Friend")
+                .font(theme::SMALL_MED)
+                .color(Color::WHITE),
+        );
+    let group_dm = el()
+        .key("new-group-dm")
+        .size(30.0, 30.0)
+        .radius(4.0)
+        .center()
+        .role("button")
+        .label("New group DM")
+        .help("New Group DM")
+        .hover(p.sidebar_hover)
+        .on_press(|s: &mut App| s.open_group_dm())
+        .child(icon(&icons::USERS, 20.0).color(p.text_muted));
+    let inbox = el()
+        .key("friends-inbox")
+        .size(30.0, 30.0)
+        .radius(4.0)
+        .center()
+        .role("button")
+        .label("Inbox")
+        .help("Inbox")
+        .hover(p.sidebar_hover)
+        .on_press(|s: &mut App| s.modal = Modal::Search)
+        .child(icon(&icons::INBOX, 20.0).color(p.text_muted));
+    let help = el()
+        .key("friends-help")
+        .size(30.0, 30.0)
+        .radius(4.0)
+        .center()
+        .role("button")
+        .label("Help")
+        .help("Help")
+        .hover(p.sidebar_hover)
+        .on_press(|s: &mut App| s.toast("Runecord help is local"))
+        .child(icon(&icons::HELP, 20.0).color(p.text_muted));
+
+    let desktop_tabs = if mobile() { None } else { Some(make_tabs()) };
     let header = row()
         .key("friends-header")
         .w_full()
         .h(48.0)
         .pl(16.0)
         .pr(8.0 + insets_trailing)
-        .gap(16.0)
+        .gap(if mobile() { 8.0 } else { 16.0 })
         .center_y()
         .window_drag()
         .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
-        .child(
-            row()
-                .gap(8.0)
-                .center_y()
-                .child(icon(&icons::USERS, 24.0).color(p.text_faint))
-                .child(text("Friends").font(theme::NAME).color(p.text_bright)),
-        )
-        .child(el().w(1.0).h(24.0).fill(p.divider))
-        .child(tab_row)
-        .child(
-            el().key("add-friend-open")
-                .h(32.0)
-                .px(12.0)
-                .radius(4.0)
-                .center()
-                .role("button")
-                .label("Add Friend")
-                .fill(p.green)
-                .hover(p.green.alpha(0.85))
-                .on_press(|s: &mut App| s.add_friend_open = true)
-                .child(
-                    text("Add Friend")
-                        .font(theme::SMALL_MED)
-                        .color(Color::WHITE),
-                ),
-        )
+        .child(title_row)
+        .children((!mobile()).then(|| el().w(1.0).h(24.0).fill(p.divider)))
+        .children(desktop_tabs)
+        .child(add_friend)
         .child(el().grow(1.0))
-        .child(
-            el().key("new-group-dm")
-                .size(30.0, 30.0)
-                .radius(4.0)
-                .center()
-                .role("button")
-                .label("New group DM")
-                .help("New Group DM")
-                .hover(p.sidebar_hover)
-                .on_press(|s: &mut App| s.open_group_dm())
-                .child(icon(&icons::USERS, 20.0).color(p.text_muted)),
-        )
-        .child(
-            el().key("friends-inbox")
-                .size(30.0, 30.0)
-                .radius(4.0)
-                .center()
-                .role("button")
-                .label("Inbox")
-                .help("Inbox")
-                .hover(p.sidebar_hover)
-                .on_press(|s: &mut App| s.modal = Modal::Search)
-                .child(icon(&icons::INBOX, 20.0).color(p.text_muted)),
-        )
-        .child(
-            el().key("friends-help")
-                .size(30.0, 30.0)
-                .radius(4.0)
-                .center()
-                .role("button")
-                .label("Help")
-                .help("Help")
-                .hover(p.sidebar_hover)
-                .on_press(|s: &mut App| s.toast("Runecord help is local"))
-                .child(icon(&icons::HELP, 20.0).color(p.text_muted)),
-        );
+        .child(group_dm)
+        .child(inbox)
+        .children((!mobile()).then_some(help));
 
     let body = if s.add_friend_open {
         add_friend_panel(s, p)
@@ -441,56 +442,70 @@ pub(crate) fn friends_page(s: &App, p: Palette, insets_trailing: f32) -> El {
         friend_list_panel(s, p, s.friend_tab)
     };
 
-    col()
+    let mut page = col()
         .key("friends")
         .grow(1.0)
         .min_w(0.0)
         .h_full()
         .fill(p.chat)
-        .child(header)
-        .child(
+        .child(header);
+    if mobile() {
+        // The four tabs move to their own strip so the header's actions fit.
+        page = page.child(
             row()
-                .key("friends-search")
+                .key("friends-tabs")
                 .w_full()
-                .px(20.0)
-                .pt(12.0)
-                .child(
-                    text_input(&s.friend_filter, theme::SMALL)
-                        .key("friend-search-input")
-                        .w_full()
-                        .h(34.0)
-                        .radius(4.0)
-                        .fill(p.rail)
-                        .color(p.text)
-                        .role("textbox")
-                        .label("Search friends")
-                        .placeholder("Search", p.text_faint)
-                        .padding(10.0)
-                        .on_edit(|s: &mut App| &mut s.friend_filter),
-                ),
-        )
-        .child(
-            col()
-                .key("friends-scroll")
-                .grow(1.0)
-                .min_h(0.0)
-                .scroll(ScrollSpec {
-                    stick_bottom: false,
-                })
-                .child(body),
-        )
+                .h(44.0)
+                .px(12.0)
+                .center_y()
+                .child(make_tabs()),
+        );
+    }
+    page.child(
+        row()
+            .key("friends-search")
+            .w_full()
+            .px(20.0)
+            .pt(12.0)
+            .child(
+                text_input(&s.friend_filter, theme::SMALL)
+                    .key("friend-search-input")
+                    .w_full()
+                    .h(34.0)
+                    .radius(4.0)
+                    .fill(p.rail)
+                    .color(p.text)
+                    .role("textbox")
+                    .label("Search friends")
+                    .placeholder("Search", p.text_faint)
+                    .padding(10.0)
+                    .on_edit(|s: &mut App| &mut s.friend_filter),
+            ),
+    )
+    .child(
+        col()
+            .key("friends-scroll")
+            .grow(1.0)
+            .min_h(0.0)
+            .scroll(ScrollSpec {
+                stick_bottom: false,
+            })
+            .child(body),
+    )
 }
 
 pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
+    let compact = mobile();
     col()
         .key("add-friend")
         .w_full()
-        .px(32.0)
+        .px(if compact { 16.0 } else { 32.0 })
         .pt(24.0)
         .gap(12.0)
         .child(text("ADD FRIEND").font(theme::TITLE).color(p.text_bright))
         .child(
             text("You can add friends with their Runecord username. It's case sensitive.")
+                .wrap()
                 .font(theme::SMALL)
                 .color(p.text_muted),
         )
@@ -512,8 +527,16 @@ pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
                         .min_w(0.0)
                         .h_full()
                         .color(p.text)
-                        .placeholder("You can add friends with their username.", p.text_faint)
+                        .placeholder(
+                            if compact {
+                                "Username"
+                            } else {
+                                "You can add friends with their username."
+                            },
+                            p.text_faint,
+                        )
                         .padding(0.0)
+                        .pt(13.0)
                         .on_edit(|s: &mut App| &mut s.search)
                         .on_submit(|s: &mut App, _: &mut rune::Tx| s.add_friend()),
                 )
@@ -527,9 +550,13 @@ pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
                         .center()
                         .on_press(|s: &mut App| s.add_friend())
                         .child(
-                            text("Send Friend Request")
-                                .font(theme::SMALL_MED)
-                                .color(Color::WHITE),
+                            text(if compact {
+                                "Send"
+                            } else {
+                                "Send Friend Request"
+                            })
+                            .font(theme::SMALL_MED)
+                            .color(Color::WHITE),
                         ),
                 ),
         )
@@ -615,11 +642,11 @@ pub(crate) fn friend_list_panel(s: &App, p: Palette, tab: u8) -> El {
         .pt(18.0)
         .child(
             text(match tab {
-                0 => format!("ONLINE — {shown}"),
-                1 => format!("ALL FRIENDS — {shown}"),
-                2 => format!("PENDING — {shown}"),
-                3 => format!("BLOCKED — {shown}"),
-                _ => format!("FRIENDS — {shown}"),
+                0 => format!("ONLINE â€” {shown}"),
+                1 => format!("ALL FRIENDS â€” {shown}"),
+                2 => format!("PENDING â€” {shown}"),
+                3 => format!("BLOCKED â€” {shown}"),
+                _ => format!("FRIENDS â€” {shown}"),
             })
             .font(theme::SECTION)
             .color(p.text_muted)

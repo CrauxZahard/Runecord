@@ -24,6 +24,18 @@ pub(crate) fn create_server_sheet(s: &App, p: Palette) -> El {
                     .color(p.text_faint),
             )
             .child(
+                text("TEMPLATE CODE (OPTIONAL)")
+                    .font(theme::SECTION)
+                    .color(p.text_muted)
+                    .pt(6.0),
+            )
+            .child(modal_input(
+                &s.template_code,
+                "template-code",
+                "Paste a template code",
+                p,
+            ))
+            .child(
                 row()
                     .pt(4.0)
                     .gap(4.0)
@@ -69,7 +81,7 @@ pub(crate) fn edit_channel_sheet(s: &App, p: Palette) -> El {
     let channel_id = channel.id;
     col()
         .key("edit-channel")
-        .w(460.0)
+        .w(sheet_w(460.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -154,6 +166,59 @@ pub(crate) fn edit_channel_sheet(s: &App, p: Palette) -> El {
                                 .placeholder("Set a channel status", p.text_faint)
                                 .padding(10.0)
                                 .on_edit(|s: &mut App| &mut s.channel_status_edit),
+                        )
+                }))
+                .children((channel.kind == ChannelKind::Forum).then(|| {
+                    col()
+                        .w_full()
+                        .gap(6.0)
+                        .child(
+                            text("FORUM TAGS")
+                                .font(theme::SECTION)
+                                .color(p.text_muted),
+                        )
+                        .child(
+                            text_input(&s.forum_tag_draft, theme::BODY)
+                                .key("channel-edit-forum-tags")
+                                .w_full()
+                                .h(96.0)
+                                .radius(4.0)
+                                .fill(p.rail)
+                                .color(p.text)
+                                .role("textbox")
+                                .label("Forum tags")
+                                .placeholder("One tag per line, optionally with an emoji", p.text_faint)
+                                .padding(10.0)
+                                .on_edit(|s: &mut App| &mut s.forum_tag_draft),
+                        )
+                        .child(
+                            row()
+                                .w_full()
+                                .gap(8.0)
+                                .center_y()
+                                .child(
+                                    text("One tag per line. Start a line with an emoji to show it on the post.")
+                                        .font(theme::TINY)
+                                        .color(p.text_faint)
+                                        .grow(1.0),
+                                )
+                                .child(
+                                    el().key("channel-edit-save-tags")
+                                        .h(30.0)
+                                        .px(12.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("button")
+                                        .label("Save forum tags")
+                                        .fill(p.accent)
+                                        .hover(p.accent_hover)
+                                        .on_press(|s: &mut App| s.save_forum_tags())
+                                        .child(
+                                            text("Save Tags")
+                                                .font(theme::TINY)
+                                                .color(Color::WHITE),
+                                        ),
+                                ),
                         )
                 }))
                 .child(text("SLOWMODE").font(theme::SECTION).color(p.text_muted))
@@ -250,15 +315,192 @@ pub(crate) fn edit_channel_sheet(s: &App, p: Palette) -> El {
         )
 }
 
+pub(crate) fn onboarding_rules_sheet(s: &App, p: Palette, guild: Id) -> El {
+    let onboarding = s
+        .guild_detail(guild)
+        .map(|detail| detail.onboarding.clone())
+        .unwrap_or_default();
+    let mut rules = col().w_full().gap(6.0);
+    for (index, rule) in onboarding.rules.iter().enumerate() {
+        rules = rules.child(
+            row()
+                .w_full()
+                .gap(8.0)
+                .items_start()
+                .child(
+                    text(format!("{}.", index + 1))
+                        .font(theme::SMALL_MED)
+                        .color(p.text_muted),
+                )
+                .child(
+                    text(rule.clone())
+                        .font(theme::SMALL)
+                        .color(p.text)
+                        .grow(1.0)
+                        .wrap(),
+                ),
+        );
+    }
+    col()
+        .key("onboarding-rules")
+        .w(sheet_w(500.0))
+        .radius(8.0)
+        .clip_rounded(8.0)
+        .fill(p.modal)
+        .padding(20.0)
+        .gap(12.0)
+        .shadow(12.0, 32.0, p.shadow)
+        .modal(true, |s: &mut App| s.modal = Modal::None)
+        .child(
+            text(if onboarding.welcome_title.is_empty() {
+                "Welcome!".to_string()
+            } else {
+                onboarding.welcome_title.clone()
+            })
+            .font(theme::TITLE)
+            .color(p.text_bright),
+        )
+        .children((!onboarding.welcome_description.is_empty()).then(|| {
+            text(onboarding.welcome_description.clone())
+                .font(theme::SMALL)
+                .color(p.text_muted)
+        }))
+        .child(
+            text("SERVER RULES")
+                .font(theme::SECTION)
+                .color(p.text_muted),
+        )
+        .child(
+            col()
+                .w_full()
+                .max_h(300.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(rules),
+        )
+        .child(
+            el().key("onboarding-accept")
+                .w_full()
+                .h(38.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Accept the rules")
+                .fill(p.green)
+                .hover(p.green.alpha(0.85))
+                .on_press(move |s: &mut App| s.accept_onboarding(guild))
+                .child(
+                    text("I have read and agree to the rules")
+                        .font(theme::SMALL_MED)
+                        .color(Color::WHITE),
+                ),
+        )
+}
+
 pub(crate) fn create_channel_sheet(s: &App, p: Palette) -> El {
+    let choices: [(ChannelKind, &str, &str, &rune::Icon); 6] = [
+        (
+            ChannelKind::Text,
+            "Text",
+            "Send messages, images, GIFs, emoji and opinions.",
+            &icons::HASH,
+        ),
+        (
+            ChannelKind::Voice,
+            "Voice",
+            "Hang out together with voice, video and screen share.",
+            &icons::VOICE,
+        ),
+        (
+            ChannelKind::Stage,
+            "Stage",
+            "Host an audience with a handful of speakers.",
+            &icons::VOICE,
+        ),
+        (
+            ChannelKind::Announcement,
+            "Announcement",
+            "Post important updates for everyone.",
+            &icons::MEGAPHONE,
+        ),
+        (
+            ChannelKind::Forum,
+            "Forum",
+            "Organized, sortable conversations.",
+            &icons::FORUM,
+        ),
+        (
+            ChannelKind::Category,
+            "Category",
+            "Group channels together in the sidebar.",
+            &icons::FOLDER,
+        ),
+    ];
+    let mut types = col().w_full().gap(4.0);
+    for (kind, label, detail, icon_id) in choices {
+        let selected = s.create_channel_kind == kind;
+        types = types.child(
+            row()
+                .key(match kind {
+                    ChannelKind::Text => "channel-type-text",
+                    ChannelKind::Voice => "channel-type-voice",
+                    ChannelKind::Stage => "channel-type-stage",
+                    ChannelKind::Announcement => "channel-type-announcement",
+                    ChannelKind::Forum => "channel-type-forum",
+                    ChannelKind::Category => "channel-type-category",
+                    _ => "channel-type-other",
+                })
+                .w_full()
+                .min_h(48.0)
+                .px(10.0)
+                .py(6.0)
+                .radius(4.0)
+                .gap(10.0)
+                .center_y()
+                .role("radio")
+                .label(label)
+                .checked(selected)
+                .border(1.0, if selected { p.accent } else { p.divider })
+                .fill(if selected {
+                    p.selected
+                } else {
+                    Color::TRANSPARENT
+                })
+                .hover(p.card_hover)
+                .on_press(move |s: &mut App| s.set_create_channel_kind(kind))
+                .child(icon(icon_id, 20.0).color(p.text_muted))
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(1.0)
+                        .child(text(label).font(theme::SMALL_MED).color(p.text_bright))
+                        .child(
+                            text(detail)
+                                .font(theme::TINY)
+                                .color(p.text_muted)
+                                .truncate(),
+                        ),
+                )
+                .children(selected.then(|| icon(&icons::CHECK, 16.0).color(p.accent))),
+        );
+    }
     modal_frame(
         "create-channel",
         "Create Channel",
-        "Channels are where conversations happen. Pick a name and start talking.",
+        "Channels are where conversations happen. Pick a type and a name.",
         p,
         col()
             .w_full()
-            .gap(8.0)
+            .gap(10.0)
+            .child(
+                text("CHANNEL TYPE")
+                    .font(theme::SECTION)
+                    .color(p.text_muted),
+            )
+            .child(types)
+            .child(el().w_full().h(1.0).fill(p.divider))
             .child(
                 text("CHANNEL NAME")
                     .font(theme::SECTION)
@@ -269,14 +511,10 @@ pub(crate) fn create_channel_sheet(s: &App, p: Palette) -> El {
                 "channel-name",
                 "new-channel",
                 p,
-            ))
-            .child(
-                text("Text channels are the default in this local build.")
-                    .font(theme::TINY)
-                    .color(p.text_faint),
-            ),
+            )),
         ("Create Channel", |s: &mut App| {
-            s.create_channel_now(ChannelKind::Text)
+            let kind = s.create_channel_kind;
+            s.create_channel_now(kind)
         }),
         p,
     )

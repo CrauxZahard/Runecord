@@ -21,62 +21,96 @@ const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Starts the backend in this process when the configured endpoint is a local
 /// address that is not already serving Runecord.
+///
+/// The health probe and the server's own startup happen on a background thread.
+/// The window paints immediately and the gateway reconnects when the server is
+/// ready, instead of leaving a blank window for up to twenty seconds.
 pub fn ensure_backend() {
-    let url = crate::config::effective_server_url();
-    let Some(client) = health_client() else {
-        return;
-    };
-    if healthy(&client, &url) {
-        return;
-    }
-    let Some((host, port)) = loopback(&url) else {
-        return;
-    };
-
-    let data_dir = server_data_dir();
-    init_logging(&data_dir);
-    tracing::info!(
-        "starting embedded server on {url} with data in {}",
-        data_dir.display()
-    );
-
-    let thread_data_dir = data_dir.clone();
     let spawned = std::thread::Builder::new()
-        .name("runecord-server".into())
-        .spawn(move || {
-            let config = runecord_server::config::Config {
-                host,
-                port,
-                data_dir: thread_data_dir,
-                demo_seed: true,
+        .name("runecord-backend".into())
+        .spawn(|| {
+            let url = crate::config::effective_server_url();
+            let Some(client) = health_client() else {
+                return;
             };
-            let runtime = match tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    tracing::error!("could not start the embedded server runtime: {error}");
+            if healthy(&client, &url) {
+                return;
+            }
+            let Some((host, port)) = loopback(&url) else {
+                return;
+            };
+
+            let data_dir = server_data_dir();
+            init_logging(&data_dir);
+            tracing::info!(
+                "starting embedded server on {url} with data in {}",
+                data_dir.display()
+            );
+
+            let thread_data_dir = data_dir.clone();
+            let server = std::thread::Builder::new()
+                .name("runecord-server".into())
+                .spawn(move || {
+                    // A desktop install is loopback-only and starts empty; the
+                    // first person at the keyboard creates the owner. When the
+                    // app sits behind a tunnel, RUNECORD_SIGNUP can gate it.
+                    let signup_code = std::env::var("RUNECORD_SIGNUP_CODE")
+                        .ok()
+                        .filter(|code| !code.trim().is_empty());
+                    let signup = match std::env::var("RUNECORD_SIGNUP")
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
+                        "code" if signup_code.is_some() => runecord_server::config::Signup::Code,
+                        // A code gate with no code would accept an empty code.
+                        "code" | "closed" => runecord_server::config::Signup::Closed,
+                        _ => runecord_server::config::Signup::Open,
+                    };
+                    let config = runecord_server::config::Config {
+                        host,
+                        port,
+                        data_dir: thread_data_dir,
+                        // Release installs must not ship a known owner password.
+                        // Debug/dev builds keep the demo accounts for testing.
+                        demo_seed: !cfg!(release_build),
+                        allowed_origins: Vec::new(),
+                        signup,
+                        signup_code,
+                        trust_proxy: false,
+                    };
+                    let runtime = match tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(runtime) => runtime,
+                        Err(error) => {
+                            tracing::error!("could not start the embedded server runtime: {error}");
+                            return;
+                        }
+                    };
+                    runtime.block_on(runecord_server::bootstrap::run(config));
+                });
+
+            if let Err(error) = server {
+                tracing::error!("could not start the embedded server thread: {error}");
+                return;
+            }
+
+            let deadline = Instant::now() + STARTUP_TIMEOUT;
+            while Instant::now() < deadline {
+                if healthy(&client, &url) {
+                    tracing::info!("embedded server is ready");
                     return;
                 }
-            };
-            runtime.block_on(runecord_server::bootstrap::run(config));
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            tracing::error!("embedded server did not answer at {url}; opening the UI anyway");
         });
 
     if let Err(error) = spawned {
-        tracing::error!("could not start the embedded server thread: {error}");
-        return;
+        tracing::error!("could not start the backend bootstrap thread: {error}");
     }
-
-    let deadline = Instant::now() + STARTUP_TIMEOUT;
-    while Instant::now() < deadline {
-        if healthy(&client, &url) {
-            tracing::info!("embedded server is ready");
-            return;
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
-    tracing::error!("embedded server did not answer at {url}; opening the UI anyway");
 }
 
 fn health_client() -> Option<reqwest::blocking::Client> {
@@ -122,11 +156,9 @@ fn loopback(url: &str) -> Option<(IpAddr, u16)> {
 
 /// Persistent data directory for the bundled server.
 fn server_data_dir() -> PathBuf {
-    let base = std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .or_else(|_| std::env::current_dir())
-        .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("Runecord").join("server")
+    crate::paths::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("server")
 }
 
 /// Sends server logs to `server.log` next to the embedded data.

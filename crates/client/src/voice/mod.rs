@@ -14,9 +14,10 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tungstenite::Message;
+use tungstenite::client::IntoClientRequest;
 use tungstenite::stream::MaybeTlsStream;
-use tungstenite::{Message, connect};
 
 mod camera;
 mod devices;
@@ -235,6 +236,47 @@ unsafe extern "system" {
     fn GetAsyncKeyState(vkey: i32) -> i16;
 }
 
+static PTT_KEY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x77); // F8
+
+/// Rebinds the Push-to-Talk key. Values are Windows virtual-key codes.
+pub fn set_push_to_talk_key(code: u32) {
+    PTT_KEY.store(code, Ordering::Relaxed);
+}
+
+pub fn push_to_talk_key() -> u32 {
+    PTT_KEY.load(Ordering::Relaxed)
+}
+
+/// Human label for the bound Push-to-Talk key.
+pub fn push_to_talk_key_label() -> String {
+    key_label(push_to_talk_key())
+}
+
+fn key_label(code: u32) -> String {
+    match code {
+        0x70..=0x87 => format!("F{}", code - 0x6F),
+        0x30..=0x39 => ((code as u8) as char).to_string(),
+        0x41..=0x5A => ((code as u8) as char).to_string(),
+        0x20 => "Space".into(),
+        0x10 => "Shift".into(),
+        0x11 => "Ctrl".into(),
+        0x12 => "Alt".into(),
+        0x09 => "Tab".into(),
+        0x14 => "Caps Lock".into(),
+        0xDB => "[".into(),
+        0xDD => "]".into(),
+        0xBA => ";".into(),
+        0xDE => "'".into(),
+        0xBC => ",".into(),
+        0xBE => ".".into(),
+        0xBF => "/".into(),
+        0xBD => "-".into(),
+        0xBB => "=".into(),
+        0xC0 => "`".into(),
+        other => format!("Key {other}"),
+    }
+}
+
 fn ensure_ptt_poller() {
     PTT_POLLER.get_or_init(|| {
         thread::spawn(|| {
@@ -243,8 +285,8 @@ fn ensure_ptt_poller() {
                 let held = if PTT_MODE.load(Ordering::Relaxed) {
                     #[cfg(windows)]
                     {
-                        // F8 is the default Push-to-Talk key.
-                        unsafe { (GetAsyncKeyState(0x77) as u16 & 0x8000) != 0 }
+                        let code = PTT_KEY.load(Ordering::Relaxed) as i32;
+                        unsafe { (GetAsyncKeyState(code) as u16 & 0x8000) != 0 }
                     }
                     #[cfg(not(windows))]
                     {
@@ -391,6 +433,12 @@ pub fn set_auto_sensitivity(enabled: bool) {
     AUTO_SENSITIVITY.store(enabled, Ordering::Relaxed);
 }
 
+static NOISE_SUPPRESSION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_noise_suppression(enabled: bool) {
+    NOISE_SUPPRESSION.store(enabled, Ordering::Relaxed);
+}
+
 pub fn set_input_volume(value: f32) {
     INPUT_VOLUME.store(value.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
 }
@@ -411,6 +459,72 @@ fn output_volume() -> f32 {
     f32::from_bits(OUTPUT_VOLUME.load(Ordering::Relaxed))
 }
 
+static USER_VOLUMES: OnceLock<Mutex<HashMap<Id, (f32, bool)>>> = OnceLock::new();
+
+fn user_gains() -> &'static Mutex<HashMap<Id, (f32, bool)>> {
+    USER_VOLUMES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Per-speaker output volume, 0.0 to 2.0, with a local mute flag.
+pub fn set_user_volume(user: Id, volume: f32, muted: bool) {
+    if let Ok(mut map) = user_gains().lock() {
+        map.insert(user, (volume.clamp(0.0, 2.0), muted));
+    }
+}
+
+pub fn user_volume(user: Id) -> f32 {
+    user_gains()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&user).map(|(volume, _)| *volume))
+        .unwrap_or(1.0)
+}
+
+pub fn user_muted(user: Id) -> bool {
+    user_gains()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&user).map(|(_, muted)| *muted))
+        .unwrap_or(false)
+}
+
+pub fn clear_user_gains() {
+    if let Ok(mut map) = user_gains().lock() {
+        map.clear();
+    }
+}
+
+static SPEAKING: OnceLock<Mutex<HashMap<Id, Instant>>> = OnceLock::new();
+
+fn speaking_map() -> &'static Mutex<HashMap<Id, Instant>> {
+    SPEAKING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Mark a remote speaker active when their decoded audio is loud enough.
+pub fn mark_speaking(user: Id, rms: f32) {
+    if rms < 0.012 {
+        return;
+    }
+    if let Ok(mut map) = speaking_map().lock() {
+        map.insert(user, Instant::now());
+    }
+}
+
+/// True for a short while after a user's audio was last above the threshold.
+/// Drives the green "talking" ring around their avatar.
+pub fn user_speaking(user: Id) -> bool {
+    speaking_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&user).copied())
+        .is_some_and(|at| at.elapsed() < Duration::from_millis(700))
+}
+
+pub fn clear_speaking(user: Id) {
+    if let Ok(mut map) = speaking_map().lock() {
+        map.remove(&user);
+    }
+}
 pub fn set_audio_bitrate(kbps: u32) {
     AUDIO_BITRATE_KBPS.store(kbps.clamp(64, 384), Ordering::Relaxed);
 }
@@ -474,6 +588,7 @@ pub fn update(base: &str, token: &str, channel: Option<Id>, mute: bool, deaf: bo
     if let Some(old) = current.take() {
         old.stop.store(true, Ordering::Relaxed);
     }
+    clear_user_gains();
     let Some(channel) = channel else {
         return;
     };
@@ -572,11 +687,28 @@ fn run(
     let ws_base = base
         .replace("https://", "wss://")
         .replace("http://", "ws://");
-    let url = format!(
-        "{ws_base}/voice?token={}&channel={channel}",
-        urlencoding::encode(&token)
-    );
-    let mut socket = match connect(url) {
+    // Header authentication, like the gateway: a token in the query string
+    // leaks into logs and Referer headers.
+    let url = format!("{ws_base}/voice?channel={channel}");
+    let mut request = match url.parse::<tungstenite::http::Uri>() {
+        Ok(_) => match IntoClientRequest::into_client_request(url) {
+            Ok(mut request) => {
+                if let Ok(value) =
+                    tungstenite::http::HeaderValue::from_str(&format!("Bearer {token}"))
+                {
+                    request.headers_mut().insert("Authorization", value);
+                }
+                Some(request)
+            }
+            Err(_) => None,
+        },
+        Err(_) => None,
+    };
+    let Some(request) = request.take() else {
+        log("voice url is invalid");
+        return;
+    };
+    let mut socket = match tungstenite::connect(request) {
         Ok((socket, _)) => socket,
         Err(error) => {
             log(&format!("connect error: {error}"));
@@ -620,6 +752,11 @@ fn run(
                 video_kind = if kind == "none" { None } else { Some(kind) };
                 if let Some(kind) = &video_kind {
                     video_stops = start_video(&video_tx, kind.clone(), &stop, quality);
+                    if kind == "screen" {
+                        start_screen_audio();
+                    }
+                } else {
+                    stop_screen_audio();
                 }
             }
             if let Some(next) = command.quality {
@@ -818,6 +955,24 @@ fn ffmpeg_path() -> String {
     std::env::var("RUNECORD_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string())
 }
 
+/// A console helper started from this GUI process. Without `CREATE_NO_WINDOW`
+/// Windows gives every child its own console, so joining voice flashed terminal
+/// windows on screen.
+pub(crate) fn helper(program: &str) -> Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = Command::new(program);
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new(program)
+    }
+}
+
 fn capture_encoder(
     out: Sender<(u8, Vec<u8>)>,
     stop: Arc<AtomicBool>,
@@ -832,7 +987,7 @@ fn capture_encoder(
     let bitrate = audio_bitrate();
     log(&format!("voice bitrate: {bitrate} kbps"));
     let rate_arg = format!("{bitrate}k");
-    let mut encoder = match Command::new(ffmpeg_path())
+    let mut encoder = match helper(&ffmpeg_path())
         .args([
             "-hide_banner",
             "-loglevel",
@@ -944,7 +1099,7 @@ fn capture_encoder(
         }
     } else if let Some(device) = microphone() {
         log(&format!("capture device: {device}"));
-        let mut capture = match Command::new(ffmpeg_path())
+        let mut capture = match helper(&ffmpeg_path())
             .args([
                 "-hide_banner",
                 "-loglevel",
@@ -997,6 +1152,86 @@ fn capture_encoder(
 
 static SOUNDBOARD: OnceLock<Mutex<Vec<i16>>> = OnceLock::new();
 
+static SCREEN_AUDIO: AtomicBool = AtomicBool::new(false);
+static SCREEN_AUDIO_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Whether screen-share audio is requested; the pump only runs while sharing.
+pub fn set_screen_audio(enabled: bool) {
+    SCREEN_AUDIO.store(enabled, Ordering::Relaxed);
+    if !enabled {
+        SCREEN_AUDIO_RUNNING.store(false, Ordering::Relaxed);
+    }
+}
+
+pub fn screen_audio() -> bool {
+    SCREEN_AUDIO.load(Ordering::Relaxed)
+}
+
+pub fn screen_audio_running() -> bool {
+    SCREEN_AUDIO_RUNNING.load(Ordering::Relaxed)
+}
+
+/// One-line status for the voice panel: whether loopback is actually flowing.
+pub fn screen_audio_status() -> &'static str {
+    if !SCREEN_AUDIO.load(Ordering::Relaxed) {
+        "Screen audio off"
+    } else if screen_audio_running() {
+        "Screen audio live"
+    } else {
+        "Screen audio unavailable"
+    }
+}
+
+/// Starts capturing the machine's playback and mixing it into the outgoing
+/// stream. Frames land in the same queue the soundboard uses, so muting the
+/// microphone still shares the audio.
+pub fn start_screen_audio() {
+    if !SCREEN_AUDIO.load(Ordering::Relaxed) || SCREEN_AUDIO_RUNNING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        thread::spawn(move || {
+            let mut loopback = match crate::wasapi::WasapiLoopback::start(flag.clone()) {
+                Some(loopback) => loopback,
+                None => {
+                    log("screen audio: loopback capture unavailable");
+                    SCREEN_AUDIO_RUNNING.store(false, Ordering::Relaxed);
+                    return;
+                }
+            };
+            log("screen audio: loopback capture started");
+            let queue = SOUNDBOARD.get_or_init(|| Mutex::new(Vec::new()));
+            while !flag.load(Ordering::Relaxed) {
+                let samples = loopback.read();
+                if !samples.is_empty()
+                    && let Ok(mut queue) = queue.lock()
+                {
+                    queue.extend_from_slice(&samples);
+                    let max = 48_000 * 4;
+                    if queue.len() > max {
+                        let excess = queue.len() - max;
+                        queue.drain(..excess);
+                    }
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            SCREEN_AUDIO_RUNNING.store(false, Ordering::Relaxed);
+            log("screen audio: loopback capture stopped");
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        SCREEN_AUDIO_RUNNING.store(false, Ordering::Relaxed);
+    }
+}
+
+pub fn stop_screen_audio() {
+    SCREEN_AUDIO_RUNNING.store(false, Ordering::Relaxed);
+}
+
 fn receive_stream(
     user: Id,
     rx: Receiver<Vec<u8>>,
@@ -1005,7 +1240,7 @@ fn receive_stream(
     test: bool,
     stream_stop: Arc<AtomicBool>,
 ) {
-    let mut decoder = match Command::new(ffmpeg_path())
+    let mut decoder = match helper(&ffmpeg_path())
         .args([
             "-hide_banner",
             "-loglevel",
@@ -1065,26 +1300,23 @@ fn receive_stream(
                         continue;
                     }
                     counter += 1;
+                    let rms = mic::pcm_rms(&buffer[..n]);
+                    mark_speaking(user, rms);
                     if counter.is_multiple_of(10) {
-                        let rms = buffer[..n]
-                            .as_chunks::<2>()
-                            .0
-                            .iter()
-                            .map(|sample| {
-                                let value = i16::from_le_bytes([sample[0], sample[1]]) as f64;
-                                value * value
-                            })
-                            .sum::<f64>()
-                            / (n as f64 / 2.0).max(1.0);
-                        log(&format!("user={user} rms={:.0} bytes={n}", rms.sqrt()));
+                        log(&format!("user={user} rms={:.0} bytes={n}", rms));
                     }
                 }
                 Err(_) => break,
             }
         }
     } else {
+        #[cfg(windows)]
         enum Playback {
             Native(crate::wasapi::WasapiPlayer),
+            Ffplay(Child, std::process::ChildStdin),
+        }
+        #[cfg(not(windows))]
+        enum Playback {
             Ffplay(Child, std::process::ChildStdin),
         }
 
@@ -1100,7 +1332,7 @@ fn receive_stream(
             } else {
                 "native WASAPI output unavailable for the selected device; falling back to FFplay"
             });
-            let child = Command::new(ffplay_path())
+            let child = helper(&ffplay_path())
                 .args([
                     "-hide_banner",
                     "-loglevel",
@@ -1129,6 +1361,20 @@ fn receive_stream(
             log("player error: no audio output available");
             return;
         };
+        let backend = {
+            #[cfg(windows)]
+            {
+                if matches!(&playback, Playback::Native(_)) {
+                    "native WASAPI"
+                } else {
+                    "FFplay fallback"
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                "FFplay"
+            }
+        };
         log(&format!(
             "playback device: {} ({})",
             if device.is_empty() {
@@ -1136,11 +1382,7 @@ fn receive_stream(
             } else {
                 &device
             },
-            if matches!(&playback, Playback::Native(_)) {
-                "native WASAPI"
-            } else {
-                "FFplay fallback"
-            }
+            backend
         ));
         if let Some(mut stdout) = decoder.stdout.take() {
             log(&format!("playback started for user={user}"));
@@ -1154,9 +1396,15 @@ fn receive_stream(
                     }
                     Ok(n) => {
                         bytes += n as u64;
-                        let payload = scale_pcm(&buffer[..n], output_volume());
-                        let deaf = deafened.load(Ordering::Relaxed);
+                        // Detection runs on the incoming PCM even while the
+                        // user is locally muted, so the talking ring tracks
+                        // the speaker rather than our output volume.
+                        mark_speaking(user, mic::pcm_rms(&buffer[..n]));
+                        let gain = output_volume() * user_volume(user);
+                        let payload = scale_pcm(&buffer[..n], gain);
+                        let deaf = deafened.load(Ordering::Relaxed) || user_muted(user);
                         match &mut playback {
+                            #[cfg(windows)]
                             Playback::Native(sink) => sink.write(&payload, deaf),
                             Playback::Ffplay(_, stdin) => {
                                 if !deaf && stdin.write_all(&payload).is_err() {
@@ -1175,6 +1423,7 @@ fn receive_stream(
             log(&format!("playback stopped for user={user} bytes={bytes}"));
         }
         match playback {
+            #[cfg(windows)]
             Playback::Native(sink) => sink.finish(),
             Playback::Ffplay(mut child, _) => {
                 let _ = child.kill();

@@ -1,4 +1,4 @@
-//! A small icon catalog in Discord's visual language. Every icon is a 24x24 body drawn in the
+//! A small icon catalog in one consistent visual language. Every icon is a 24x24 body drawn in the
 //! element's colour, so `.color()` tints it.
 
 #![allow(dead_code)] // the catalog keeps glyphs that no surface uses yet
@@ -179,6 +179,17 @@ stroke_icon!(
     "link",
     r#"<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>"#
 );
+stroke_icon!(POLL, "poll", r#"<path d="M5 20V10M12 20V4M19 20v-7"/>"#);
+stroke_icon!(
+    COPY,
+    "copy",
+    r#"<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>"#
+);
+stroke_icon!(
+    BAN,
+    "ban",
+    r#"<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>"#
+);
 stroke_icon!(
     MONITOR,
     "monitor",
@@ -216,12 +227,13 @@ stroke_icon!(
 );
 stroke_icon!(FOLDER, "folder", r#"<path d="M3 6h6l2 2h10v11H3Z"/>"#);
 
-// The Discord mark, approximated as a round-faced mark with two eyes cut out.
-pub static DISCORD: Icon = Icon {
-    name: "discord",
-    view: 24.0,
-    body: r#"<path fill="currentColor" fill-rule="evenodd" d="M6.2 5.4c3.9-1.6 7.7-1.6 11.6 0 1.7 3.1 2.6 6.6 2.4 10.4-2 1.9-4 2.3-5.6 1.4l-.8-1.5c-1.5.5-3.1.5-4.6 0l-.8 1.5c-1.6.9-3.6.5-5.6-1.4-.2-3.8.7-7.3 2.4-10.4Zm2.9 3.7a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Zm5.8 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Z"/>"#,
-};
+// The Runecord home mark: an R drawn in the same 24x24 stroke language as the
+// rest of the catalog.
+stroke_icon!(
+    RUNECORD,
+    "runecord",
+    r#"<path d="M7 4h6a4 4 0 0 1 0 8H7z"/><path d="M7 12v8M13 12l5 8"/>"#
+);
 
 pub static MORE: Icon = Icon {
     name: "more",

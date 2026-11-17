@@ -9,6 +9,7 @@ mod media;
 mod messages;
 mod moderation;
 mod navigation;
+mod picks;
 mod social;
 
 fn timeout_seconds(value: u64, unit: TimeoutUnit) -> u64 {

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Runecord
+GenericName=Chat
+Comment=Self-hosted chat for your own server
+Exec=@BIN@
+Icon=runecord
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+Keywords=chat;voice;runecord;
+StartupNotify=true
+StartupWMClass=Runecord

@@ -26,6 +26,30 @@ impl App {
     pub fn poll(&mut self, t: f64, tx: &mut Tx) -> bool {
         self.clock = t;
         let mut changed = self.tick_animations(tx);
+        if let Some(info) = crate::server_info::take()
+            && info.signup != self.signup_mode
+        {
+            if info.signup == "closed" {
+                self.auth_register = false;
+            }
+            self.signup_mode = info.signup;
+            changed = true;
+        }
+        if let Some(status) = crate::update::take() {
+            if let crate::update::Status::Available(release) = &status {
+                self.toast(format!(
+                    "Runecord {} is available — see Settings → Application",
+                    release.version
+                ));
+            }
+            self.update_status = status;
+            changed = true;
+        }
+        if self.presence_auto && self.clock - self.last_presence_scan >= 15.0 {
+            self.last_presence_scan = self.clock;
+            self.refresh_auto_presence();
+            changed = true;
+        }
         let mut events = Vec::new();
         let drained = crate::net::drain_events();
         events.extend(drained);
@@ -56,6 +80,18 @@ impl App {
                 && !self.images.contains_key(&activity.artwork_url)
             {
                 self.request_urls(vec![activity.artwork_url.clone()]);
+            }
+            // A banner may belong to a user we never fetched media for (for
+            // example someone reached from a mention). Request it when their
+            // profile is actually opened so it shows for everyone, not just
+            // locally.
+            if let Some(banner) = self
+                .user(user)
+                .map(|u| u.banner_url.clone())
+                .filter(|url| !url.is_empty())
+                && !self.images.contains_key(&banner)
+            {
+                self.request_urls(vec![banner]);
             }
             if self
                 .user(user)
@@ -125,6 +161,11 @@ impl App {
         if self.clock - self.last_maintenance >= 5.0 {
             changed |= self.maintenance();
         }
+        // A browser event loop parks on `ControlFlow::Wait`, and the waker that
+        // `Shared::emit` calls does not resume it, so the web build keeps a
+        // frame coming. 33 ms matches the client's own animation cadence.
+        #[cfg(target_arch = "wasm32")]
+        tx.wake_after(std::time::Duration::from_millis(33));
         self.maybe_save_cache();
         if let Some(toast) = &self.toast
             && toast.until < t
@@ -177,6 +218,11 @@ impl App {
             NetEvent::RoleCreated(role) => self.apply_role_created(role),
             NetEvent::RoleLinks { role, links } => self.apply_role_links(role, links),
             NetEvent::GuildEvents(events) => self.apply_guild_events(events),
+            NetEvent::GuildEventUpdated(event) => {
+                self.guild_events.retain(|item| item.id != event.id);
+                self.guild_events.push(event);
+                self.guild_events.sort_by_key(|item| item.start_at);
+            }
             NetEvent::GuildEventCreated(event) => self.apply_guild_event_created(event),
             NetEvent::GuildEventDeleted { guild, event } => {
                 self.apply_guild_event_deleted(guild, event)
@@ -216,7 +262,33 @@ impl App {
             NetEvent::MessageDelete { channel, message } => {
                 self.apply_message_delete(channel, message)
             }
+            NetEvent::ConnectionCode(code) => {
+                self.connection_code = code.clone();
+                self.toast(format!("Verification code: {code}"));
+            }
             NetEvent::VoiceState(v) => self.apply_voice_state(*v),
+            NetEvent::Gifs(list) => {
+                let urls: Vec<String> = list.iter().map(|gif| gif.url.clone()).collect();
+                self.gifs = list;
+                if !urls.is_empty() {
+                    self.request_urls(urls);
+                }
+            }
+            NetEvent::Activities(list) => self.activities = list,
+            NetEvent::StageUpdated(stage) => {
+                self.stages.insert(stage.channel_id, *stage);
+            }
+            NetEvent::ActivityUpdated(update) => {
+                let update = *update;
+                match update.session {
+                    Some(session) => {
+                        self.activity_sessions.insert(update.channel_id, session);
+                    }
+                    None => {
+                        self.activity_sessions.remove(&update.channel_id);
+                    }
+                }
+            }
             NetEvent::Presence { user, status } => self.apply_presence(user, status),
             NetEvent::Typing {
                 channel,
@@ -239,9 +311,25 @@ impl App {
             }
             NetEvent::PublicGuilds(guilds) => self.apply_public_guilds(guilds),
             NetEvent::Pins(messages) => self.apply_pins(messages),
+            NetEvent::Scheduled(messages) => self.scheduled = messages,
+            NetEvent::ScheduledCreated(message) => {
+                self.scheduled.retain(|item| item.id != message.id);
+                self.scheduled.push(message);
+                self.scheduled.sort_by_key(|item| item.send_at);
+            }
+            NetEvent::ScheduledDeleted(id) => self.scheduled.retain(|item| item.id != id),
             NetEvent::Bans(bans) => self.apply_bans(bans),
             NetEvent::Mutuals { user, guilds } => self.apply_mutuals(user, guilds),
             NetEvent::GuildUpdated(summary) => self.apply_guild_updated(*summary),
+            NetEvent::OnboardingUpdated(onboarding) => self.apply_onboarding_updated(*onboarding),
+            NetEvent::AutoModConfig(config) => self.apply_automod_config(*config),
+            NetEvent::Templates(list) => self.templates = list,
+            NetEvent::Webhooks(list) => self.webhooks = list,
+            NetEvent::ForumTags(tags) => self.forum_tags = tags,
+            NetEvent::WebhookCreated(hook) => {
+                self.webhook_token = hook.token.clone().map(|token| (hook.id, token));
+                self.webhooks.push(*hook);
+            }
             NetEvent::PrunePreview { days, count } => self.apply_prune_preview(days, count),
             NetEvent::Appeals(appeals) => self.apply_appeals(appeals),
             NetEvent::AppealResolved { appeal, accepted } => {

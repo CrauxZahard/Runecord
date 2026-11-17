@@ -15,7 +15,7 @@ pub(crate) fn rail(s: &App, p: Palette) -> El {
     let home_selected = s.screen == Screen::Dms;
     let home = rail_icon(
         "home",
-        &icons::DISCORD,
+        &icons::RUNECORD,
         28.0,
         home_selected,
         p.accent,
@@ -26,6 +26,8 @@ pub(crate) fn rail(s: &App, p: Palette) -> El {
         s.screen = Screen::Dms;
         s.dm_home = true;
         s.add_friend_open = false;
+        // A phone shows the DM list first, not the friends page.
+        s.mobile_chat = false;
     });
     rail = rail.child(with_indicator(home, home_selected, false, p));
 

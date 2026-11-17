@@ -66,7 +66,7 @@ pub(crate) fn start_camera_test() {
         *current = Some(stop.clone());
     }
     thread::spawn(move || {
-        let Ok(mut child) = Command::new(ffmpeg_path())
+        let Ok(mut child) = helper(&ffmpeg_path())
             .args([
                 "-hide_banner",
                 "-loglevel",
@@ -103,6 +103,12 @@ pub(crate) fn start_camera_test() {
                     Ok(n) => {
                         pending.extend_from_slice(&buffer[..n]);
                         while let Some(frame) = take_jpeg(&mut pending) {
+                            // A frame decoded after "Stop" raced with the stop
+                            // flag would repaint a stale image in the preview,
+                            // so never publish it once the test was ended.
+                            if stop.load(Ordering::Relaxed) {
+                                break;
+                            }
                             if let Ok(image) = image::load_from_memory(&frame) {
                                 let rgba = image.to_rgba8();
                                 let (width, height) = rgba.dimensions();
@@ -122,6 +128,14 @@ pub(crate) fn start_camera_test() {
             }
         }
         let _ = child.kill();
+        // Clear any frame still buffered here so the preview never keeps the
+        // last image after the test ends.
+        if let Some(slot) = CAMERA_TEST_FRAME.get()
+            && let Ok(mut current) = slot.lock()
+        {
+            *current = None;
+        }
+        CAMERA_TEST_VERSION.fetch_add(1, Ordering::Relaxed);
         log("camera test stopped");
     });
 }
@@ -223,7 +237,7 @@ pub(crate) fn video_capture(
             preset.qscale(),
             preset.target_kbps()
         ));
-        let mut child = match Command::new(ffmpeg_path())
+        let mut child = match helper(&ffmpeg_path())
             .args(capture_args(&kind, preset))
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

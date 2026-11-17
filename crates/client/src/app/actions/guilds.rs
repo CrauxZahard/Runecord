@@ -11,9 +11,26 @@ impl App {
         if name.is_empty() {
             return;
         }
-        let color = 0x5865f2;
-        self.send(Command::CreateGuild { name, color });
+        let code = self.template_code.text.trim().to_string();
+        if !code.is_empty() {
+            self.send(Command::ApplyTemplate { code, name });
+        } else {
+            let color = 0x5865f2;
+            self.send(Command::CreateGuild { name, color });
+        }
+        self.template_code = TextEdit::new("");
         self.modal = Modal::None;
+    }
+
+    pub fn open_create_channel(&mut self, parent: Option<Id>) {
+        self.create_parent = parent;
+        self.create_channel_kind = ChannelKind::Text;
+        self.profile_edit.clear();
+        self.modal = Modal::CreateChannel;
+    }
+
+    pub fn set_create_channel_kind(&mut self, kind: ChannelKind) {
+        self.create_channel_kind = kind;
     }
 
     pub fn create_channel_now(&mut self, kind: ChannelKind) {
@@ -32,6 +49,255 @@ impl App {
         self.modal = Modal::None;
     }
 
+    pub fn create_webhook(&mut self) {
+        let name = self.webhook_name.text.trim().to_string();
+        if name.is_empty() {
+            self.toast("Name the webhook");
+            return;
+        }
+        let channel = if self.webhook_channel != 0 {
+            self.webhook_channel
+        } else {
+            self.channels
+                .get(&self.active_guild)
+                .and_then(|list| {
+                    list.iter()
+                        .find(|channel| channel.kind == ChannelKind::Text)
+                        .map(|channel| channel.id)
+                })
+                .unwrap_or(0)
+        };
+        if channel == 0 {
+            self.toast("Pick a channel");
+            return;
+        }
+        self.send(Command::CreateWebhook { channel, name });
+        self.webhook_name = TextEdit::new("");
+    }
+
+    pub fn delete_webhook(&mut self, id: Id) {
+        self.send(Command::DeleteWebhook {
+            guild: self.active_guild,
+            id,
+        });
+        self.webhook_token = None;
+    }
+
+    pub fn save_forum_tags(&mut self) {
+        let channel = self.active_channel;
+        let tags: Vec<ForumTag> = self
+            .forum_tag_draft
+            .text
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return None;
+                }
+                let (emoji, name) = match line.split_once(char::is_whitespace) {
+                    Some((first, rest))
+                        if first.chars().count() <= 2 && !rest.trim().is_empty() =>
+                    {
+                        (first.to_string(), rest.trim().to_string())
+                    }
+                    _ => (String::new(), line.to_string()),
+                };
+                Some(ForumTag {
+                    id: 0,
+                    channel_id: channel,
+                    name,
+                    emoji,
+                    position: 0,
+                })
+            })
+            .collect();
+        self.send(Command::SetForumTags { channel, tags });
+        self.toast("Forum tags saved");
+    }
+
+    pub fn toggle_thread_tag(&mut self, tag: Id) {
+        if let Some(index) = self.thread_tag_ids.iter().position(|id| *id == tag) {
+            self.thread_tag_ids.remove(index);
+        } else {
+            self.thread_tag_ids.push(tag);
+        }
+    }
+
+    pub fn create_template(&mut self) {
+        let name = self.template_name.text.trim().to_string();
+        if name.is_empty() {
+            self.toast("Name the template");
+            return;
+        }
+        self.send(Command::CreateTemplate {
+            guild: self.active_guild,
+            name,
+            description: self.template_description.text.trim().to_string(),
+        });
+        self.template_name = TextEdit::new("");
+        self.template_description = TextEdit::new("");
+        self.toast("Template saved");
+    }
+
+    pub fn delete_template(&mut self, template: Id) {
+        self.send(Command::DeleteTemplate {
+            guild: self.active_guild,
+            template,
+        });
+    }
+
+    pub fn apply_template(&mut self, code: String) {
+        self.template_code = TextEdit::new(code);
+        self.profile_edit = TextEdit::new("");
+        self.modal = Modal::CreateServer;
+    }
+
+    pub fn add_automod_rule(&mut self) {
+        let name = self.automod_name.text.trim().to_string();
+        if name.is_empty() {
+            self.toast("Give the rule a name");
+            return;
+        }
+        let pattern = self.automod_pattern.text.trim().to_string();
+        if self.automod_trigger == "keyword" && pattern.is_empty() {
+            self.toast("Add at least one keyword");
+            return;
+        }
+        let timeout_minutes = self
+            .automod_timeout
+            .text
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(10)
+            .clamp(1, 10_080);
+        self.automod_rules.push(AutoModRule {
+            id: 0,
+            name,
+            trigger: self.automod_trigger.clone(),
+            pattern,
+            action: self.automod_action.clone(),
+            timeout_minutes,
+            enabled: true,
+        });
+        self.automod_name = TextEdit::new("");
+        self.automod_pattern = TextEdit::new("");
+        self.save_automod_rules();
+    }
+
+    pub fn toggle_automod_rule(&mut self, index: usize) {
+        if let Some(rule) = self.automod_rules.get_mut(index) {
+            rule.enabled = !rule.enabled;
+        }
+        self.save_automod_rules();
+    }
+
+    pub fn delete_automod_rule(&mut self, index: usize) {
+        if index < self.automod_rules.len() {
+            self.automod_rules.remove(index);
+        }
+        self.save_automod_rules();
+    }
+
+    fn save_automod_rules(&mut self) {
+        self.send(Command::SaveAutoMod {
+            guild: self.active_guild,
+            rules: self.automod_rules.clone(),
+        });
+    }
+
+    pub fn open_user_volume(&mut self, user: Id) {
+        self.modal = Modal::UserVolume(user);
+    }
+
+    pub fn set_user_volume(&mut self, user: Id, volume: f32) {
+        let muted = crate::voice::user_muted(user);
+        crate::voice::set_user_volume(user, volume, muted);
+    }
+
+    pub fn toggle_user_volume_mute(&mut self, user: Id) {
+        let volume = crate::voice::user_volume(user);
+        let muted = crate::voice::user_muted(user);
+        crate::voice::set_user_volume(user, volume, !muted);
+    }
+
+    pub fn set_presence_auto(&mut self, enabled: bool) {
+        self.presence_auto = enabled;
+        self.mark_cache_dirty();
+        if !enabled && !self.auto_presence.is_empty() {
+            self.auto_presence.clear();
+            self.clear_profile_activity();
+        }
+    }
+
+    /// Publishes the detected game as the activity, but never overrides an
+    /// activity the user set by hand.
+    pub fn refresh_auto_presence(&mut self) {
+        if !self.presence_auto || self.my_presence == Presence::Offline {
+            return;
+        }
+        if let Some(activity) = &self.me.activity
+            && (self.auto_presence.is_empty() || activity.title != self.auto_presence)
+        {
+            // A hand-written activity wins until it is cleared.
+            return;
+        }
+        let detected = crate::presence_scan::detect_activity();
+        let title = detected
+            .map(|(_, title)| title.to_string())
+            .unwrap_or_default();
+        if title == self.auto_presence {
+            return;
+        }
+        self.auto_presence = title.clone();
+        if title.is_empty() {
+            self.clear_profile_activity();
+        } else {
+            let kind = detected.map(|(kind, _)| kind).unwrap_or("playing");
+            self.profile_activity_kind = TextEdit::new(kind);
+            self.profile_activity_title = TextEdit::new(title);
+            self.save_profile_activity();
+        }
+    }
+
+    pub fn set_overlay_enabled(&mut self, enabled: bool) {
+        self.overlay_enabled = enabled;
+        self.mark_cache_dirty();
+        self.sync_overlay();
+    }
+
+    pub fn save_onboarding(&mut self) {
+        let rules = self
+            .onboarding_rules
+            .text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect();
+        self.send(Command::UpdateOnboarding {
+            guild: self.active_guild,
+            update: UpdateOnboarding {
+                welcome_enabled: self.onboarding_welcome,
+                welcome_title: self.onboarding_title.text.trim().to_string(),
+                welcome_description: self.onboarding_description.text.trim().to_string(),
+                rules,
+                verification_level: self.onboarding_verification,
+            },
+        });
+        self.toast("Onboarding saved");
+    }
+
+    pub fn accept_onboarding(&mut self, guild: Id) {
+        self.send(Command::AcceptOnboarding { guild });
+        self.modal = Modal::None;
+    }
+
+    pub fn open_channel_permissions(&mut self, channel: Id) {
+        self.perm_target = 0;
+        self.perm_target_kind = "role".into();
+        self.modal = Modal::ChannelPermissions(channel);
+    }
+
     pub fn open_channel_edit(&mut self, id: Id) {
         let Some(channel) = self.channel(id).cloned() else {
             return;
@@ -42,6 +308,19 @@ impl App {
         self.channel_status_edit = TextEdit::new(channel.status);
         self.channel_slowmode_edit = TextEdit::new(channel.slowmode.to_string());
         self.channel_nsfw_edit = channel.nsfw;
+        let tag_lines: Vec<String> = self
+            .forum_tags
+            .iter()
+            .filter(|tag| tag.channel_id == id)
+            .map(|tag| {
+                if tag.emoji.is_empty() {
+                    tag.name.clone()
+                } else {
+                    format!("{} {}", tag.emoji, tag.name)
+                }
+            })
+            .collect();
+        self.forum_tag_draft = TextEdit::new(tag_lines.join("\n"));
         self.modal = Modal::EditChannel(id);
     }
 

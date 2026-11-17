@@ -77,6 +77,32 @@ pub(crate) fn emojis_view(s: &App, p: Palette) -> El {
                         .on_edit(|s: &mut App| &mut s.emoji_name),
                 )
                 .child(
+                    row()
+                        .key("emoji-sticker-toggle")
+                        .h(30.0)
+                        .gap(8.0)
+                        .center_y()
+                        .role("checkbox")
+                        .label("Upload as sticker")
+                        .checked(s.emoji_sticker)
+                        .on_press(|s: &mut App| s.emoji_sticker = !s.emoji_sticker)
+                        .child(
+                            el().size(16.0, 16.0)
+                                .radius(4.0)
+                                .fill(if s.emoji_sticker { p.green } else { p.input })
+                                .border(1.0, p.divider)
+                                .center()
+                                .children(s.emoji_sticker.then(|| {
+                                    icon(&icons::CHECK, 11.0).color(Color::WHITE)
+                                })),
+                        )
+                        .child(
+                            text("Upload as sticker")
+                                .font(theme::SMALL)
+                                .color(p.text),
+                        ),
+                )
+                .child(
                     el()
                         .key("emoji-drop")
                         .w_full()
@@ -86,11 +112,27 @@ pub(crate) fn emojis_view(s: &App, p: Palette) -> El {
                         .fill(p.input)
                         .center()
                         .role("button")
-                        .label("Drop a PNG here to add an emoji")
+                        .label("Choose a PNG to add an emoji")
                         .on_drop_files(|s: &mut App, files, _| {
                             if let Some(file) = files.first() {
-                                s.create_emoji_from_path(file.clone());
+                                s.create_emoji_from_path(crate::net::UploadSource::Path(
+                                    file.clone(),
+                                ));
                             }
+                        })
+                        .on_press_tx(|s: &mut App, tx: &mut rune::Tx| {
+                            let kind = crate::files::PickKind::Emoji {
+                                guild: s.active_guild,
+                                sticker: s.emoji_sticker,
+                                name: s.emoji_name.text.trim().to_string(),
+                            };
+                            crate::files::open(
+                                tx,
+                                kind.clone(),
+                                "Choose an emoji image",
+                                &["png", "gif", "jpg", "jpeg", "webp"],
+                                move |s, path| s.accept_picked_path(kind.clone(), path),
+                            );
                         })
                         .accepts_extensions(&["png", "gif", "jpg", "jpeg", "webp"])
                         .child(

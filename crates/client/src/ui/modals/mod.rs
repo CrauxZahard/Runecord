@@ -12,31 +12,46 @@ use runecord_protocol::{PrivacyLevel, Role};
 mod discovery;
 mod moderation;
 mod notifications;
+mod polls;
 mod profile;
 mod profile_tools;
+mod scheduled;
 mod server;
 mod social;
+mod stickers;
 
+mod activities;
 mod admin;
 mod emoji;
+mod gifs;
 mod search;
+mod slash;
 mod threads;
+mod volume;
 
+pub(crate) use activities::*;
 pub(crate) use admin::*;
 pub(crate) use discovery::*;
 pub(crate) use emoji::*;
+pub(crate) use gifs::*;
 pub(crate) use moderation::*;
 pub(crate) use notifications::*;
+pub(crate) use polls::*;
 pub(crate) use profile::*;
 pub(crate) use profile_tools::*;
+pub(crate) use scheduled::*;
 pub(crate) use search::*;
 pub(crate) use server::*;
+pub(crate) use slash::*;
 pub(crate) use social::*;
+pub(crate) use stickers::*;
 pub(crate) use threads::*;
+pub(crate) use volume::*;
 
 pub(crate) fn modal(s: &App, p: Palette) -> El {
     let sheet = match &s.modal {
         Modal::Settings(tab) => settings_sheet(s, p, *tab),
+        Modal::StatusPicker => status_picker_sheet(s, p),
         Modal::ServerMenu => server_menu(s, p),
         Modal::CreateServer => create_server_sheet(s, p),
         Modal::CreateChannel => create_channel_sheet(s, p),
@@ -75,6 +90,14 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         Modal::Threads => threads_sheet(s, p),
         Modal::ThreadCreate { parent, message } => thread_create_sheet(s, p, *parent, *message),
         Modal::EditMessage(id) => edit_sheet(s, p, *id),
+        Modal::ForwardMessage(id) => forward_sheet(s, p, *id),
+        Modal::CreatePoll => create_poll_sheet(s, p),
+        Modal::StickerPicker => sticker_sheet(s, p),
+        Modal::SlashCommand => slash_sheet(s, p),
+        Modal::UserVolume(user) => user_volume_sheet(s, p, *user),
+        Modal::Activities(channel) => activities_sheet(s, p, *channel),
+        Modal::GifPicker => gif_sheet(s, p),
+        Modal::ScheduledMessages => scheduled_sheet(s, p),
         Modal::MessageMenu(id) => message_menu(s, p, *id),
         Modal::ConfirmDelete(id) => simple_sheet(
             s,
@@ -84,6 +107,7 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         ),
         Modal::InviteJoin => invite_join_sheet(s, p),
         Modal::BanAppeal => ban_appeal_sheet(s, p),
+        Modal::OnboardingRules(guild) => onboarding_rules_sheet(s, p, *guild),
         Modal::ServerSettings => el(),
         Modal::Roles => el(),
         Modal::ServerNotifications => server_notifications_sheet(s, p),
@@ -100,7 +124,7 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
         .fill(p.scrim)
         .backdrop_blur(6.0);
-    let overlay = if matches!(s.modal, Modal::Inbox) {
+    let overlay = if matches!(s.modal, Modal::Inbox) && !mobile() {
         overlay
             .justify_end()
             .items_start()
@@ -108,8 +132,35 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
             .pr(16.0)
             .fill(Color::TRANSPARENT)
             .backdrop_blur(0.0)
+    } else if matches!(s.modal, Modal::Profile(_)) {
+        // A member's profile appears as a card beside the member list,
+        // not as a centred dialog. A phone has no member column to sit beside.
+        if mobile() {
+            overlay
+                .center()
+                .px(16.0)
+                .fill(Color::TRANSPARENT)
+                .backdrop_blur(0.0)
+        } else {
+            overlay
+                .justify_end()
+                .items_end()
+                .pb(76.0)
+                .pr(if s.show_members {
+                    s.members_width + 14.0
+                } else {
+                    14.0
+                })
+                .fill(Color::TRANSPARENT)
+                .backdrop_blur(0.0)
+        }
     } else {
-        overlay.center()
+        // A phone has no room for the desktop margins; every sheet is capped
+        // by its own max width and the overlay keeps it off the edges.
+        overlay
+            .center()
+            .px(if mobile() { 12.0 } else { 0.0 })
+            .py(if mobile() { 12.0 } else { 0.0 })
     };
     overlay
         .role("dialog")
@@ -153,6 +204,7 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::Search => "Search",
         Modal::Pins => "Pinned messages",
         Modal::QuickSwitcher => "Quick switcher",
+        Modal::StatusPicker => "Set status",
         Modal::Profile(_) => "Profile",
         Modal::FullProfile(_) => "Full profile",
         Modal::EmojiPicker => "Emoji picker",
@@ -160,10 +212,19 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::Threads => "Threads",
         Modal::ThreadCreate { .. } => "Create thread",
         Modal::EditMessage(_) => "Edit message",
+        Modal::ForwardMessage(_) => "Forward message",
+        Modal::CreatePoll => "Create poll",
+        Modal::StickerPicker => "Stickers",
+        Modal::SlashCommand => "Slash command",
+        Modal::UserVolume(_) => "User volume",
+        Modal::Activities(_) => "Activities",
+        Modal::GifPicker => "GIFs",
+        Modal::ScheduledMessages => "Scheduled messages",
         Modal::MessageMenu(_) => "Message actions",
         Modal::ConfirmDelete(_) => "Delete message",
         Modal::InviteJoin => "Join server",
         Modal::BanAppeal => "Ban appeal",
+        Modal::OnboardingRules(_) => "Server rules",
         Modal::ServerSettings | Modal::Roles => "Roles",
         Modal::ChannelPermissions(_) => "Channel permissions",
         Modal::None => "Dialog",
@@ -174,7 +235,7 @@ pub(super) fn simple_sheet(s: &App, p: Palette, title: &str, body: &str) -> El {
     let _ = s;
     col()
         .key("simple-sheet")
-        .w(440.0)
+        .w(sheet_w(440.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

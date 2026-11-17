@@ -71,6 +71,7 @@ pub(crate) fn account_tab(s: &App, p: Palette) -> El {
                         "Changing your password ends sessions on other profiles; this profile stays signed in."
                             .to_string(),
                     )
+                    .wrap()
                     .font(theme::SMALL)
                     .color(p.text_muted),
                 )

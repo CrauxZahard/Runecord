@@ -16,11 +16,7 @@ struct Config {
 }
 
 fn config_path() -> Option<PathBuf> {
-    let base = std::env::var("APPDATA")
-        .ok()
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())?;
-    Some(base.join("Runecord").join("config.json"))
+    Some(crate::paths::data_dir()?.join("config.json"))
 }
 
 /// The URL stored by the Application settings, falling back to the local server.
@@ -37,6 +33,10 @@ pub struct Startup {
 /// back to the local default but is reported so the auth screen can explain
 /// why the client is not connected.
 pub fn startup() -> Startup {
+    startup_file()
+}
+
+fn startup_file() -> Startup {
     let Some(path) = config_path() else {
         return Startup {
             url: DEFAULT_SERVER_URL.to_string(),
@@ -103,47 +103,6 @@ pub fn uses_bundled_server(url: &str) -> bool {
     normalize(url).is_ok_and(|url| url == DEFAULT_SERVER_URL)
 }
 
-/// Quick startup TCP probe. It does not authenticate; it only distinguishes a
-/// refused or unroutable endpoint from one that is listening, so the auth screen
-/// can say the client can't connect instead of waiting forever.
-pub fn server_reachable(url: &str) -> bool {
-    use std::net::{TcpStream, ToSocketAddrs};
-    let Some((host, port)) = endpoint(url) else {
-        return false;
-    };
-    let Ok(addresses) = (host.as_str(), port).to_socket_addrs() else {
-        return false;
-    };
-    addresses.into_iter().any(|address| {
-        TcpStream::connect_timeout(&address, std::time::Duration::from_millis(600)).is_ok()
-    })
-}
-
-fn endpoint(url: &str) -> Option<(String, u16)> {
-    let (secure, rest) = if let Some(rest) = url.strip_prefix("https://") {
-        (true, rest)
-    } else {
-        let rest = url.strip_prefix("http://")?;
-        (false, rest)
-    };
-    let authority = rest.split('/').next()?;
-    let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
-        let (host, after) = bracketed.split_once(']')?;
-        let port = after.strip_prefix(':');
-        (host.to_string(), port)
-    } else if let Some((host, port)) = authority.rsplit_once(':') {
-        (host.to_string(), Some(port))
-    } else {
-        (authority.to_string(), None)
-    };
-    let port = match port {
-        Some(port) => port.parse().ok()?,
-        None if secure => 443,
-        None => 80,
-    };
-    Some((host, port))
-}
-
 pub fn normalize(input: &str) -> Result<String, String> {
     let trimmed = input.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -206,22 +165,26 @@ pub fn normalize(input: &str) -> Result<String, String> {
 pub fn save_server_url(input: &str) -> Result<(String, bool), String> {
     let url = normalize(input)?;
     let previous = stored_server_url();
+    persist_url(&url)?;
+    let changed = previous != url;
+    if changed {
+        clear_sessions();
+    }
+    Ok((url, changed))
+}
+
+fn persist_url(url: &str) -> Result<(), String> {
     let path = config_path().ok_or("Could not find the configuration folder.")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .map_err(|error| format!("Could not create the config folder: {error}"))?;
     }
     let encoded = serde_json::to_vec_pretty(&Config {
-        server_url: url.clone(),
+        server_url: url.to_string(),
     })
     .map_err(|error| format!("Could not encode the configuration: {error}"))?;
     std::fs::write(&path, encoded)
-        .map_err(|error| format!("Could not save the server URL: {error}"))?;
-    let changed = previous != url;
-    if changed {
-        clear_sessions();
-    }
-    Ok((url, changed))
+        .map_err(|error| format!("Could not save the server URL: {error}"))
 }
 
 fn clear_sessions() {
@@ -242,7 +205,7 @@ fn clear_sessions() {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SERVER_URL, endpoint, normalize, uses_bundled_server};
+    use super::{DEFAULT_SERVER_URL, normalize, uses_bundled_server};
 
     #[test]
     fn server_urls_are_normalized_and_validated() {
@@ -275,14 +238,5 @@ mod tests {
         assert!(uses_bundled_server("http://127.0.0.1:47800/"));
         assert!(!uses_bundled_server("https://chat.example.com"));
         assert!(!uses_bundled_server("http://127.0.0.1:47801"));
-        assert_eq!(
-            endpoint("https://chat.example.com"),
-            Some(("chat.example.com".into(), 443))
-        );
-        assert_eq!(
-            endpoint("http://127.0.0.1:47993/base"),
-            Some(("127.0.0.1".into(), 47993))
-        );
-        assert_eq!(endpoint("http://[::1]:47800"), Some(("::1".into(), 47800)));
     }
 }

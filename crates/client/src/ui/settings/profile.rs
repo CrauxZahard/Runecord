@@ -1,6 +1,21 @@
 use super::*;
 
 pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
+    // Every field on this page edits a draft. Rendering the draft keeps the
+    // header, avatar and banner in step without a request to the server.
+    let mut preview = s.me.clone();
+    let typed_name = s.profile_display.text.trim();
+    if !typed_name.is_empty() {
+        preview.display_name = typed_name.to_string();
+    }
+    preview.avatar_color = s.profile_color;
+    preview.avatar_border = s.profile_border;
+    preview.avatar_decoration = s.profile_decoration.clone();
+    preview.banner_color = s.profile_banner_color;
+    preview.profile_effect = s.profile_effect.clone();
+    preview.nameplate = s.profile_nameplate.clone();
+    preview.profile_widget = s.profile_widget.clone();
+
     col()
         .key("profile")
         .w_full()
@@ -21,12 +36,12 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                     row()
                         .gap(16.0)
                         .center_y()
-                        .child(avatar_status(&s.me, 64.0, p, p.card, true))
+                        .child(avatar_status(&preview, 64.0, p, p.card, true))
                         .child(
                             col()
                                 .grow(1.0)
                                 .child(
-                                    text(s.me.display_name.clone())
+                                    text(preview.display_name.clone())
                                         .font(theme::TITLE)
                                         .color(p.text_bright),
                                 )
@@ -35,13 +50,18 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                 )
                 .child(el().w_full().h(1.0).fill(p.divider))
                 .child(
-                    row()
-                        .w_full()
-                        .gap(18.0)
+                    {
+                        let mut assets = row().w_full().gap(18.0);
+                        if mobile() {
+                            // Avatar and banner stack on a phone instead of
+                            // running past the card's right edge.
+                            assets = assets.flex_wrap();
+                        }
+                        assets
                         .child(
                             col()
                                 .gap(6.0)
-                                .child(avatar_status(&s.me, 96.0, p, p.card, true))
+                                .child(avatar_status(&preview, 96.0, p, p.card, true))
                                 .child(
                                     row()
                                         .gap(6.0)
@@ -56,25 +76,15 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                                 .fill(p.accent)
                                                 .hover(p.accent_hover)
                                                 .on_press_tx(|_s: &mut App, tx: &mut rune::Tx| {
-                                                    let options = rune::FileDialogOptions {
-                                                        title: "Upload profile avatar".to_string(),
-                                                        directory: None,
-                                                        file_name: None,
-                                                        filters: Vec::new(),
-                                                    }
-                                                    .filter(
-                                                        "Images",
+                                                    crate::files::open(
+                                                        tx,
+                                                        crate::files::PickKind::Avatar,
+                                                        "Upload profile avatar",
                                                         &["png", "jpg", "jpeg", "gif", "webp"],
-                                                    );
-                                                    tx.open_file(
-                                                        options,
-                                                        |s: &mut App, result, _| {
-                                                            if let Ok(Some(path)) = result {
-                                                                s.begin_user_image_crop(
-                                                                    path, false,
-                                                                );
-                                                            }
-                                                        },
+                                                        |s, path| s.accept_picked_path(
+                                                            crate::files::PickKind::Avatar,
+                                                            path,
+                                                        ),
                                                     );
                                                 })
                                                 .child(
@@ -104,7 +114,7 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         .child(
                             col()
                                 .gap(6.0)
-                                .child(el().w(320.0).h(120.0).radius(6.0).clip_rounded(6.0).child(
+                                .child(el().w_full().max_w(320.0).h(120.0).radius(6.0).clip_rounded(6.0).child(
                                     if let Some(pixels) = s.images.get(&s.me.banner_url) {
                                         el().w_full()
                                             .h(120.0)
@@ -112,8 +122,8 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                     } else {
                                         el().w_full()
                                             .h(120.0)
-                                            .fill(if s.me.banner_color != 0 {
-                                                theme::profile_banner_color(s.me.banner_color)
+                                            .fill(if preview.banner_color != 0 {
+                                                theme::profile_banner_color(preview.banner_color)
                                             } else {
                                                 p.accent
                                             })
@@ -139,23 +149,15 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                                 .fill(p.accent)
                                                 .hover(p.accent_hover)
                                                 .on_press_tx(|_s: &mut App, tx: &mut rune::Tx| {
-                                                    let options = rune::FileDialogOptions {
-                                                        title: "Upload profile banner".to_string(),
-                                                        directory: None,
-                                                        file_name: None,
-                                                        filters: Vec::new(),
-                                                    }
-                                                    .filter(
-                                                        "Images",
+                                                    crate::files::open(
+                                                        tx,
+                                                        crate::files::PickKind::Banner,
+                                                        "Upload profile banner",
                                                         &["png", "jpg", "jpeg", "gif", "webp"],
-                                                    );
-                                                    tx.open_file(
-                                                        options,
-                                                        |s: &mut App, result, _| {
-                                                            if let Ok(Some(path)) = result {
-                                                                s.begin_user_image_crop(path, true);
-                                                            }
-                                                        },
+                                                        |s, path| s.accept_picked_path(
+                                                            crate::files::PickKind::Banner,
+                                                            path,
+                                                        ),
                                                     );
                                                 })
                                                 .child(
@@ -181,7 +183,8 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                                 )
                                         })),
                                 ),
-                        ),
+                        )
+                    }
                 )
                 .child(
                     text("DISPLAY NAME")
@@ -229,7 +232,8 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         .color(p.text_muted),
                 )
                 .child(
-                    text("Effects animate around your avatar; nameplates sit behind your display name.")
+                    text("Effects animate around your avatar; a nameplate colours your display name.")
+                        .wrap()
                         .font(theme::TINY)
                         .color(p.text_muted),
                 )
@@ -242,7 +246,7 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         ("neon", "Neon"),
                         ("snow", "Snow"),
                     ] {
-                        let selected = s.me.profile_effect == value;
+                        let selected = s.profile_effect == value;
                         chips = chips.child(
                             el().key(format!("profile-effect-{value}"))
                                 .h(30.0)
@@ -274,36 +278,25 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         .font(theme::SECTION)
                         .color(p.text_muted),
                 )
+                .child(
+                    text("A nameplate colours your display name. Pick a preset or choose your own colours below.")
+                        .wrap()
+                        .font(theme::TINY)
+                        .color(p.text_muted),
+                )
                 .child({
                     let mut chips = row().w_full().gap(6.0).flex_wrap();
-                    for (value, label, top, bottom) in [
-                        ("", "None", p.rail, p.rail),
-                        (
-                            "midnight",
-                            "Midnight",
-                            theme::color("#232b52"),
-                            theme::color("#5865f2"),
-                        ),
-                        (
-                            "aurora",
-                            "Aurora",
-                            theme::color("#1db954"),
-                            theme::color("#5865f2"),
-                        ),
-                        (
-                            "sunset",
-                            "Sunset",
-                            theme::color("#eb459e"),
-                            theme::color("#faa61a"),
-                        ),
-                        (
-                            "candy",
-                            "Candy",
-                            theme::color("#ff73fa"),
-                            theme::color("#ffb3fd"),
-                        ),
+                    for (value, label) in [
+                        ("", "None"),
+                        ("midnight", "Midnight"),
+                        ("aurora", "Aurora"),
+                        ("sunset", "Sunset"),
+                        ("candy", "Candy"),
                     ] {
-                        let selected = s.me.nameplate == value;
+                        let selected = s.profile_nameplate == value;
+                        let (top, bottom) = theme::nameplate_colors(value)
+                            .map(|(primary, secondary, _)| (primary, secondary))
+                            .unwrap_or((p.rail, p.rail));
                         chips = chips.child(
                             el().key(format!("profile-nameplate-{value}"))
                                 .h(30.0)
@@ -330,6 +323,65 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                     }
                     chips
                 })
+                .child(text("COLOR MODE").font(theme::SECTION).color(p.text_muted))
+                .child({
+                    let gradient = theme::nameplate_values(&s.profile_nameplate)
+                        .is_some_and(|(_, _, gradient)| gradient);
+                    let mut modes = row().w_full().gap(6.0).flex_wrap();
+                    for (value, label) in [(false, "Solid"), (true, "Gradient")] {
+                        let selected = gradient == value;
+                        modes = modes.child(
+                            el().key(format!("nameplate-mode-{value}"))
+                                .h(30.0)
+                                .px(10.0)
+                                .radius(15.0)
+                                .center()
+                                .role("radio")
+                                .label(label)
+                                .checked(selected)
+                                .fill(if selected { p.selected } else { p.rail })
+                                .hover(p.card_hover)
+                                .on_press(move |s: &mut App| s.set_nameplate_gradient(value))
+                                .child(
+                                    text(label)
+                                        .font(theme::LABEL)
+                                        .color(if selected {
+                                            p.text_bright
+                                        } else {
+                                            p.text_muted
+                                        }),
+                                ),
+                        );
+                    }
+                    modes
+                })
+                .child(
+                    text("PRIMARY COLOR")
+                        .font(theme::SECTION)
+                        .color(p.text_muted),
+                )
+                .child({
+                    let (primary, _, _) = theme::nameplate_values(&s.profile_nameplate)
+                        .unwrap_or((0, 0, true));
+                    color_swatches(primary, App::set_nameplate_primary, p)
+                })
+                .child(
+                    text("SECONDARY COLOR")
+                        .font(theme::SECTION)
+                        .color(p.text_muted),
+                )
+                .child({
+                    let (_, secondary, gradient) = theme::nameplate_values(&s.profile_nameplate)
+                        .unwrap_or((0, 0, true));
+                    if gradient {
+                        color_swatches(secondary, App::set_nameplate_secondary, p)
+                    } else {
+                        text("Only used with the gradient mode.")
+                            .wrap()
+                            .font(theme::TINY)
+                            .color(p.text_faint)
+                    }
+                })
                 .child(
                     text("PROFILE WIDGET")
                         .font(theme::SECTION)
@@ -342,7 +394,7 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         ("stats", "At a glance"),
                         ("activity", "Now playing"),
                     ] {
-                        let selected = s.me.profile_widget == value;
+                        let selected = s.profile_widget == value;
                         chips = chips.child(
                             el().key(format!("profile-widget-{value}"))
                                 .h(30.0)
@@ -372,8 +424,50 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                 .child(text("ACTIVITY").font(theme::SECTION).color(p.text_muted))
                 .child(
                     text("Use \"spotify\" for a listening card or \"playing\" for a game card.")
+                        .wrap()
                         .font(theme::TINY)
                         .color(p.text_muted),
+                )
+                .child(
+                    row()
+                        .key("presence-auto")
+                        .w_full()
+                        .h(36.0)
+                        .gap(10.0)
+                        .center_y()
+                        .role("checkbox")
+                        .label("Show the game I am playing as my status")
+                        .checked(s.presence_auto)
+                        .hover(p.card_hover)
+                        .on_press(|s: &mut App| {
+                            let next = !s.presence_auto;
+                            s.set_presence_auto(next)
+                        })
+                        .child(
+                            el().size(16.0, 16.0)
+                                .radius(4.0)
+                                .border(1.0, p.divider)
+                                .fill(if s.presence_auto { p.green } else { p.input })
+                                .center()
+                                .children(s.presence_auto.then(|| {
+                                    icon(&icons::CHECK, 11.0).color(Color::WHITE)
+                                })),
+                        )
+                        .child(
+                            col()
+                                .gap(1.0)
+                                .child(
+                                    text("Automatic Rich Presence")
+                                        .font(theme::SMALL_MED)
+                                        .color(p.text_bright),
+                                )
+                                .child(
+                                    text("Detects known games and editors locally and publishes them as your activity. A manual activity always wins.")
+                                        .wrap()
+                                        .font(theme::TINY)
+                                        .color(p.text_faint),
+                                ),
+                        ),
                 )
                 .child(settings_input(
                     &s.profile_activity_kind,
@@ -451,18 +545,16 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                 .fill(p.rail)
                                 .hover(p.rail_hover)
                                 .on_press_tx(|_s: &mut App, tx: &mut rune::Tx| {
-                                    let options = rune::FileDialogOptions {
-                                        title: "Upload activity artwork".to_string(),
-                                        directory: None,
-                                        file_name: None,
-                                        filters: Vec::new(),
-                                    }
-                                    .filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]);
-                                    tx.open_file(options, |s: &mut App, result, _| {
-                                        if let Ok(Some(path)) = result {
-                                            s.upload_activity_artwork(path);
-                                        }
-                                    });
+                                    crate::files::open(
+                                        tx,
+                                        crate::files::PickKind::ActivityArtwork,
+                                        "Upload activity artwork",
+                                        &["png", "jpg", "jpeg", "gif", "webp"],
+                                        |s, path| s.accept_picked_path(
+                                            crate::files::PickKind::ActivityArtwork,
+                                            path,
+                                        ),
+                                    );
                                 })
                                 .child(
                                     text("Upload Artwork")
@@ -504,13 +596,16 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                                 .radius(14.0)
                                 .gap(6.0)
                                 .center_y()
-                                .fill(p.rail)
+                                .fill(if connection.verified { p.green.alpha(0.18) } else { p.rail })
                                 .child(
                                     text(kind.to_uppercase())
                                         .font(theme::TINY)
                                         .color(p.text_muted),
                                 )
                                 .child(text(name.clone()).font(theme::TINY).color(p.text_bright))
+                                .children(connection.verified.then(|| {
+                                    icon(&icons::CHECK, 10.0).color(p.green)
+                                }))
                                 .child(
                                     el().key(format!("connection-remove-{kind}-{name}"))
                                         .size(18.0, 18.0)
@@ -535,6 +630,125 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                     }
                     chips
                 })
+                .child(
+                    col()
+                        .w_full()
+                        .radius(8.0)
+                        .fill(p.rail)
+                        .padding(12.0)
+                        .gap(8.0)
+                        .child(
+                            text("Verify a connection")
+                                .font(theme::SMALL_MED)
+                                .color(p.text_bright),
+                        )
+                        .child(
+                            text("Pick a service, enter your handle and your public profile URL, get a code, paste the code into that profile, then verify. Verified connections show a check on your profile.")
+                                .wrap()
+                                .font(theme::TINY)
+                                .color(p.text_muted),
+                        )
+                        .child({
+                            let mut providers = row().gap(6.0).flex_wrap();
+                            for provider in ["github", "steam", "twitch", "youtube", "spotify", "x"] {
+                                let selected = s.profile_connection_kind.text.trim() == provider;
+                                providers = providers.child(
+                                    el().key(format!("connection-provider-{provider}"))
+                                        .h(26.0)
+                                        .px(9.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("radio")
+                                        .label(provider)
+                                        .checked(selected)
+                                        .fill(if selected { p.accent } else { p.input })
+                                        .hover(p.input_hover)
+                                        .on_press(move |s: &mut App| {
+                                            s.profile_connection_kind =
+                                                rune::TextEdit::new(provider)
+                                        })
+                                        .child(
+                                            text(provider)
+                                                .font(theme::TINY)
+                                                .color(if selected {
+                                                    Color::WHITE
+                                                } else {
+                                                    p.text_muted
+                                                }),
+                                        ),
+                                );
+                            }
+                            providers
+                        })
+                        .child(settings_input(
+                            &s.profile_connection_name,
+                            "connection-handle",
+                            "Handle on that service",
+                            p,
+                            |s: &mut App| &mut s.profile_connection_name,
+                        ))
+                        .child(settings_input(
+                            &s.profile_connection_url,
+                            "connection-url",
+                            "Public profile URL (https://...)",
+                            p,
+                            |s: &mut App| &mut s.profile_connection_url,
+                        ))
+                        .child(
+                            row()
+                                .w_full()
+                                .gap(8.0)
+                                .center_y()
+                                .child(
+                                    el().key("connection-code")
+                                        .h(32.0)
+                                        .px(12.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("button")
+                                        .label("Get a verification code")
+                                        .fill(p.rail)
+                                        .hover(p.rail_hover)
+                                        .on_press(|s: &mut App| s.request_connection_code())
+                                        .child(
+                                            text("Get Code")
+                                                .font(theme::LABEL)
+                                                .color(p.text_bright),
+                                        ),
+                                )
+                                .child(
+                                    text(if s.connection_code.is_empty() {
+                                        "No code yet".to_string()
+                                    } else {
+                                        s.connection_code.clone()
+                                    })
+                                    .font(theme::MONO)
+                                    .color(if s.connection_code.is_empty() {
+                                        p.text_faint
+                                    } else {
+                                        p.green
+                                    }),
+                                )
+                                .child(el().grow(1.0))
+                                .child(
+                                    el().key("connection-verify")
+                                        .h(32.0)
+                                        .px(12.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("button")
+                                        .label("Verify connection")
+                                        .fill(p.accent)
+                                        .hover(p.accent_hover)
+                                        .on_press(|s: &mut App| s.verify_connection())
+                                        .child(
+                                            text("Verify")
+                                                .font(theme::LABEL)
+                                                .color(Color::WHITE),
+                                        ),
+                                ),
+                        ),
+                )
                 .child(settings_input(
                     &s.profile_connection_kind,
                     "connection-kind",
@@ -633,14 +847,14 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         .font(theme::SECTION)
                         .color(p.text_muted),
                 )
-                .child(color_swatches(s.me.avatar_color, App::set_avatar_color, p))
+                .child(color_swatches(s.profile_color, App::set_avatar_color, p))
                 .child(
                     text("AVATAR BORDER")
                         .font(theme::SECTION)
                         .color(p.text_muted),
                 )
                 .child(color_swatches(
-                    s.me.avatar_border,
+                    s.profile_border,
                     App::set_avatar_border,
                     p,
                 ))
@@ -649,25 +863,64 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                         .font(theme::SECTION)
                         .color(p.text_muted),
                 )
-                .child(color_swatches(s.me.banner_color, App::set_banner_color, p))
+                .child(color_swatches(s.profile_banner_color, App::set_banner_color, p)),
+        )
+}
+
+/// A save bar that lives outside the scrolling content, so it stays pinned to
+/// the bottom of the settings pane no matter how far the user has scrolled.
+pub(crate) fn profile_save_bar(s: &App, p: Palette) -> El {
+    let dirty = s.profile_dirty();
+    row()
+        .key("profile-save-bar")
+        .w_full()
+        .h(56.0)
+        .px(if mobile() { 16.0 } else { 40.0 })
+        .gap(8.0)
+        .center_y()
+        .fill(p.modal)
+        .border_sides([1.0, 0.0, 0.0, 0.0], p.divider)
+        .shadow(0.0, -8.0, p.shadow)
+        .children(dirty.then(|| {
+            text("Unsaved changes")
+                .font(theme::TINY)
+                .color(p.yellow)
+        }))
+        .child(el().grow(1.0))
+        .child(
+            el().key("profile-reset")
+                .h(34.0)
+                .px(14.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Reset changes")
+                .fill(p.rail)
+                .hover(p.rail_hover)
+                .on_press(|s: &mut App| s.sync_profile_edits())
+                .child(text("Reset").font(theme::SMALL_MED).color(p.text_muted)),
+        )
+        .child(
+            el().h(34.0)
+                .px(18.0)
+                .radius(4.0)
+                .key("profile-save")
+                .role("button")
+                .label("Save Profile")
+                .fill(if dirty { p.accent } else { p.rail })
+                .hover(if dirty { p.accent_hover } else { p.rail })
+                .center()
+                .on_press(|s: &mut App| {
+                    if s.profile_dirty() {
+                        s.save_profile();
+                    }
+                })
                 .child(
-                    row().w_full().justify_end().child(
-                        el().h(34.0)
-                            .px(18.0)
-                            .radius(4.0)
-                            .key("profile-save")
-                            .role("button")
-                            .label("Save Profile")
-                            .fill(p.accent)
-                            .hover(p.accent_hover)
-                            .center()
-                            .on_press(|s: &mut App| s.save_profile())
-                            .child(
-                                text("Save Changes")
-                                    .font(theme::SMALL_MED)
-                                    .color(Color::WHITE),
-                            ),
-                    ),
+                    text("Save Changes").font(theme::SMALL_MED).color(if dirty {
+                        Color::WHITE
+                    } else {
+                        p.text_faint
+                    }),
                 ),
         )
 }

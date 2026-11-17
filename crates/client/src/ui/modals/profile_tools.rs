@@ -35,7 +35,7 @@ pub(crate) fn crop_image_sheet(s: &App, p: Palette, banner: bool, user: bool, gr
 
     col()
         .key("crop-guild-image")
-        .w(500.0)
+        .w(sheet_w(500.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -315,7 +315,7 @@ pub(crate) fn video_quality_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("video-quality")
-        .w(440.0)
+        .w(sheet_w(440.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -377,4 +377,93 @@ pub(crate) fn video_quality_sheet(s: &App, p: Palette) -> El {
                 .font(theme::TINY)
                 .color(p.text_faint),
         )
+}
+
+/// Discord-style status picker opened from the user panel.
+pub(crate) fn status_picker_sheet(s: &App, p: Palette) -> El {
+    use runecord_protocol::Presence;
+    let item = |key: &'static str,
+                status: Presence,
+                label: &'static str,
+                detail: Option<&'static str>,
+                dot: Color,
+                p: Palette| {
+        let selected = s.my_presence == status;
+        row()
+            .key(key)
+            .w_full()
+            .min_h(38.0)
+            .px(10.0)
+            .py(6.0)
+            .gap(10.0)
+            .center_y()
+            .role("radio")
+            .label(label)
+            .checked(selected)
+            .fill(if selected { p.selected } else { Color::TRANSPARENT })
+            .hover(p.rail_hover)
+            .on_press(move |s: &mut App| {
+                s.set_my_presence(status);
+                s.modal = Modal::None;
+            })
+            .child(el().size(12.0, 12.0).radius(6.0).fill(dot))
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .gap(1.0)
+                    .child(text(label).font(theme::SMALL_MED).color(p.text_bright))
+                    .children(detail.map(|detail| {
+                        text(detail).wrap().font(theme::TINY).color(p.text_muted)
+                    })),
+            )
+            .children(selected.then(|| icon(&icons::CHECK, 14.0).color(p.green)))
+    };
+    col()
+        .key("status-picker")
+        .w(260.0)
+        .radius(8.0)
+        .fill(theme::color("#111214"))
+        .padding(6.0)
+        .gap(1.0)
+        .shadow(8.0, 24.0, p.shadow)
+        .modal(true, |s: &mut App| s.modal = Modal::None)
+        .child(
+            text("SET STATUS")
+                .font(theme::SECTION)
+                .color(p.text_faint)
+                .padding(8.0),
+        )
+        .child(item(
+            "status-online",
+            Presence::Online,
+            "Online",
+            None,
+            p.green,
+            p,
+        ))
+        .child(item(
+            "status-idle",
+            Presence::Idle,
+            "Idle",
+            None,
+            p.yellow,
+            p,
+        ))
+        .child(item(
+            "status-dnd",
+            Presence::Dnd,
+            "Do Not Disturb",
+            Some("You will not receive desktop notifications"),
+            p.danger,
+            p,
+        ))
+        .child(item(
+            "status-invisible",
+            Presence::Offline,
+            "Invisible",
+            Some("You will appear offline"),
+            p.text_faint,
+            p,
+        ))
 }

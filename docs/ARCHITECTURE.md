@@ -123,9 +123,9 @@ crates/server/src
   config.rs                CLI parsing (typed errors, unit tested)
   state.rs                 AppState: concrete services shared by handlers
   api/                     primary HTTP/WebSocket surface, one file per feature
-  compat.rs                Discord-compatible /api/v1 surface
+  compat.rs                compatibility /api/v1 surface
   platform.rs              applications, webhooks, interactions, voice signaling
-  gateway_v10.rs           Discord-style gateway sessions and event pump
+  gateway_v10.rs           versioned gateway sessions and event pump
   media.rs                 MediaStore: hashing, encryption, CDN and thumbs
   cache.rs                 bounded in-memory and on-disk caches
   crypto.rs                key loading, seal/open

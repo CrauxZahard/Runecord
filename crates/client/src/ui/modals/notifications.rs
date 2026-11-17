@@ -57,7 +57,7 @@ pub(crate) fn notify_channel_picker_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("notify-channel-picker")
-        .w(420.0)
+        .w(sheet_w(420.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -244,7 +244,7 @@ pub(crate) fn server_notifications_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("server-notifications")
-        .w(480.0)
+        .w(sheet_w(480.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(16.0)
@@ -483,7 +483,7 @@ pub(crate) fn channel_notifications_sheet(s: &App, p: Palette, channel: Id) -> E
     }
     col()
         .key("channel-notifications")
-        .w(400.0)
+        .w(sheet_w(400.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
