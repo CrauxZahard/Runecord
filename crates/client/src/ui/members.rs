@@ -208,7 +208,7 @@ pub(crate) fn member_list(s: &App, p: Palette, top_inset: f32) -> El {
 
     col()
         .key("members-scroll")
-        .w(240.0)
+        .w(s.members_width)
         .h_full()
         .fill(p.sidebar)
         .scroll(ScrollSpec {
@@ -305,13 +305,6 @@ pub(crate) fn member_row(s: &App, m: &Member, p: Palette) -> El {
                 .truncate(),
         );
     }
-    let guild = s.active_guild;
-    let rank = s.member_rank(guild, uid);
-    let my_rank = s.member_rank(guild, s.me.id);
-    let can_act = uid != s.me.id && my_rank > rank;
-    let can_kick = can_act && s.guild_can(perm::KICK_MEMBERS);
-    let can_ban = can_act && s.guild_can(perm::BAN_MEMBERS);
-    let can_timeout = can_act && s.guild_can(perm::MODERATE_MEMBERS);
     row()
         .key(format!("member-{}", m.user.id))
         .w_full()
@@ -325,44 +318,22 @@ pub(crate) fn member_row(s: &App, m: &Member, p: Palette) -> El {
         .motion(motion::SNAPPY)
         .opacity(if offline { 0.55 } else { 1.0 })
         .hover(p.sidebar_hover)
-        .on_secondary_press(move |s: &mut App, press, tx: &mut rune::Tx| {
-            if !rune::popup_menu_supported() {
-                s.modal = Modal::Profile(uid);
-                return;
-            }
-            let mut menu = rune::PopupMenu::new()
-                .item(rune::PopupItem::new("profile", "View Profile"))
-                .item(rune::PopupItem::new("message", "Send Message"))
-                .separator()
-                .item(rune::PopupItem::new("copy", "Copy User ID"));
-            if can_kick || can_ban || can_timeout {
-                menu = menu.separator();
-                if can_timeout {
-                    menu = menu.item(rune::PopupItem::new("timeout", "Timeout"));
-                }
-                if can_kick {
-                    menu = menu.item(rune::PopupItem::new("kick", "Kick"));
-                }
-                if can_ban {
-                    menu = menu.item(rune::PopupItem::new("ban", "Ban"));
-                }
-            }
-            tx.popup_menu(
-                menu,
-                press,
-                move |s: &mut App, picked, tx: &mut rune::Tx| match picked {
-                    Some("profile") => s.modal = Modal::Profile(uid),
-                    Some("message") => s.start_dm(uid),
-                    Some("copy") => tx.copy(uid.to_string()),
-                    Some("timeout") => s.open_timeout(uid),
-                    Some("kick") => s.confirm_kick(uid),
-                    Some("ban") => s.confirm_ban(uid),
-                    _ => {}
-                },
-            );
+        .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Member(uid),
+                x: press.x,
+                y: press.y,
+            });
         })
         .on_press(move |s: &mut App| s.modal = Modal::Profile(uid))
-        .child(avatar_status(&m.user, 32.0, p, p.sidebar, true))
+        .children({
+            let avatar = avatar_status(&m.user, 32.0, p, p.sidebar, true);
+            [if crate::voice::user_speaking(uid) {
+                avatar.border(2.0, p.green)
+            } else {
+                avatar
+            }]
+        })
         .child(body)
 }
 

@@ -1,5 +1,9 @@
 use super::*;
 
+/// Slow-moving estimate of the background noise level, used by the suppressor.
+static NOISE_FLOOR: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0.0015f32.to_bits());
+
 pub(crate) fn pcm_rms(samples: &[u8]) -> f32 {
     let mut sum = 0.0f64;
     let mut count = 0u64;
@@ -38,9 +42,41 @@ pub(crate) fn shape_pcm(samples: &mut [u8], muted: &AtomicBool, gate: bool, synt
             samples.fill(0);
         }
     }
+    if NOISE_SUPPRESSION.load(Ordering::Relaxed) && !synth && !muted.load(Ordering::Relaxed) {
+        suppress_noise(samples);
+    }
     if (volume - 1.0).abs() > f32::EPSILON {
         for pair in samples.as_chunks_mut::<2>().0 {
             let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * volume;
+            let value = value.clamp(-32768.0, 32767.0) as i16;
+            pair.copy_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
+/// A lightweight spectral-subtraction style suppressor: it tracks a slow noise
+/// floor and pulls the signal down toward it, which removes steady fan and hum
+/// while leaving speech transients intact.
+fn suppress_noise(samples: &mut [u8]) {
+    let rms = pcm_rms(samples);
+    let previous = f32::from_bits(NOISE_FLOOR.load(Ordering::Relaxed));
+    // Only let the floor rise slowly so a loud word does not teach it speech.
+    let floor = if rms < previous {
+        previous * 0.7 + rms * 0.3
+    } else {
+        previous * 0.995 + rms * 0.005
+    };
+    NOISE_FLOOR.store(floor.to_bits(), Ordering::Relaxed);
+    let threshold = (floor * 1.6).max(0.0015);
+    if rms <= threshold {
+        samples.fill(0);
+        return;
+    }
+    // Soft expander: quiet tails fall away instead of cutting in and out.
+    let gain = ((rms - threshold) / rms).clamp(0.0, 1.0).sqrt();
+    if gain < 0.999 {
+        for pair in samples.as_chunks_mut::<2>().0 {
+            let value = i16::from_le_bytes([pair[0], pair[1]]) as f32 * gain;
             let value = value.clamp(-32768.0, 32767.0) as i16;
             pair.copy_from_slice(&value.to_le_bytes());
         }
@@ -68,7 +104,7 @@ pub(crate) fn start_mic_test() {
     thread::spawn(move || {
         let synthetic = std::env::var("RUNECORD_VOICE_SYNTH").ok().as_deref() == Some("1");
         let device = selected_input_device().or_else(microphone);
-        let mut command = Command::new(ffmpeg_path());
+        let mut command = helper(&ffmpeg_path());
         command.args(["-hide_banner", "-loglevel", "error"]);
         if synthetic || device.is_none() {
             command.args([

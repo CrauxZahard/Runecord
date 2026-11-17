@@ -81,8 +81,10 @@ pub(crate) fn tool_button(key: &'static str, ic: &'static Icon, p: Palette) -> E
         "help" => "About Runecord",
         _ => "Tool",
     };
+    // A finger needs a larger target than a mouse pointer.
+    let size = if mobile() { 40.0 } else { 32.0 };
     el().key(key)
-        .size(32.0, 32.0)
+        .size(size, size)
         .radius(4.0)
         .center()
         .role("button")
@@ -92,13 +94,23 @@ pub(crate) fn tool_button(key: &'static str, ic: &'static Icon, p: Palette) -> E
         .child(icon(ic, 20.0).color(p.interactive))
 }
 
-pub(crate) fn action_button(ic: &'static Icon, p: Palette, run: impl Fn(&mut App) + 'static) -> El {
-    el().size(32.0, 30.0)
+/// Same button with an explicit accessible name, so screen readers announce it.
+pub(crate) fn action_button_named(
+    ic: &'static Icon,
+    name: &str,
+    p: Palette,
+    run: impl Fn(&mut App) + 'static,
+) -> El {
+    let mut button = el()
+        .size(32.0, 30.0)
         .center()
         .role("button")
         .hover(p.rail)
-        .on_press(run)
-        .child(icon(ic, 18.0).color(p.interactive))
+        .on_press(run);
+    if !name.is_empty() {
+        button = button.label(name.to_string()).help(name.to_string());
+    }
+    button.child(icon(ic, 18.0).color(p.interactive))
 }
 
 pub(crate) fn markdown(s: &App, content: &str, p: Palette) -> El {
@@ -361,12 +373,12 @@ fn avatar_pixels(user: Id) -> Option<rune::Pixels> {
 }
 
 pub(crate) const BADGE_KEYS: [(&str, &str); 7] = [
-    ("staff", "Discord Staff"),
+    ("staff", "Runecord Staff"),
     ("partner", "Partnered Server Owner"),
     ("early_supporter", "Early Supporter"),
     ("bug_hunter", "Bug Hunter"),
-    ("nitro", "Nitro"),
-    ("booster", "Server Booster"),
+    ("nitro", "Premium"),
+    ("booster", "Server Reputation"),
     ("developer", "Active Developer"),
 ];
 
@@ -439,7 +451,10 @@ pub(crate) fn decoration_colors(key: &str) -> (Color, Color) {
 fn avatar_visual(user: &User, size: f32, _p: Palette) -> El {
     let mut e = el().size(size, size).radius(size / 2.0);
     if let Some(pixels) = avatar_pixels(user.id) {
+        // `center()` keeps the image aligned with the generated (initials)
+        // avatar; without it some sizes render a pixel or two off-centre.
         e = e
+            .center()
             .clip_rounded(size / 2.0)
             .pixels_fit(&pixels, rune::SurfaceFit::Fill);
     } else {
@@ -481,6 +496,7 @@ pub fn avatar(user: &User, size: f32, p: Palette) -> El {
 pub fn avatar_status(user: &User, size: f32, p: Palette, ring: Color, show_status: bool) -> El {
     let dot = (size * 0.32).max(10.0);
     el().size(size, size)
+        .center()
         .child(avatar(user, size, p))
         .children(show_status.then(|| {
             el().key("status-dot")
@@ -497,7 +513,11 @@ pub(crate) fn time_label(ts: i64) -> String {
     let Some(dt) = Local.timestamp_millis_opt(ts).single() else {
         return String::new();
     };
-    if dt.date_naive() == Local::now().date_naive() {
+    let today = Local
+        .timestamp_millis_opt(runecord_protocol::now_ms())
+        .single()
+        .map(|now| now.date_naive());
+    if Some(dt.date_naive()) == today {
         let t = dt.format("%I:%M %p").to_string();
         format!("Today at {}", t.trim_start_matches('0'))
     } else {
@@ -529,7 +549,13 @@ pub(crate) fn expiry_label(ts: i64) -> String {
     let Some(dt) = Local.timestamp_millis_opt(ts).single() else {
         return String::new();
     };
-    let today = Local::now().date_naive();
+    let Some(today) = Local
+        .timestamp_millis_opt(runecord_protocol::now_ms())
+        .single()
+        .map(|now| now.date_naive())
+    else {
+        return dt.format("%b %-d at %I:%M %p").to_string();
+    };
     let time = dt.format("%I:%M %p").to_string();
     let time = time.trim_start_matches('0');
     if dt.date_naive() == today {

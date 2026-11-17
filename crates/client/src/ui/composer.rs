@@ -37,8 +37,8 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
     let mut wrap = col()
         .key("composer-wrap")
         .w_full()
-        .px(20.0)
-        .pb(18.0)
+        .px(if mobile() { 12.0 } else { 20.0 })
+        .pb(if mobile() { 12.0 } else { 18.0 })
         .gap(8.0);
     if let Some(reply) = &s.reply_to {
         let reply_id = reply.message_id;
@@ -63,6 +63,36 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                         .grow(1.0)
                         .min_w(0.0)
                         .truncate(),
+                )
+                .child(
+                    el().key("toggle-reply-mention")
+                        .h(20.0)
+                        .px(6.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label(if s.reply_notify {
+                            "Turn off reply mention"
+                        } else {
+                            "Turn on reply mention"
+                        })
+                        .help("@ off / @ on")
+                        .fill(if s.reply_notify {
+                            p.mention.alpha(0.25)
+                        } else {
+                            p.rail
+                        })
+                        .hover(p.input_hover)
+                        .on_press(|s: &mut App| s.reply_notify = !s.reply_notify)
+                        .child(
+                            text(if s.reply_notify { "@ on" } else { "@ off" })
+                                .font(theme::TINY)
+                                .color(if s.reply_notify {
+                                    p.text_link
+                                } else {
+                                    p.text_faint
+                                }),
+                        ),
                 )
                 .child(
                     el().key("cancel-reply")
@@ -195,6 +225,10 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
             );
         }
     }
+    // Mention autocomplete sits inside the composer stack, above the field.
+    if let Some((at, caret, query)) = mention_query(s) {
+        wrap = wrap.child(mention_popup(s, at, caret, &query, p));
+    }
     wrap.child(
         row()
             .key("composer")
@@ -211,7 +245,7 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
             .on_drop_files(|s: &mut App, files, _| {
                 s.drop_hover = false;
                 for f in files {
-                    s.upload_file(f.to_path_buf());
+                    s.upload_file(crate::net::UploadSource::Path(f.to_path_buf()));
                 }
             })
             .on_drop_hover(|s: &mut App, over, _| s.drop_hover = over)
@@ -236,7 +270,20 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                     .label("Upload a file")
                     .hover(p.text_bright)
                     .help("Upload a file")
-                    .on_press(|s: &mut App| s.toast("Drag a file into the window to attach it"))
+                    .on_press_tx(|s: &mut App, tx: &mut rune::Tx| {
+                        let channel = s.current_channel_id();
+                        let kind = crate::files::PickKind::ChannelUpload { channel };
+                        crate::files::open(
+                            tx,
+                            kind.clone(),
+                            "Upload a file",
+                            &[
+                                "png", "jpg", "jpeg", "gif", "webp", "txt", "pdf", "zip", "mp4",
+                                "mp3",
+                            ],
+                            move |s, path| s.accept_picked_path(kind.clone(), path),
+                        );
+                    })
                     .child(icon(&icons::PLUS, 22.0).color(p.interactive)),
             )
             .child(
@@ -250,9 +297,36 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                     .label("Message")
                     .placeholder(placeholder, p.text_faint)
                     .padding(0.0)
+                    .pt(11.0)
+                    // Render markdown in place, inside the field itself: the
+                    // preview is the text you are typing, styled as you type.
+                    .rich_style(rune::RichStyle {
+                        link: p.text_link,
+                        code_fg: Some(p.text_link),
+                        code_bg: p.code_bg,
+                        code_block_bg: p.code_bg,
+                        quote_bar: p.divider,
+                        marker: Some(p.text_faint),
+                    })
+                    .spans(markdown_input_spans(&s.composer.text, p))
                     .on_edit(|s: &mut App| {
                         s.note_typing();
                         &mut s.composer
+                    })
+                    .on_submit(|s: &mut App, _: &mut rune::Tx| s.send_current())
+                    .on_input_paste(|s: &mut App, content, _: &mut rune::Tx| {
+                        if let Some(image) = content.image() {
+                            s.upload_file(crate::net::UploadSource::Bytes {
+                                name: format!("pasted-{}.png", now_ms()),
+                                bytes: image.png().to_vec(),
+                            });
+                            return true;
+                        }
+                        if let Some(file) = content.files().first() {
+                            s.upload_file(crate::net::UploadSource::Path(file.clone()));
+                            return true;
+                        }
+                        false
                     })
                     .on_input_key(|s: &mut App, ev: &rune::KeyEvent, _: &mut rune::Tx| {
                         if ev.key == rune::Key::Enter && ev.mods.cmd {
@@ -264,20 +338,62 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                     }),
             )
             .children((!compact).then(|| {
-                row()
-                    .gap(12.0)
-                    .center_y()
-                    .child(icon(&icons::GIFT, 24.0).color(p.interactive))
-                    .child(
-                        text("GIF")
-                            .font(TextStyle::new(11.0, 700.0))
+                let mut extras = row().gap(12.0).center_y().child(
+                    el().key("composer-gif")
+                        .gap(2.0)
+                        .center_y()
+                        .role("button")
+                        .label("GIF picker")
+                        .help("GIFs")
+                        .on_press(|s: &mut App| s.open_gif_picker())
+                        .child(icon(&icons::GIFT, 24.0).color(p.interactive))
+                        .child(
+                            text("GIF")
+                                .font(TextStyle::new(11.0, 700.0))
+                                .color(p.interactive)
+                                .border(1.5, p.interactive)
+                                .radius(4.0)
+                                .px(3.0)
+                                .py(1.0),
+                        ),
+                );
+                // On the narrowest phones the sticker button pushes the message
+                // placeholder onto a second line; GIF stays.
+                if !mobile() || mobile_size().0 >= 380.0 {
+                    extras = extras.child(
+                        icon(&icons::STICKER, 24.0)
+                            .key("composer-sticker")
                             .color(p.interactive)
-                            .border(1.5, p.interactive)
-                            .radius(4.0)
-                            .px(3.0)
-                            .py(1.0),
-                    )
-                    .child(icon(&icons::STICKER, 24.0).color(p.interactive))
+                            .role("button")
+                            .label("Stickers")
+                            .help("Stickers")
+                            .on_press(|s: &mut App| s.modal = Modal::StickerPicker),
+                    );
+                }
+                // A phone keeps the GIF and sticker pickers in the composer and
+                // drops the rarer poll/schedule buttons to keep one line.
+                if !mobile() {
+                    extras = extras
+                        .child(
+                            icon(&icons::POLL, 22.0)
+                                .key("composer-poll")
+                                .color(p.interactive)
+                                .role("button")
+                                .label("Create poll")
+                                .help("Create poll")
+                                .on_press(|s: &mut App| s.open_create_poll()),
+                        )
+                        .child(
+                            icon(&icons::CLOCK, 22.0)
+                                .key("composer-schedule")
+                                .color(p.interactive)
+                                .role("button")
+                                .label("Schedule message")
+                                .help("Schedule message")
+                                .on_press(|s: &mut App| s.open_scheduled()),
+                        );
+                }
+                extras
             }))
             .child(
                 icon(&icons::SMILE, 24.0)
@@ -303,6 +419,196 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                 }),
             ),
     )
+}
+
+/// Byte ranges to style inside the composer's own text field, so markdown is
+/// previewed in place (code, spoilers, bold, italics, quotes) instead of in a
+/// separate box below it.
+fn markdown_input_spans(content: &str, p: Palette) -> Vec<rune::Span> {
+    let bytes = content.as_bytes();
+    let mut spans = Vec::new();
+    let mut open: Vec<(usize, u8)> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let rest = &content[i..];
+        let (len, kind) = if rest.starts_with("```") {
+            (3, 0)
+        } else if rest.starts_with("||") {
+            (2, 1)
+        } else if rest.starts_with("**") || rest.starts_with("__") {
+            (2, 2)
+        } else if rest.starts_with("~~") {
+            (2, 3)
+        } else if rest.starts_with('`') {
+            (1, 4)
+        } else if rest.starts_with('*') || rest.starts_with('_') {
+            (1, 5)
+        } else {
+            (0, 255)
+        };
+        if len > 0 {
+            if let Some(pos) = open.iter().rposition(|(_, k)| *k == kind) {
+                let (start, _) = open.remove(pos);
+                if i > start + len {
+                    let span = rune::Span::new(start + len, i);
+                    spans.push(match kind {
+                        0 => span.mono().color(p.text_link),
+                        1 => span.bg(p.code_bg, 2.0),
+                        2 => span.weight(700.0),
+                        3 => span.color(p.text_faint),
+                        4 => span.mono().bg(p.code_bg, 2.0).color(p.text_link),
+                        5 => span.italic(),
+                        _ => span,
+                    });
+                }
+            } else {
+                open.push((i, kind));
+            }
+            i += len;
+            continue;
+        }
+        i += rest.chars().next().map(char::len_utf8).unwrap_or(1);
+    }
+    spans
+}
+
+/// The `@query` currently being typed, as byte offsets into `edit.text`.
+fn mention_query(s: &App) -> Option<(usize, usize, String)> {
+    if s.composer.text.is_empty() {
+        return None;
+    }
+    let caret = s.composer.focus.min(s.composer.text.len());
+    let before = &s.composer.text[..caret];
+    let at = before.rfind('@')?;
+    let query = &before[at + 1..caret];
+    if query.contains(char::is_whitespace) || query.len() > 32 {
+        return None;
+    }
+    Some((at, caret, query.to_lowercase()))
+}
+
+fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> El {
+    let matches = |label: &str| query.is_empty() || label.to_lowercase().contains(query);
+    let mut entries: Vec<El> = Vec::new();
+
+    for (token, label, detail) in [
+        ("@game ", "@game", "Mention a game"),
+        ("@time ", "@time", "Refer to a time dynamically in the viewer's time zone"),
+    ] {
+        if !matches(label) {
+            continue;
+        }
+        let token = token.to_string();
+        entries.push(
+            row()
+                .key(format!("mention-special-{label}"))
+                .w_full()
+                .h(34.0)
+                .px(10.0)
+                .gap(8.0)
+                .center_y()
+                .role("button")
+                .hover(p.selected)
+                .on_press(move |s: &mut App| s.insert_mention(at, caret, &token))
+                .child(
+                    text(label)
+                        .font(theme::SMALL_MED)
+                        .color(p.text_bright)
+                        .w(96.0),
+                )
+                .child(text(detail).font(theme::TINY).color(p.text_muted).grow(1.0).truncate()),
+        );
+    }
+
+    let mut members: Vec<_> = s
+        .members
+        .get(&s.active_guild)
+        .map(|list| list.iter().map(|m| m.user.clone()).collect::<Vec<_>>())
+        .unwrap_or_else(|| s.users.values().cloned().collect());
+    members.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+    // Keep a few members, then roles, so role pings are visible without
+    // scrolling through a long member list.
+    for user in members.into_iter().take(4) {
+        let label = format!("@{}", user.display_name);
+        if !matches(&label) && !matches(&user.username) {
+            continue;
+        }
+        let token = format!("<@{}> ", user.id);
+        let handle = user.handle();
+        let avatar_user = user.clone();
+        entries.push(
+            row()
+                .key(format!("mention-member-{}", user.id))
+                .w_full()
+                .h(36.0)
+                .px(10.0)
+                .gap(8.0)
+                .center_y()
+                .role("button")
+                .hover(p.selected)
+                .on_press(move |s: &mut App| s.insert_mention(at, caret, &token))
+                .child(crate::ui::common::avatar_status(&avatar_user, 20.0, p, p.card, true))
+                .child(text(label).font(theme::SMALL_MED).color(p.text_bright).w(130.0).truncate())
+                .child(text(handle).font(theme::TINY).color(p.text_faint).grow(1.0).truncate()),
+        );
+    }
+
+    for role in s.guild_roles(s.active_guild) {
+        let label = format!("@{}", role.name);
+        if !matches(&label) {
+            continue;
+        }
+        let token = format!("<@&{}> ", role.id);
+        let tint = theme::color(&format!("#{:06x}", role.color));
+        entries.push(
+            row()
+                .key(format!("mention-role-{}", role.id))
+                .w_full()
+                .h(36.0)
+                .px(10.0)
+                .gap(8.0)
+                .center_y()
+                .role("button")
+                .hover(p.selected)
+                .on_press(move |s: &mut App| s.insert_mention(at, caret, &token))
+                .child(text(label).font(theme::SMALL_MED).color(tint).w(160.0).truncate())
+                .child(
+                    text("Notify users with this role who have permission to view this channel.")
+                        .font(theme::TINY)
+                        .color(p.text_muted)
+                        .grow(1.0)
+                        .truncate(),
+                ),
+        );
+    }
+
+    if entries.is_empty() {
+        return el();
+    }
+    let entries = entries.into_iter().take(16).collect::<Vec<_>>();
+    let mut body = col().w_full().gap(1.0);
+    body = body.child(
+        text("MEMBERS")
+            .font(theme::SECTION)
+            .color(p.text_faint)
+            .px(10.0)
+            .py(4.0),
+    );
+    for entry in entries {
+        body = body.child(entry);
+    }
+    col()
+        .key("mention-popup")
+        .w_full()
+        .max_h(320.0)
+        .radius(8.0)
+        .fill(theme::color("#111214"))
+        .border(1.0, p.divider)
+        .clip_rounded(8.0)
+        .scroll(rune::ScrollSpec { stick_bottom: false })
+        .padding(5.0)
+        .shadow(8.0, 20.0, p.shadow)
+        .child(body)
 }
 
 // ---------------------------------------------------------------------------

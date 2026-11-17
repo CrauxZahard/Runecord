@@ -7,6 +7,9 @@ members = ["crates/client", "tools/cache-bench"]
 [patch.crates-io]
 wgpu-hal = { path = "../rune/vendor/wgpu-hal" }
 winit = { path = "../rune/vendor/winit" }
+# Links libxkbcommon by a relative path for Linux cross-builds; see
+# vendor/xkbcommon/build.rs.
+xkbcommon = { path = "vendor/xkbcommon" }
 
 [workspace.package]
 edition = "2024"
@@ -20,4 +23,12 @@ debug = false
 
 [profile.release]
 codegen-units = 16
+# Keep the incremental cache: with `target/` retained, a rebuild only recompiles
+# the crates that changed. `build.bat --clean` drops it when disk matters more.
 incremental = true
+
+# Rune's release GPU init takes ~12 s on Windows DX12 without debug assertions
+# (a long white window), while the debug-assertion build reaches the first frame
+# in about a second. Keep assertions on in release so the packaged app starts
+# fast; the code is still optimized.
+debug-assertions = true

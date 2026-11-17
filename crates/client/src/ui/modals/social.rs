@@ -95,7 +95,7 @@ pub(crate) fn group_dm_sheet(s: &App, p: Palette) -> El {
     let count = s.group_dm_selected.len();
     col()
         .key("group-dm")
-        .w(480.0)
+        .w(sheet_w(480.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -193,7 +193,7 @@ pub(crate) fn group_dm_sheet(s: &App, p: Palette) -> El {
 pub(crate) fn invite_join_sheet(s: &App, p: Palette) -> El {
     col()
         .key("invite-join")
-        .w(440.0)
+        .w(sheet_w(440.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)
@@ -348,18 +348,14 @@ pub(crate) fn dm_settings_sheet(s: &App, p: Palette, channel: Id) -> El {
                 .fill(p.accent)
                 .hover(p.accent_hover)
                 .on_press_tx(move |_s: &mut App, tx: &mut rune::Tx| {
-                    let options = rune::FileDialogOptions {
-                        title: "Upload group icon".to_string(),
-                        directory: None,
-                        file_name: None,
-                        filters: Vec::new(),
-                    }
-                    .filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]);
-                    tx.open_file(options, move |s: &mut App, result, _| {
-                        if let Ok(Some(path)) = result {
-                            s.begin_dm_icon_crop(channel, path);
-                        }
-                    });
+                    let kind = crate::files::PickKind::DmIcon { channel };
+                    crate::files::open(
+                        tx,
+                        kind.clone(),
+                        "Upload group icon",
+                        &["png", "jpg", "jpeg", "gif", "webp"],
+                        move |s, path| s.accept_picked_path(kind.clone(), path),
+                    );
                 })
                 .child(text("Change Icon").font(theme::LABEL).color(Color::WHITE)),
         );
@@ -478,7 +474,7 @@ pub(crate) fn dm_settings_sheet(s: &App, p: Palette, channel: Id) -> El {
 
     col()
         .key("dm-settings")
-        .w(500.0)
+        .w(sheet_w(500.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)

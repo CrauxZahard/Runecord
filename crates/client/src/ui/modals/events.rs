@@ -57,8 +57,8 @@ pub(crate) fn events_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("events-panel")
-        .w(560.0)
-        .h(660.0)
+        .w(sheet_w(560.0))
+        .h(sheet_h(660.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -185,6 +185,85 @@ fn event_row(s: &App, event: &GuildEvent, p: Palette) -> El {
                 .color(p.text)
                 .max_lines(3)
         }))
+        .child(event_rsvp_row(s, event, p))
+}
+
+fn event_rsvp_row(_s: &App, event: &GuildEvent, p: Palette) -> El {
+    let event_id = event.id;
+    let interested = event.my_status == "interested";
+    let going = event.my_status == "going";
+    row()
+        .key(format!("event-rsvp-{event_id}"))
+        .w_full()
+        .gap(6.0)
+        .center_y()
+        .child(
+            el().key(format!("event-interested-{event_id}"))
+                .h(26.0)
+                .px(10.0)
+                .radius(13.0)
+                .center()
+                .role("button")
+                .label(format!("Interested in {}", event.name))
+                .fill(if interested { p.accent } else { p.input })
+                .hover(p.input_hover)
+                .on_press(move |s: &mut App| {
+                    let next = if s
+                        .guild_events
+                        .iter()
+                        .any(|item| item.id == event_id && item.my_status == "interested")
+                    {
+                        ""
+                    } else {
+                        "interested"
+                    };
+                    s.rsvp_event(event_id, next);
+                })
+                .child(text("Interested").font(theme::TINY).color(if interested {
+                    Color::WHITE
+                } else {
+                    p.text_muted
+                })),
+        )
+        .child(
+            el().key(format!("event-going-{event_id}"))
+                .h(26.0)
+                .px(10.0)
+                .radius(13.0)
+                .center()
+                .role("button")
+                .label(format!("Going to {}", event.name))
+                .fill(if going { p.green } else { p.input })
+                .hover(p.input_hover)
+                .on_press(move |s: &mut App| {
+                    let next = if s
+                        .guild_events
+                        .iter()
+                        .any(|item| item.id == event_id && item.my_status == "going")
+                    {
+                        ""
+                    } else {
+                        "going"
+                    };
+                    s.rsvp_event(event_id, next);
+                })
+                .child(text("Going").font(theme::TINY).color(if going {
+                    Color::WHITE
+                } else {
+                    p.text_muted
+                })),
+        )
+        .child(
+            text(format!("{} interested", event.interested_count))
+                .font(theme::TINY)
+                .color(p.text_faint)
+                .grow(1.0),
+        )
+        .children((!event.recurrence.is_empty()).then(|| {
+            text(format!("Repeats {}", event.recurrence))
+                .font(theme::TINY)
+                .color(p.text_faint)
+        }))
 }
 
 pub(crate) fn create_event_sheet(s: &App, p: Palette) -> El {
@@ -194,7 +273,7 @@ pub(crate) fn create_event_sheet(s: &App, p: Palette) -> El {
         .unwrap_or_else(|| "No channel".into());
     col()
         .key("create-event")
-        .w(460.0)
+        .w(sheet_w(460.0))
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)
@@ -244,23 +323,142 @@ pub(crate) fn create_event_sheet(s: &App, p: Palette) -> El {
                 .on_edit(|s: &mut App| &mut s.event_description),
         )
         .child(
-            text("STARTS IN (MINUTES)")
+            text("START DATE & TIME")
                 .font(theme::SECTION)
                 .color(p.text_muted),
         )
         .child(
-            text_input(&s.event_start_minutes, theme::BODY)
-                .key("event-minutes")
-                .w(140.0)
-                .h(38.0)
-                .radius(4.0)
-                .fill(p.input)
-                .color(p.text)
-                .role("textbox")
-                .label("Starts in minutes")
-                .placeholder("60", p.text_faint)
-                .padding(10.0)
-                .on_edit(|s: &mut App| &mut s.event_start_minutes),
+            row()
+                .w_full()
+                .gap(10.0)
+                .center_y()
+                .child(
+                    col()
+                        .gap(4.0)
+                        .child(
+                            text("DATE (YYYY-MM-DD)")
+                                .font(theme::TINY)
+                                .color(p.text_faint),
+                        )
+                        .child(
+                            text_input(&s.event_start_date, theme::BODY)
+                                .key("event-date")
+                                .w(150.0)
+                                .h(38.0)
+                                .radius(4.0)
+                                .fill(p.input)
+                                .color(p.text)
+                                .role("textbox")
+                                .label("Event start date")
+                                .placeholder("2026-11-16", p.text_faint)
+                                .padding(10.0)
+                                .on_edit(|s: &mut App| &mut s.event_start_date),
+                        ),
+                )
+                .child(
+                    col()
+                        .gap(4.0)
+                        .child(text("TIME (HH:MM)").font(theme::TINY).color(p.text_faint))
+                        .child(
+                            text_input(&s.event_start_time, theme::BODY)
+                                .key("event-time")
+                                .w(110.0)
+                                .h(38.0)
+                                .radius(4.0)
+                                .fill(p.input)
+                                .color(p.text)
+                                .role("textbox")
+                                .label("Event start time")
+                                .placeholder("18:00", p.text_faint)
+                                .padding(10.0)
+                                .on_edit(|s: &mut App| &mut s.event_start_time),
+                        ),
+                )
+                .child(
+                    col()
+                        .gap(4.0)
+                        .child(
+                            text("LENGTH (MINUTES)")
+                                .font(theme::TINY)
+                                .color(p.text_faint),
+                        )
+                        .child(
+                            text_input(&s.event_duration, theme::BODY)
+                                .key("event-duration")
+                                .w(110.0)
+                                .h(38.0)
+                                .radius(4.0)
+                                .fill(p.input)
+                                .color(p.text)
+                                .role("textbox")
+                                .label("Event length in minutes")
+                                .placeholder("60", p.text_faint)
+                                .padding(10.0)
+                                .on_edit(|s: &mut App| &mut s.event_duration),
+                        ),
+                ),
+        )
+        .child(text("REPEATS").font(theme::SECTION).color(p.text_muted))
+        .child(
+            row().w_full().gap(6.0).flex_wrap().children(
+                [
+                    ("", "Does not repeat"),
+                    ("daily", "Daily"),
+                    ("weekly", "Weekly"),
+                    ("monthly", "Monthly"),
+                ]
+                .into_iter()
+                .map(|(value, label)| {
+                    let selected = s.event_recurrence == value;
+                    el().key(format!("event-repeat-{label}"))
+                        .h(30.0)
+                        .px(10.0)
+                        .radius(4.0)
+                        .center()
+                        .role("radio")
+                        .label(label)
+                        .checked(selected)
+                        .fill(if selected { p.accent } else { p.input })
+                        .hover(p.card_hover)
+                        .on_press(move |s: &mut App| s.event_recurrence = value.to_string())
+                        .child(text(label).font(theme::TINY).color(if selected {
+                            Color::WHITE
+                        } else {
+                            p.text_muted
+                        }))
+                }),
+            ),
+        )
+        .child(text("REMINDER").font(theme::SECTION).color(p.text_muted))
+        .child(
+            row().w_full().gap(6.0).flex_wrap().children(
+                [
+                    (0u32, "No reminder"),
+                    (10, "10 min before"),
+                    (60, "1 hour before"),
+                    (1440, "1 day before"),
+                ]
+                .into_iter()
+                .map(|(minutes, label)| {
+                    let selected = s.event_reminder == minutes;
+                    el().key(format!("event-reminder-{minutes}"))
+                        .h(30.0)
+                        .px(10.0)
+                        .radius(4.0)
+                        .center()
+                        .role("radio")
+                        .label(label)
+                        .checked(selected)
+                        .fill(if selected { p.accent } else { p.input })
+                        .hover(p.card_hover)
+                        .on_press(move |s: &mut App| s.event_reminder = minutes)
+                        .child(text(label).font(theme::TINY).color(if selected {
+                            Color::WHITE
+                        } else {
+                            p.text_muted
+                        }))
+                }),
+            ),
         )
         .child(
             text(format!("Location: {channel}"))

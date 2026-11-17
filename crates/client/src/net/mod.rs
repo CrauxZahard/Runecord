@@ -7,6 +7,29 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Percent-encodes one URL component (query value, path segment).
+///
+/// RFC 3986 unreserved bytes pass through; everything else, including every
+/// UTF-8 continuation byte, becomes `%XX`. This is the only encoding the HTTP
+/// handlers need, so it replaces a dependency with a few lines.
+pub(crate) fn encode_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(value.len());
+    for &byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(HEX[(byte >> 4) as usize] as char);
+                out.push(HEX[(byte & 0x0f) as usize] as char);
+            }
+        }
+    }
+    out
+}
+
 #[derive(Clone, Debug)]
 #[allow(clippy::enum_variant_names)]
 pub enum Command {
@@ -18,6 +41,7 @@ pub enum Command {
         username: String,
         display_name: String,
         password: String,
+        signup_code: String,
     },
     Logout,
     Bootstrap,
@@ -48,6 +72,37 @@ pub enum Command {
         attachments: Vec<Id>,
         #[allow(dead_code)]
         nonce: String,
+    },
+    ForwardMessage {
+        message: Id,
+        channel: Id,
+    },
+    CreatePoll {
+        channel: Id,
+        question: String,
+        options: Vec<String>,
+        multiple: bool,
+        anonymous: bool,
+        duration_hours: Option<u32>,
+    },
+    ScheduleMessage {
+        channel: Id,
+        content: String,
+        send_at: i64,
+    },
+    LoadScheduled {
+        channel: Id,
+    },
+    DeleteScheduled {
+        id: Id,
+    },
+    VotePoll {
+        message: Id,
+        option: u32,
+    },
+    ClickComponent {
+        message: Id,
+        custom_id: String,
     },
     Edit {
         message: Id,
@@ -88,6 +143,14 @@ pub enum Command {
         description: String,
         start_at: i64,
         channel: Option<Id>,
+        recurrence: String,
+        duration_minutes: u32,
+        reminder_minutes: u32,
+    },
+    RsvpEvent {
+        guild: Id,
+        event: Id,
+        status: String,
     },
     DeleteGuildEvent {
         guild: Id,
@@ -100,8 +163,14 @@ pub enum Command {
         activity: Option<ProfileActivity>,
         connections: Vec<ProfileConnection>,
     },
+    ConnectionChallenge,
+    VerifyConnection {
+        kind: String,
+        handle: String,
+        url: String,
+    },
     UploadActivityArtwork {
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     RemoveActivityArtwork,
     CreateGuild {
@@ -143,7 +212,7 @@ pub enum Command {
     UploadGuildImage {
         guild: Id,
         banner: bool,
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     RemoveGuildImage {
         guild: Id,
@@ -162,7 +231,7 @@ pub enum Command {
     },
     UploadDmIcon {
         channel: Id,
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     RemoveDmIcon {
         channel: Id,
@@ -180,7 +249,7 @@ pub enum Command {
     },
     UploadUserImage {
         banner: bool,
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     RemoveUserImage {
         banner: bool,
@@ -224,6 +293,47 @@ pub enum Command {
     UnbanMember {
         guild: Id,
         user: Id,
+    },
+    UpdateOnboarding {
+        guild: Id,
+        update: UpdateOnboarding,
+    },
+    LoadAutoMod {
+        guild: Id,
+    },
+    SaveAutoMod {
+        guild: Id,
+        rules: Vec<AutoModRule>,
+    },
+    LoadTemplates {
+        guild: Id,
+    },
+    CreateTemplate {
+        guild: Id,
+        name: String,
+        description: String,
+    },
+    DeleteTemplate {
+        guild: Id,
+        template: Id,
+    },
+    ApplyTemplate {
+        code: String,
+        name: String,
+    },
+    LoadWebhooks {
+        guild: Id,
+    },
+    CreateWebhook {
+        channel: Id,
+        name: String,
+    },
+    DeleteWebhook {
+        guild: Id,
+        id: Id,
+    },
+    AcceptOnboarding {
+        guild: Id,
     },
     UpdateGuildSettings {
         guild: Id,
@@ -283,6 +393,15 @@ pub enum Command {
         channel: Id,
         message: Option<Id>,
         name: String,
+        tag_ids: Vec<Id>,
+    },
+    SetForumTags {
+        channel: Id,
+        tags: Vec<ForumTag>,
+    },
+    SetThreadTags {
+        thread: Id,
+        tags: Vec<Id>,
     },
     ArchiveThread {
         channel: Id,
@@ -335,13 +454,38 @@ pub enum Command {
     },
     Upload {
         channel: Id,
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     Voice {
         guild: Id,
         channel: Option<Id>,
         mute: bool,
         deaf: bool,
+    },
+    StageAction {
+        channel: Id,
+        action: String,
+        user: Option<Id>,
+    },
+    LoadStage {
+        channel: Id,
+    },
+    LoadActivities {
+        guild: Id,
+    },
+    StartActivity {
+        channel: Id,
+        activity: Id,
+    },
+    StopActivity {
+        channel: Id,
+    },
+    LoadGifs {
+        query: String,
+    },
+    SendGif {
+        channel: Id,
+        slug: String,
     },
     UpdateRole {
         guild: Id,
@@ -371,7 +515,7 @@ pub enum Command {
     UploadRoleIcon {
         guild: Id,
         role: Id,
-        path: std::path::PathBuf,
+        source: UploadSource,
     },
     RemoveRoleIcon {
         guild: Id,
@@ -398,6 +542,8 @@ pub enum Command {
     LoadAudit {
         guild: Id,
         before: Option<Id>,
+        actor: Option<Id>,
+        action: Option<i32>,
     },
     LoadGuildCommands {
         guild: Id,
@@ -411,7 +557,8 @@ pub enum Command {
     CreateEmoji {
         guild: Id,
         name: String,
-        path: std::path::PathBuf,
+        sticker: bool,
+        source: UploadSource,
     },
     DeleteEmoji {
         guild: Id,
@@ -486,6 +633,7 @@ pub enum NetEvent {
     },
     GuildCommands(Vec<ApplicationCommand>),
     UserUpdate(Box<User>),
+    ConnectionCode(String),
     Notice(String),
     MemberUpdate(Box<Member>),
     MemberRemove {
@@ -531,12 +679,21 @@ pub enum NetEvent {
     PublicGuilds(Vec<PublicGuild>),
     JoinedPublicGuild(Id),
     Pins(Vec<Message>),
+    Scheduled(Vec<ScheduledMessage>),
+    ScheduledCreated(ScheduledMessage),
+    ScheduledDeleted(Id),
     Bans(Vec<Ban>),
     Unbanned {
         guild: Id,
         user: Id,
     },
     GuildUpdated(Box<GuildSummary>),
+    OnboardingUpdated(Box<GuildOnboarding>),
+    AutoModConfig(Box<AutoModConfig>),
+    Templates(Vec<GuildTemplate>),
+    Webhooks(Vec<WebhookInfo>),
+    WebhookCreated(Box<WebhookInfo>),
+    ForumTags(Vec<ForumTag>),
     Mutuals {
         user: Id,
         guilds: Vec<GuildSummary>,
@@ -579,6 +736,7 @@ pub enum NetEvent {
     Inbox(Box<Inbox>),
     GuildEvents(Vec<GuildEvent>),
     GuildEventCreated(GuildEvent),
+    GuildEventUpdated(GuildEvent),
     GuildEventDeleted {
         guild: Id,
         event: Id,
@@ -591,6 +749,10 @@ pub enum NetEvent {
     ConnectionFailed,
     Dm(Box<DmChannel>),
     VoiceState(Box<VoiceState>),
+    StageUpdated(Box<StageState>),
+    Activities(Vec<Activity>),
+    ActivityUpdated(Box<ActivityUpdate>),
+    Gifs(Vec<GifItem>),
     Error(String),
     Connected(bool),
 }
@@ -621,23 +783,39 @@ impl Net {
     }
 }
 
-struct Shared {
+#[cfg(target_arch = "wasm32")]
+const NOT_PORTED: &str = "That action is not available in the web client yet.";
+
+pub(crate) struct Shared {
     base: String,
     wake: Arc<Mutex<Option<rune::Waker>>>,
     token: Mutex<Option<String>>,
     profile: String,
+    #[cfg(not(target_arch = "wasm32"))]
     client: reqwest::blocking::Client,
     bootstrap_seen: AtomicBool,
 }
 
-fn session_path(profile: &str) -> Option<std::path::PathBuf> {
-    let base = std::env::var("APPDATA")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())?;
-    Some(base.join("Runecord").join(format!("session-{profile}.txt")))
+#[cfg(target_arch = "wasm32")]
+fn session_path(_profile: &str) -> Option<std::path::PathBuf> {
+    None
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn session_path(profile: &str) -> Option<std::path::PathBuf> {
+    Some(crate::paths::data_dir()?.join(format!("session-{profile}.txt")))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_token(_profile: &str) -> Option<String> {
+    web_sys::window()
+        .and_then(|window| window.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item("runecord-token").ok().flatten())
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn read_token(profile: &str) -> Option<String> {
     let path = session_path(profile)?;
     std::fs::read_to_string(path)
@@ -651,6 +829,23 @@ pub fn has_token(profile: &str) -> bool {
     read_token(profile).is_some()
 }
 
+#[cfg(target_arch = "wasm32")]
+fn write_token(_profile: &str, token: Option<&str>) {
+    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten())
+    else {
+        return;
+    };
+    match token {
+        Some(token) => {
+            let _ = storage.set_item("runecord-token", token);
+        }
+        None => {
+            let _ = storage.remove_item("runecord-token");
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn write_token(profile: &str, token: Option<&str>) {
     let Some(path) = session_path(profile) else {
         return;
@@ -668,6 +863,7 @@ fn write_token(profile: &str, token: Option<&str>) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn error_text(response: reqwest::blocking::Response) -> String {
     let status = response.status();
     let text = response.text().unwrap_or_default();
@@ -684,6 +880,7 @@ fn error_text(response: reqwest::blocking::Response) -> String {
 }
 
 impl Shared {
+    #[cfg(not(target_arch = "wasm32"))]
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self.client.get(format!("{}{}", self.base, path));
@@ -699,6 +896,7 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn post<B: serde::Serialize>(&self, path: &str, body: &B) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self
@@ -720,6 +918,26 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn put<B: serde::Serialize>(&self, path: &str, body: &B) -> Result<serde_json::Value, String> {
+        let token = self.token.lock().map_err(|_| "lock")?.clone();
+        let mut req = self.client.put(format!("{}{}", self.base, path)).json(body);
+        if let Some(t) = token {
+            req = req.bearer_auth(t);
+        }
+        let res = req
+            .send()
+            .map_err(|e| format!("Can't reach the local server: {e}"))?;
+        if !res.status().is_success() {
+            return Err(error_text(res));
+        }
+        if res.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(serde_json::Value::Null);
+        }
+        res.json::<serde_json::Value>().map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn patch<B: serde::Serialize>(
         &self,
         path: &str,
@@ -742,6 +960,7 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn delete_json(&self, path: &str) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self.client.delete(format!("{}{}", self.base, path));
@@ -757,9 +976,37 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    fn delete(&self, path: &str) -> Result<(), String> {
+    /// One call for every verb, used by the transport-neutral helpers.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn send(
+        &self,
+        method: HttpMethod,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        match method {
+            HttpMethod::Get => self.get(path),
+            HttpMethod::Post => self.post(path, body),
+            HttpMethod::Put => self.put(path, body),
+            HttpMethod::Patch => self.patch(path, body),
+            HttpMethod::Delete => self.delete_json(path),
+        }
+    }
+
+    /// POST a raw byte body, used by uploads.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn post_bytes(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        content_type: &str,
+    ) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
-        let mut req = self.client.delete(format!("{}{}", self.base, path));
+        let mut req = self
+            .client
+            .post(format!("{}{}", self.base, path))
+            .header("Content-Type", content_type)
+            .body(bytes.to_vec());
         if let Some(t) = token {
             req = req.bearer_auth(t);
         }
@@ -769,7 +1016,55 @@ impl Shared {
         if !res.status().is_success() {
             return Err(error_text(res));
         }
-        Ok(())
+        if res.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(serde_json::Value::Null);
+        }
+        res.json::<serde_json::Value>().map_err(|e| e.to_string())
+    }
+
+    // Browser builds keep the same call sites for handlers that have not been
+    // ported to the callback form yet; they report a clear error instead of
+    // blocking the single UI thread.
+    #[cfg(target_arch = "wasm32")]
+    fn get(&self, _path: &str) -> Result<serde_json::Value, String> {
+        Err(NOT_PORTED.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn post<B: serde::Serialize>(
+        &self,
+        _path: &str,
+        _body: &B,
+    ) -> Result<serde_json::Value, String> {
+        Err(NOT_PORTED.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn put<B: serde::Serialize>(
+        &self,
+        _path: &str,
+        _body: &B,
+    ) -> Result<serde_json::Value, String> {
+        Err(NOT_PORTED.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn patch<B: serde::Serialize>(
+        &self,
+        _path: &str,
+        _body: &B,
+    ) -> Result<serde_json::Value, String> {
+        Err(NOT_PORTED.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn delete_json(&self, _path: &str) -> Result<serde_json::Value, String> {
+        Err(NOT_PORTED.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn delete(&self, _path: &str) -> Result<(), String> {
+        Err(NOT_PORTED.to_string())
     }
 
     fn emit(&self, ev: NetEvent) {
@@ -786,6 +1081,198 @@ impl Shared {
 
 pub static EVENTS: Mutex<Vec<NetEvent>> = Mutex::new(Vec::new());
 
+// ---------------------------------------------------------------------------
+// Transport-neutral request helpers
+//
+// Desktop runs each request on the worker thread and calls back at once; the
+// browser spawns a fetch and calls back when it resolves. Handler code is the
+// same either way, so `net/http` compiles for both targets.
+// ---------------------------------------------------------------------------
+
+/// GET a path and decode it, handing the outcome to `then`.
+pub(crate) fn get_then<T, F>(shared: &Arc<Shared>, path: String, then: F)
+where
+    T: serde::de::DeserializeOwned + 'static,
+    F: FnOnce(Result<T, String>) + 'static,
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        then(
+            shared
+                .get(&path)
+                .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string())),
+        );
+    }
+    #[cfg(target_arch = "wasm32")]
+    web::get_result(shared, path, then);
+}
+
+/// Any method with a JSON body, handing the raw response to `then`.
+pub(crate) fn send_then<B, F>(
+    shared: &Arc<Shared>,
+    method: HttpMethod,
+    path: String,
+    body: B,
+    then: F,
+) where
+    B: serde::Serialize,
+    F: FnOnce(Result<serde_json::Value, String>) + 'static,
+{
+    let body = serde_json::to_value(&body).unwrap_or(serde_json::Value::Null);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        then(shared.send(method, &path, &body));
+    }
+    #[cfg(target_arch = "wasm32")]
+    web::send_json(shared, method, path, body, then);
+}
+
+/// A request with no response body, reporting only success or failure.
+pub(crate) fn fire_then<B, F>(
+    shared: &Arc<Shared>,
+    method: HttpMethod,
+    path: String,
+    body: B,
+    then: F,
+) where
+    B: serde::Serialize,
+    F: FnOnce(Result<(), String>) + 'static,
+{
+    send_then(shared, method, path, body, move |result| {
+        then(result.map(|_| ()))
+    });
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // `Get` travels through `get_then`, which does not name it
+pub(crate) enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+}
+
+/// Where an uploaded file's bytes come from.
+///
+/// Desktop reads a path returned by the native file dialog; the browser holds
+/// the bytes from an `<input type="file">` instead. Handlers only see the
+/// resolved `(name, bytes)`, so an upload is written once for both targets.
+#[derive(Clone, Debug)]
+pub enum UploadSource {
+    Path(std::path::PathBuf),
+    Bytes { name: String, bytes: Vec<u8> },
+}
+
+impl UploadSource {
+    /// Resolves the source into a filename and its bytes.
+    pub fn read(&self) -> Result<(String, Vec<u8>), String> {
+        match self {
+            UploadSource::Path(path) => {
+                let bytes = std::fs::read(path).map_err(|e| format!("Could not read file: {e}"))?;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "file".into());
+                Ok((name, bytes))
+            }
+            UploadSource::Bytes { name, bytes } => Ok((name.clone(), bytes.clone())),
+        }
+    }
+}
+
+/// Guesses a content type from a filename.
+pub(crate) fn content_type_for(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or_default();
+    match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "mp4" => "video/mp4",
+        "mp3" => "audio/mpeg",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+}
+
+/// POST raw bytes to a path and hand the decoded response to `then`.
+pub(crate) fn upload_then<T, F>(
+    shared: &Arc<Shared>,
+    path: String,
+    source: UploadSource,
+    content_type: String,
+    then: F,
+) where
+    T: serde::de::DeserializeOwned + 'static,
+    F: FnOnce(Result<T, String>) + 'static,
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let result = source
+            .read()
+            .and_then(|(_, bytes)| shared.post_bytes(&path, &bytes, &content_type))
+            .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string()));
+        then(result);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        match source.read() {
+            Ok((_, bytes)) => web::upload_json(shared, path, bytes, content_type, then),
+            Err(e) => {
+                let _ = then;
+                web::report_error(shared, e);
+            }
+        }
+    }
+}
+
+/// GET an image and decode it into the client's image event.
+pub(crate) fn fetch_image_then(shared: &Arc<Shared>, url: String) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send()
+            && let Ok(bytes) = res.bytes()
+        {
+            emit_image(shared, url, &bytes);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    web::fetch_bytes(shared, url);
+}
+
+/// Decodes image bytes into a `NetEvent::Image`, honouring animation.
+pub(crate) fn emit_image(shared: &Arc<Shared>, url: String, bytes: &[u8]) {
+    if let Some(animation) = crate::image_anim::decode(bytes) {
+        let first = animation.frames[0].rgba.clone();
+        shared.emit(NetEvent::Image {
+            url,
+            width: animation.width,
+            height: animation.height,
+            rgba: first,
+            frames: animation.frames,
+        });
+        return;
+    }
+    match image::load_from_memory(bytes) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            shared.emit(NetEvent::Image {
+                url,
+                width: w,
+                height: h,
+                rgba: rgba.into_raw(),
+                frames: Vec::new(),
+            });
+        }
+        Err(e) => shared.emit(NetEvent::Error(format!("Image: {e}"))),
+    }
+}
+
 pub fn drain_events() -> Vec<NetEvent> {
     let mut out = Vec::new();
     if let Ok(mut v) = EVENTS.lock() {
@@ -794,6 +1281,54 @@ pub fn drain_events() -> Vec<NetEvent> {
     out
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
+    let (cmd_tx, cmd_rx) = mpsc::channel::<Command>();
+    let base = crate::config::effective_server_url();
+    let profile = fast_profile
+        .or_else(|| std::env::var("RUNECORD_PROFILE").ok())
+        .unwrap_or_else(|| "1".to_string());
+    let wake = Arc::new(Mutex::new(None));
+    let shared = Arc::new(Shared {
+        base,
+        wake: wake.clone(),
+        token: Mutex::new(read_token(&profile)),
+        profile,
+        bootstrap_seen: AtomicBool::new(false),
+    });
+
+    if shared.token.lock().map(|t| t.is_some()).unwrap_or(false) {
+        let fetch_shared = shared.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            crate::net::web::wait(500).await;
+            if !fetch_shared.bootstrap_seen.load(Ordering::SeqCst) {
+                web::fetch_bootstrap(&fetch_shared);
+            }
+        });
+    }
+
+    {
+        let shared = shared.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            loop {
+                while let Ok(cmd) = cmd_rx.try_recv() {
+                    http::dispatch(&shared, cmd);
+                }
+                crate::net::web::wait(16).await;
+            }
+        });
+    }
+    {
+        let shared = shared.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            ws_worker(shared);
+        });
+    }
+
+    Net { tx: cmd_tx, wake }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
     let (cmd_tx, cmd_rx) = mpsc::channel::<Command>();
     let base = crate::config::effective_server_url();
@@ -847,3 +1382,36 @@ mod http;
 
 use self::gateway::*;
 use self::http::*;
+
+/// Send a body and decode the response, handing the outcome to `then`.
+pub(crate) fn send_then_json<T, B, F>(
+    shared: &Arc<Shared>,
+    method: HttpMethod,
+    path: String,
+    body: B,
+    then: F,
+) where
+    T: serde::de::DeserializeOwned + 'static,
+    B: serde::Serialize,
+    F: FnOnce(Result<T, String>) + 'static,
+{
+    send_then(shared, method, path, body, move |result| {
+        then(result.and_then(|value| {
+            serde_json::from_value::<T>(value).map_err(|error| error.to_string())
+        }));
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_component;
+
+    #[test]
+    fn query_values_are_percent_encoded() {
+        assert_eq!(encode_component("hello world"), "hello%20world");
+        assert_eq!(encode_component("a&b=c?d/e"), "a%26b%3Dc%3Fd%2Fe");
+        assert_eq!(encode_component("Runecord_-.~"), "Runecord_-.~");
+        assert_eq!(encode_component("café"), "caf%C3%A9");
+        assert_eq!(encode_component("100%"), "100%25");
+    }
+}

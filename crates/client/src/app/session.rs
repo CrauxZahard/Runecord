@@ -311,6 +311,8 @@ impl App {
             voice_sensitivity: self.voice_sensitivity,
             voice_auto_sensitivity: self.voice_auto_sensitivity,
             voice_mode: self.voice_mode.clone(),
+            voice_noise_suppression: self.voice_noise_suppression,
+            ptt_key: self.ptt_key,
         }
     }
 
@@ -335,6 +337,8 @@ impl App {
         self.voice_sensitivity = snapshot.voice_sensitivity;
         self.voice_auto_sensitivity = snapshot.voice_auto_sensitivity;
         self.voice_mode = snapshot.voice_mode;
+        self.voice_noise_suppression = snapshot.voice_noise_suppression;
+        self.ptt_key = snapshot.ptt_key;
         self.apply_voice_settings();
         let keybinds =
             snapshot

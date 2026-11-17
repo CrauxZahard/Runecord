@@ -109,26 +109,22 @@ Headless seeded state (offscreen surfaces inflate absolute numbers; compare rows
 
 Unbounded 3,000-row history costs ~205 MB more than 240 rows; the current 500-row production cap has the same purpose while virtualization keeps frame cost flat.
 
-## 5. Discord comparison
+## 5. External comparison
 
-Discord does **not** publish a controlled, like-for-like client benchmark. These are the closest public numbers, with their limits.
+No chat client publishes a controlled, like-for-like client benchmark, so this
+report does not borrow marketing deltas as if they were measurements. The
+numbers above are the reproducible ones: cache hydration, frame CPU time and
+memory at fixed history sizes. Treat vendor "faster" claims as directional
+until they publish their hardware, dataset and method.
 
-| Metric | Runecord | Discord | Fair comparison? |
-|---|---|---|---|
-| Warm cache hydrate | 0.10 ms (9 KB); 2.43 ms (1.08 MB) | No published equivalent | No |
-| Desktop startup | Cache does not block window creation; process launch not measurable here | p50 desktop startup improved ~8% (**~650 ms**) in June 2026; p50 TTI improved **11.8%** from payload ordering in March 2026 | No: Discord includes updater, auth and network |
-| Rust client cold launch | Not measurable cleanly here (12-17 s offscreen GPU init) | CTO demo: window fades in **<1 s**, friends list loaded before Electron reaches its interface at **~5 s** | No: demo video, not a controlled test |
-| Idle memory | **90 MB**, one account | Phoenix: **290.2 MB with two accounts**; current Electron: **1-2 GB** reported idle | No: missing voice/video/overlay/media stack |
-| Chat frame performance | 5,000 rows: **1.79 ms p95** (virtualized); 300 members: **1.19 ms p95** | Mobile chat list: **up to 60% fewer slow frames**, **~12% less chat-list memory**; server list: **10% faster startup**, **14% less startup memory** | Directional only; Discord publishes deltas, not ms |
-| Strategy | Virtualized message/member/channel rows, lazy guild detail, paginated members, 500-message window | Virtualized server/chat/member lists, recycling pools | Same family; Discord has more content types |
+### What the numbers mean
 
-### What the comparison means
-
-- On the metric Runecord controls — cache hydration — it is effectively instant (0.10 ms for a real cache, 2.43 ms for a 1.08 MB worst case).
-- Discord's publicly reported startup wins are still measured in **hundreds of milliseconds**. Their June 2026 note says 8% equals roughly 650 ms, so their p50 is still a seconds-scale number; they did not publish the baseline.
-- Discord's Rust-client demo shows a sub-second window and 290 MB with two accounts, but it is a video, not a benchmark. The outlets covering it explicitly say there is no like-for-like test.
-- Discord's mobile work uses virtualization and recycling. Runecord now uses Rune's `virtual_rows` for messages, members and channels, so frame cost is flat in history length; the 500-message/300-member windows are memory bounds, not rendering bounds.
-- The 2021 DiscordTauri benchmark is old but still the only third-party launch measurement found: Discord launched in **7.41 s** on one run and **2.83 s** on a smaller account, with **535 MB / 516 MB** average memory. Conditions were not controlled by today's standards.
+- On the metric Runecord controls - cache hydration - it is effectively
+  instant (0.10 ms for a real cache, 2.43 ms for a 1.08 MB worst case).
+- Frame cost is flat in history length because messages, members and channels
+  are virtualized; the 500-message and 300-member windows are memory bounds,
+  not rendering bounds.
+- Memory scales with the rendered row window, not with the size of the archive.
 
 ## Reproduce
 
@@ -173,17 +169,9 @@ The small demo guild already halves latency; the gap grows with channels and ove
 
 Thumbnail cache: a 480 px PNG (56,537 bytes) served twice produced `thumbs.hits = 1`, `thumbs.misses = 1`, `weight = 56,537` from `GET /api/cache`, avoiding a second disk read, AES decrypt and image decode.
 
-## Sources
-
-- Discord Patch Notes, 2026-06-04: p50 desktop startup improved ~8% (~650 ms). <https://discord.com/blog/discord-patch-notes-june-4-2026>
-- Discord Patch Notes, 2026-03-06: p50 TTI reduced 11.8% by payload ordering. <https://discord.com/blog/discord-patch-notes-march-6-2026>
-- Discord, "Supercharging Discord Mobile", 2025-03-05: 14% startup memory reduction and 10% faster startup from server-list virtualization; up to 60% fewer slow frames and 12% less chat-list memory. <https://discord.com/blog/supercharging-discord-mobile-our-journey-to-a-faster-app>
-- Windows Latest, 2026-11-06: Rust "Discord Phoenix" client window under 1 s, friends list before Electron's ~5 s interface, 290.2 MB with two accounts; explicitly not a controlled benchmark. <https://www.windowslatest.com/2026/11/06/every-windows-11-app-should-kill-electron-and-discord-just-showed-why-no-starting-screen-and-70-less-ram-even-with-two-accounts-signed-in/>
-- DiscordTauri archived benchmark, 2021: Discord launch 7.41 s / 2.83 s, 535 MB / 516 MB average memory. <https://github.com/DiscordTauri/discord-tauri>
-
 ## Caveats
 
 - Frame numbers are CPU layout/shape/record time in Rune's offscreen renderer, not end-to-end GPU frame time.
 - The synthetic snapshot is not a real account; 1.08 MB is a stress size, while the actual profile cache is 9 KB.
-- The loopback API is not comparable to Discord's internet startup path.
+- The loopback API is not comparable to a remote internet startup path.
 - The machine was otherwise idle during the final sequential runs; earlier parallel runs produced 30-60% higher frame times, which is why the report uses sequential medians.

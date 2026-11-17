@@ -50,6 +50,20 @@ impl App {
             return;
         }
         let now = now_ms();
+        // A reply pings the author by default. Encoding it as a leading mention
+        // keeps every client in sync (including notification/unread counts) and
+        // is exactly the mention chip Discord shows above a reply. "@ off"
+        // suppresses it.
+        let reply_mention = self.reply_notify.then(|| {
+            self.reply_to
+                .as_ref()
+                .filter(|r| r.author_id != self.me.id)
+                .map(|r| r.author_id)
+        }).flatten();
+        let sent_text = match reply_mention {
+            Some(author) => format!("<@{author}> {text}"),
+            None => text.clone(),
+        };
         if self
             .channel(channel)
             .is_some_and(|channel| channel.kind == ChannelKind::Forum)
@@ -60,10 +74,10 @@ impl App {
                 id: -now,
                 channel_id: channel,
                 author_id: self.me.id,
-                content: text.clone(),
+                content: sent_text.clone(),
                 timestamp: now,
                 attachments: self.attachments.clone(),
-                mentions: Vec::new(),
+                mentions: reply_mention.into_iter().collect(),
                 pending: true,
                 ..Message::default()
             };
@@ -71,18 +85,142 @@ impl App {
         }
         self.send(Command::Send {
             channel,
-            content: text,
+            content: sent_text,
             reply_to: self.reply_to.as_ref().map(|r| r.message_id),
             attachments: self.attachments.iter().map(|a| a.id).collect(),
             nonce: format!("{now}"),
         });
         self.reply_to = None;
+        self.reply_notify = true;
         self.composer.clear();
         self.attachments.clear();
         self.mark_read(channel);
     }
 
-    pub fn upload_file(&mut self, path: std::path::PathBuf) {
+    pub fn open_scheduled(&mut self) {
+        self.schedule_content = TextEdit::new(self.composer.text.clone());
+        self.schedule_minutes = TextEdit::new("60");
+        let channel = match self.screen {
+            Screen::Guild => self.active_channel,
+            Screen::Dms => self.active_dm,
+        };
+        if channel != 0 {
+            self.send(Command::LoadScheduled { channel });
+        }
+        self.modal = Modal::ScheduledMessages;
+    }
+
+    pub fn schedule_now(&mut self) {
+        let channel = match self.screen {
+            Screen::Guild => self.active_channel,
+            Screen::Dms => self.active_dm,
+        };
+        if channel == 0 {
+            return;
+        }
+        let content = self.schedule_content.text.trim_end().to_string();
+        if content.is_empty() {
+            self.toast("Write a message to schedule");
+            return;
+        }
+        let Ok(minutes) = self.schedule_minutes.text.trim().parse::<i64>() else {
+            self.toast("Enter minutes from now");
+            return;
+        };
+        if minutes < 1 {
+            self.toast("Schedule at least one minute ahead");
+            return;
+        }
+        let send_at = now_ms() + minutes.min(43_200) * 60 * 1000;
+        self.send(Command::ScheduleMessage {
+            channel,
+            content,
+            send_at,
+        });
+        self.toast("Message scheduled");
+    }
+
+    pub fn delete_scheduled(&mut self, id: Id) {
+        self.send(Command::DeleteScheduled { id });
+    }
+
+    pub fn open_create_poll(&mut self) {
+        self.poll_question = TextEdit::new("");
+        self.poll_option_1 = TextEdit::new("");
+        self.poll_option_2 = TextEdit::new("");
+        self.poll_option_3 = TextEdit::new("");
+        self.poll_option_4 = TextEdit::new("");
+        self.poll_multiple = false;
+        self.poll_anonymous = false;
+        self.poll_duration = TextEdit::new("24");
+        self.modal = Modal::CreatePoll;
+    }
+
+    pub fn create_poll_now(&mut self) {
+        let channel = match self.screen {
+            Screen::Guild => self.active_channel,
+            Screen::Dms => self.active_dm,
+        };
+        if channel == 0 {
+            return;
+        }
+        let question = self.poll_question.text.trim().to_string();
+        let options: Vec<String> = [
+            &self.poll_option_1,
+            &self.poll_option_2,
+            &self.poll_option_3,
+            &self.poll_option_4,
+        ]
+        .into_iter()
+        .map(|option| option.text.trim().to_string())
+        .filter(|option| !option.is_empty())
+        .collect();
+        if question.is_empty() {
+            self.toast("Add a poll question");
+            return;
+        }
+        if options.len() < 2 {
+            self.toast("Add at least two poll options");
+            return;
+        }
+        let duration_hours = self
+            .poll_duration
+            .text
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|hours| *hours > 0)
+            .map(|hours| hours.min(168));
+        self.send(Command::CreatePoll {
+            channel,
+            question,
+            options,
+            multiple: self.poll_multiple,
+            anonymous: self.poll_anonymous,
+            duration_hours,
+        });
+        self.modal = Modal::None;
+    }
+
+    pub fn click_component(&mut self, message: Id, custom_id: String) {
+        self.send(Command::ClickComponent { message, custom_id });
+    }
+
+    pub fn vote_poll(&mut self, message: Id, option: u32) {
+        self.send(Command::VotePoll { message, option });
+    }
+
+    pub fn open_forward(&mut self, message: Id) {
+        self.modal = Modal::ForwardMessage(message);
+    }
+
+    pub fn forward_to(&mut self, message: Id, channel: Id) {
+        self.send(Command::ForwardMessage { message, channel });
+        self.modal = Modal::None;
+        self.toast("Message forwarded");
+    }
+
+    pub fn upload_file(&mut self, source: crate::net::UploadSource) {
         let channel = match self.screen {
             Screen::Guild => self.active_channel,
             Screen::Dms => self.active_dm,
@@ -92,14 +230,21 @@ impl App {
                 .active_guild()
                 .map(|guild| guild.upload_limit_bytes)
                 .filter(|limit| *limit > 0)
-                .unwrap_or(48 * 1024 * 1024),
-            Screen::Dms => 48 * 1024 * 1024,
+                .unwrap_or(128 * 1024 * 1024),
+            Screen::Dms => 128 * 1024 * 1024,
         };
-        if let Ok(meta) = std::fs::metadata(&path)
-            && meta.len() > limit
-        {
+        let (name, size) = match &source {
+            crate::net::UploadSource::Path(path) => (
+                path.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "file".into()),
+                std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0),
+            ),
+            crate::net::UploadSource::Bytes { name, bytes } => (name.clone(), bytes.len() as u64),
+        };
+        if size > limit {
             self.toast(format!(
-                "File is larger than {} MB. Boost the server to raise the limit.",
+                "File is larger than the {} MB upload limit.",
                 limit / (1024 * 1024)
             ));
             return;
@@ -107,10 +252,8 @@ impl App {
         if channel == 0 {
             return;
         }
-        if let Some(name) = path.file_name() {
-            self.toast(format!("Uploading {}", name.to_string_lossy()));
-        }
-        self.send(Command::Upload { channel, path });
+        self.toast(format!("Uploading {name}"));
+        self.send(Command::Upload { channel, source });
     }
 
     pub fn note_typing(&mut self) {
@@ -134,7 +277,17 @@ impl App {
         });
     }
 
+    /// Replace the `@query` the user typed with a mention token from the picker.
+    pub fn insert_mention(&mut self, start: usize, end: usize, token: &str) {
+        let end = end.max(start);
+        self.composer.set_selection(start, end);
+        self.composer.insert(token);
+        self.composer.focused = true;
+    }
+
     pub fn set_reply(&mut self, message: Id, author_id: Id, content: &str) {
+        // Replying pings the author by default; the composer can turn it off.
+        self.reply_notify = author_id != self.me.id;
         self.reply_to = Some(MessageReply {
             message_id: message,
             author_id,

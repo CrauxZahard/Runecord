@@ -24,6 +24,36 @@ impl App {
         self.server_unreachable = true;
         self.connected = false;
     }
+    /// A saved token can outlive the backend database or point at another
+    /// deployment. Clear it locally and return to the login screen instead of
+    /// repeating "invalid session" toasts over stale cached content.
+    pub(crate) fn expire_session(&mut self) {
+        self.send(crate::net::Command::Logout);
+        self.logged_in = false;
+        self.connected = false;
+        self.connecting = false;
+        self.auth_busy = false;
+        self.modal = Modal::None;
+        self.context_menu = None;
+        self.me = User::default();
+        self.guilds.clear();
+        self.guild_details.clear();
+        self.channels.clear();
+        self.messages.clear();
+        self.members.clear();
+        self.member_state.clear();
+        self.dms.clear();
+        self.relationships.clear();
+        self.users.clear();
+        self.presence.clear();
+        self.voice.clear();
+        self.unread.clear();
+        self.reads.clear();
+        self.search_results = None;
+        self.inbox = None;
+        self.auth_error =
+            Some("Your saved session is no longer valid. Log in again to continue.".to_string());
+    }
     pub(crate) fn apply_user_update(&mut self, user: Box<User>) {
         let user = *user;
         if user.avatar_url.is_empty() {
@@ -60,6 +90,15 @@ impl App {
         }
         if user.id == self.me.id {
             self.me = user;
+            // The server only tracks online/offline; keep the locally chosen
+            // status so an activity/presence update can't make us look online
+            // after the user went Invisible.
+            if self.connected {
+                self.me.status = self.my_presence;
+            } else {
+                self.me.status = Presence::Offline;
+            }
+            self.presence.insert(self.me.id, self.me.status);
             if matches!(self.modal, Modal::Settings(SettingsTab::Profile))
                 && self.profile_display.text.is_empty()
             {
@@ -78,11 +117,9 @@ impl App {
             self.server_unreachable = false;
         }
         if self.me.id != 0 {
-            let status = if up {
-                Presence::Online
-            } else {
-                Presence::Offline
-            };
+            // Reconnecting must not clobber a status the user picked manually
+            // (Idle, DND or Invisible).
+            let status = if up { self.my_presence } else { Presence::Offline };
             self.presence.insert(self.me.id, status);
             self.me.status = status;
             if let Some(user) = self.users.get_mut(&self.me.id) {
@@ -97,6 +134,12 @@ impl App {
         self.user_requests.clear();
         if msg.is_empty() {
             self.logged_in = false;
+            return;
+        }
+        if msg.eq_ignore_ascii_case("invalid or missing session")
+            || msg.contains("invalid or missing session")
+        {
+            self.expire_session();
             return;
         }
         if self.logged_in && msg.contains("banned") && !self.last_join_code.is_empty() {

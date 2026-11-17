@@ -14,47 +14,158 @@ const CATEGORIES: &[&str] = &[
 ];
 
 const EMOJIS: &[(&str, &str, &str)] = &[
+    // Smileys & People
     ("😀", "grinning", "Smileys & People"),
-    ("😂", "joy", "Smileys & People"),
-    ("🥹", "pleading", "Smileys & People"),
-    ("😍", "heart eyes", "Smileys & People"),
-    ("😎", "sunglasses", "Smileys & People"),
-    ("🤔", "thinking", "Smileys & People"),
-    ("😴", "sleeping", "Smileys & People"),
-    ("🥳", "partying", "Smileys & People"),
-    ("😭", "sob", "Smileys & People"),
+    ("😃", "smile", "Smileys & People"),
+    ("😄", "happy", "Smileys & People"),
+    ("😁", "beaming", "Smileys & People"),
+    ("😆", "laughing", "Smileys & People"),
     ("😅", "sweat smile", "Smileys & People"),
+    ("😂", "joy", "Smileys & People"),
+    ("🤣", "rolling on the floor", "Smileys & People"),
+    ("🙂", "slight smile", "Smileys & People"),
+    ("🙃", "upside down", "Smileys & People"),
+    ("😉", "wink", "Smileys & People"),
+    ("😊", "blush", "Smileys & People"),
+    ("😍", "heart eyes", "Smileys & People"),
+    ("🥰", "smiling with hearts", "Smileys & People"),
+    ("😘", "kiss", "Smileys & People"),
+    ("😋", "yum", "Smileys & People"),
+    ("😜", "tongue wink", "Smileys & People"),
+    ("🤪", "zany", "Smileys & People"),
+    ("😎", "sunglasses", "Smileys & People"),
+    ("🥳", "partying", "Smileys & People"),
+    ("🤔", "thinking", "Smileys & People"),
+    ("🤨", "raised eyebrow", "Smileys & People"),
+    ("😐", "neutral", "Smileys & People"),
+    ("😑", "expressionless", "Smileys & People"),
+    ("😶", "no mouth", "Smileys & People"),
+    ("🙄", "eye roll", "Smileys & People"),
+    ("😏", "smirk", "Smileys & People"),
+    ("😴", "sleeping", "Smileys & People"),
+    ("🥺", "pleading", "Smileys & People"),
+    ("🥹", "teary smile", "Smileys & People"),
+    ("😭", "sob", "Smileys & People"),
+    ("😢", "sad", "Smileys & People"),
+    ("😤", "triumph", "Smileys & People"),
+    ("😡", "angry", "Smileys & People"),
+    ("🤯", "mind blown", "Smileys & People"),
+    ("😱", "scream", "Smileys & People"),
+    ("🥵", "hot", "Smileys & People"),
+    ("😇", "angel", "Smileys & People"),
+    ("🤓", "nerd", "Smileys & People"),
+    ("🧐", "monocle", "Smileys & People"),
+    ("🤠", "cowboy", "Smileys & People"),
+    ("🥸", "disguised", "Smileys & People"),
+    ("😈", "devil", "Smileys & People"),
+    ("💀", "skull", "Smileys & People"),
+    ("👻", "ghost", "Smileys & People"),
+    ("👽", "alien", "Smileys & People"),
+    ("🤖", "robot", "Smileys & People"),
+    ("🙌", "raised hands", "Smileys & People"),
+    ("👏", "clap", "Smileys & People"),
+    ("👋", "wave hand", "Smileys & People"),
+    ("🤝", "handshake", "Smileys & People"),
     ("🙏", "pray", "Smileys & People"),
     ("👍", "thumbs up", "Smileys & People"),
     ("👎", "thumbs down", "Smileys & People"),
-    ("💯", "hundred", "Smileys & People"),
+    ("✌️", "victory", "Smileys & People"),
+    ("🤞", "fingers crossed", "Smileys & People"),
+    ("🤙", "call me", "Smileys & People"),
+    ("👊", "fist bump", "Smileys & People"),
+    ("💪", "muscle", "Smileys & People"),
+    ("🫡", "salute", "Smileys & People"),
+    ("🫶", "heart hands", "Smileys & People"),
     ("👀", "eyes", "Smileys & People"),
+    ("💯", "hundred", "Smileys & People"),
+    // Nature
     ("🔥", "fire", "Nature"),
     ("⚡", "zap", "Nature"),
     ("🌊", "wave", "Nature"),
     ("🌙", "moon", "Nature"),
+    ("☀️", "sun", "Nature"),
+    ("🌈", "rainbow", "Nature"),
+    ("⭐", "star", "Nature"),
+    ("🌟", "glowing star", "Nature"),
+    ("❄️", "snowflake", "Nature"),
+    ("🌸", "blossom", "Nature"),
+    ("🌻", "sunflower", "Nature"),
+    ("🌲", "tree", "Nature"),
     ("🐛", "bug", "Nature"),
     ("🦀", "crab", "Nature"),
+    ("🐶", "dog", "Nature"),
+    ("🐱", "cat", "Nature"),
+    ("🦊", "fox", "Nature"),
+    ("🐼", "panda", "Nature"),
+    ("🐧", "penguin", "Nature"),
+    ("🦄", "unicorn", "Nature"),
+    ("🐝", "bee", "Nature"),
+    ("🦋", "butterfly", "Nature"),
+    // Food & Drink
     ("🍕", "pizza", "Food & Drink"),
     ("🍔", "burger", "Food & Drink"),
+    ("🌮", "taco", "Food & Drink"),
+    ("🍣", "sushi", "Food & Drink"),
+    ("🍜", "ramen", "Food & Drink"),
+    ("🍦", "ice cream", "Food & Drink"),
+    ("🍩", "donut", "Food & Drink"),
+    ("🍪", "cookie", "Food & Drink"),
     ("☕", "coffee", "Food & Drink"),
+    ("🍵", "tea", "Food & Drink"),
     ("🍺", "beer", "Food & Drink"),
+    ("🍻", "cheers", "Food & Drink"),
+    ("🥂", "champagne", "Food & Drink"),
+    // Activity
     ("🎉", "tada", "Activity"),
+    ("🎊", "confetti", "Activity"),
     ("🎨", "art", "Activity"),
     ("🎧", "headphones", "Activity"),
     ("🎵", "music", "Activity"),
+    ("🎶", "notes", "Activity"),
     ("🎮", "video game", "Activity"),
+    ("🎲", "dice", "Activity"),
+    ("🏆", "trophy", "Activity"),
+    ("⚽", "football", "Activity"),
+    ("🏀", "basketball", "Activity"),
+    // Travel & Places
     ("🚀", "rocket", "Travel & Places"),
+    ("✈️", "airplane", "Travel & Places"),
+    ("🚗", "car", "Travel & Places"),
+    ("🚲", "bicycle", "Travel & Places"),
     ("🌍", "earth", "Travel & Places"),
+    ("🏠", "house", "Travel & Places"),
+    ("🏔️", "mountain", "Travel & Places"),
+    // Objects
     ("📌", "pushpin", "Objects"),
     ("📷", "camera", "Objects"),
     ("💻", "laptop", "Objects"),
+    ("📱", "phone", "Objects"),
     ("💡", "bulb", "Objects"),
     ("🧠", "brain", "Objects"),
+    ("📚", "books", "Objects"),
+    ("✏️", "pencil", "Objects"),
+    ("🔒", "lock", "Objects"),
+    ("🔑", "key", "Objects"),
+    ("⏰", "alarm", "Objects"),
+    ("💰", "money", "Objects"),
+    ("🎁", "gift", "Objects"),
+    ("☕", "coffee", "Objects"),
+    // Symbols
     ("✨", "sparkles", "Symbols"),
     ("💜", "purple heart", "Symbols"),
+    ("❤️", "red heart", "Symbols"),
+    ("🧡", "orange heart", "Symbols"),
+    ("💛", "yellow heart", "Symbols"),
+    ("💚", "green heart", "Symbols"),
+    ("💙", "blue heart", "Symbols"),
+    ("💖", "sparkling heart", "Symbols"),
     ("✅", "check", "Symbols"),
     ("❌", "x", "Symbols"),
+    ("⚠️", "warning", "Symbols"),
+    ("❓", "question", "Symbols"),
+    ("❗", "exclamation", "Symbols"),
+    ("💬", "speech bubble", "Symbols"),
+    ("🔔", "bell", "Symbols"),
 ];
 
 pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
@@ -216,7 +327,7 @@ pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
     }
     col()
         .key("emoji-sheet")
-        .w(408.0)
+        .w(sheet_w(408.0))
         .radius(10.0)
         .fill(theme::color("#111214"))
         .padding(12.0)
@@ -249,6 +360,21 @@ pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
                         .hover(p.selected)
                         .on_press(|s: &mut App| s.emoji_search.clear())
                         .child(text("Clear").font(theme::TINY).color(p.text_muted))
+                }))
+                .children(mobile().then(|| {
+                    // Focus a button, not the search field: a modal otherwise
+                    // focuses its first text field and a phone keyboard covers
+                    // the picker before the user has asked to search.
+                    el().key("emoji-close")
+                        .size(28.0, 28.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Close emoji picker")
+                        .hover(p.selected)
+                        .on_press(|s: &mut App| s.modal = Modal::None)
+                        .autofocus()
+                        .child(icon(&icons::CLOSE, 16.0).color(p.text_muted))
                 })),
         )
         .child(

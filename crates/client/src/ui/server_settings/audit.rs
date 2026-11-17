@@ -97,10 +97,30 @@ pub(crate) fn audit_view(s: &App, p: Palette) -> El {
         .grow(1.0)
         .min_h(0.0)
         .gap(10.0)
+        .child(audit_filters(s, p))
         .child(
-            text(format!("{} entries loaded", s.audit.len()))
-                .font(theme::TINY)
-                .color(p.text_faint),
+            row()
+                .w_full()
+                .center_y()
+                .child(
+                    text(format!("{} entries loaded", s.audit.len()))
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .grow(1.0),
+                )
+                .child(
+                    el().key("audit-export")
+                        .h(28.0)
+                        .px(10.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Export audit log as CSV")
+                        .fill(p.rail)
+                        .hover(p.rail_hover)
+                        .on_press(|s: &mut App| s.export_audit())
+                        .child(text("Export CSV").font(theme::TINY).color(p.text_bright)),
+                ),
         )
         .child(
             col()
@@ -113,6 +133,126 @@ pub(crate) fn audit_view(s: &App, p: Palette) -> El {
                 .child(list),
         )
         .child(footer)
+}
+
+fn audit_filters(s: &App, p: Palette) -> El {
+    const ACTIONS: [(i32, &str); 6] = [
+        (10, "Created role"),
+        (12, "Deleted role"),
+        (22, "Bans"),
+        (23, "Timeouts"),
+        (50, "Webhooks"),
+        (91, "AutoMod"),
+    ];
+    let mut chips = row().gap(6.0).flex_wrap();
+    chips = chips.child(
+        el().key("audit-filter-all")
+            .h(26.0)
+            .px(9.0)
+            .radius(4.0)
+            .center()
+            .role("radio")
+            .label("All actions")
+            .checked(s.audit_action.is_none())
+            .fill(if s.audit_action.is_none() {
+                p.accent
+            } else {
+                p.input
+            })
+            .hover(p.card_hover)
+            .on_press(|s: &mut App| s.set_audit_action(None))
+            .child(
+                text("All")
+                    .font(theme::TINY)
+                    .color(if s.audit_action.is_none() {
+                        Color::WHITE
+                    } else {
+                        p.text_muted
+                    }),
+            ),
+    );
+    for (action, label) in ACTIONS {
+        let selected = s.audit_action == Some(action);
+        chips = chips.child(
+            el().key(format!("audit-filter-{action}"))
+                .h(26.0)
+                .px(9.0)
+                .radius(4.0)
+                .center()
+                .role("radio")
+                .label(label)
+                .checked(selected)
+                .fill(if selected { p.accent } else { p.input })
+                .hover(p.card_hover)
+                .on_press(move |s: &mut App| s.set_audit_action(Some(action)))
+                .child(text(label).font(theme::TINY).color(if selected {
+                    Color::WHITE
+                } else {
+                    p.text_muted
+                })),
+        );
+    }
+
+    let mut actors = row().gap(6.0).flex_wrap();
+    let everyone_selected = s.audit_actor.is_none();
+    actors = actors.child(
+        el().key("audit-actor-all")
+            .h(26.0)
+            .px(9.0)
+            .radius(4.0)
+            .center()
+            .role("radio")
+            .label("Any moderator")
+            .checked(everyone_selected)
+            .fill(if everyone_selected {
+                p.input_hover
+            } else {
+                p.input
+            })
+            .hover(p.card_hover)
+            .on_press(|s: &mut App| s.set_audit_actor(None))
+            .child(
+                text("Anyone")
+                    .font(theme::TINY)
+                    .color(if everyone_selected {
+                        p.text_bright
+                    } else {
+                        p.text_muted
+                    }),
+            ),
+    );
+    if let Some(members) = s.members.get(&s.active_guild) {
+        for member in members.iter().take(6) {
+            let id = member.user.id;
+            let selected = s.audit_actor == Some(id);
+            let name = member.user.display_name.clone();
+            actors = actors.child(
+                el().key(format!("audit-actor-{id}"))
+                    .h(26.0)
+                    .px(9.0)
+                    .radius(4.0)
+                    .center()
+                    .role("radio")
+                    .label(format!("Only entries by {name}"))
+                    .checked(selected)
+                    .fill(if selected { p.accent } else { p.input })
+                    .hover(p.card_hover)
+                    .on_press(move |s: &mut App| s.set_audit_actor(Some(id)))
+                    .child(text(name).font(theme::TINY).color(if selected {
+                        Color::WHITE
+                    } else {
+                        p.text_muted
+                    })),
+            );
+        }
+    }
+
+    col()
+        .key("audit-filters")
+        .w_full()
+        .gap(6.0)
+        .child(chips)
+        .child(actors)
 }
 
 pub(crate) fn audit_action(action: i32, p: Palette) -> (String, Color) {

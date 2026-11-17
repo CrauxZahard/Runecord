@@ -8,8 +8,8 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     };
     let insets = cx.chrome_insets();
     let header = chat_header(s, &channel, p, insets.trailing);
-    if channel.kind == ChannelKind::Voice {
-        return voice_view(s, &channel, p, header);
+    if channel.kind.is_voice_like() {
+        return voice_view(s, cx, &channel, p, header);
     }
     if channel.kind == ChannelKind::Forum {
         return forum_view(s, &channel, p, header);
@@ -24,7 +24,7 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     } else if empty {
         empty_channel_intro(s, &channel, p)
     } else {
-        message_list(s, &channel, p)
+        message_list(s, cx, &channel, p)
     };
     let composer = composer(s, &channel, p);
     let archived = channel
@@ -39,8 +39,17 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
         .h_full()
         .fill(p.chat)
         .child(header);
+    if channel.guild_id.is_none()
+        && s.my_voice_channel() == Some(channel.id)
+        && let Some(strip) = dm_call_strip(s, &channel, p)
+    {
+        chat = chat.child(strip);
+    }
     if channel.kind == ChannelKind::Thread {
         chat = chat.child(thread_context(s, &channel, p));
+        if let Some(row_el) = thread_tag_bar(s, &channel, p) {
+            chat = chat.child(row_el);
+        }
     }
     chat = chat.child(list);
     if archived {
@@ -79,18 +88,31 @@ pub(crate) fn video_tile_size(count: usize, chat_open: bool) -> (f32, f32) {
     }
 }
 
-fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
+fn voice_view(s: &App, cx: &Cx<App>, channel: &Channel, p: Palette, header: El) -> El {
     let id = channel.id;
     let joined = s
         .voice
         .get(&s.me.id)
         .is_some_and(|v| v.channel_id == Some(id));
-    let people: Vec<Id> = s
-        .voice
-        .values()
-        .filter(|v| v.channel_id == Some(id))
-        .map(|v| v.user_id)
-        .collect();
+    let people: Vec<Id> = if channel.kind == ChannelKind::Stage {
+        s.stages
+            .get(&id)
+            .map(|state| {
+                state
+                    .speakers
+                    .iter()
+                    .filter(|speaker| speaker.speaking)
+                    .map(|speaker| speaker.user_id)
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        s.voice
+            .values()
+            .filter(|v| v.channel_id == Some(id))
+            .map(|v| v.user_id)
+            .collect()
+    };
 
     let mut stage = row()
         .key("voice-stage")
@@ -143,6 +165,14 @@ fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
                 .radius(8.0)
                 .clip_rounded(8.0)
                 .fill(p.rail)
+                .border(
+                    if crate::voice::user_speaking(*user_id) {
+                        2.0
+                    } else {
+                        0.0
+                    },
+                    p.green,
+                )
                 .child(body)
                 .child(
                     row()
@@ -275,6 +305,41 @@ fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
                 false,
                 |s: &mut App| s.toggle_voice_screen(),
             ))
+            .children(s.voice_screen.then(|| {
+                col()
+                    .gap(2.0)
+                    .center()
+                    .child(control(
+                        "screen-audio-toggle",
+                        &icons::HEADPHONES,
+                        if crate::voice::screen_audio() {
+                            "Stop Audio".into()
+                        } else {
+                            "Share Audio".into()
+                        },
+                        crate::voice::screen_audio(),
+                        false,
+                        |s: &mut App| {
+                            let next = !crate::voice::screen_audio();
+                            crate::voice::set_screen_audio(next);
+                            if next {
+                                crate::voice::start_screen_audio();
+                            } else {
+                                crate::voice::stop_screen_audio();
+                            }
+                            s.toast(if next {
+                                "Sharing screen audio"
+                            } else {
+                                "Stopped sharing screen audio"
+                            });
+                        },
+                    ))
+                    .child(
+                        text(crate::voice::screen_audio_status())
+                            .font(theme::TINY)
+                            .color(p.text_faint),
+                    )
+            }))
             .child(control(
                 "voice-join",
                 &icons::PHONE,
@@ -282,7 +347,24 @@ fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
                 false,
                 true,
                 |s: &mut App| s.set_voice(None),
-            ));
+            ))
+            .child(
+                el().key("voice-activities")
+                    .size(40.0, 40.0)
+                    .radius(20.0)
+                    .center()
+                    .role("button")
+                    .label("Activities")
+                    .help("Activities")
+                    .fill(if s.activity_sessions.contains_key(&id) {
+                        p.green
+                    } else {
+                        p.rail
+                    })
+                    .hover(p.rail_hover)
+                    .on_press(move |s: &mut App| s.open_activities(id))
+                    .child(icon(&icons::SPARKLES, 18.0).color(p.text_bright)),
+            );
     } else {
         controls = controls.child(
             el().key("voice-join")
@@ -294,7 +376,15 @@ fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
                 .label("Join Voice")
                 .fill(p.accent)
                 .hover(p.accent_hover)
-                .on_press(move |s: &mut App| s.set_voice(Some(id)))
+                .on_press(move |s: &mut App| {
+                    if s.channel(id)
+                        .is_some_and(|ch| ch.kind == ChannelKind::Stage)
+                    {
+                        s.join_stage(id);
+                    } else {
+                        s.set_voice(Some(id));
+                    }
+                })
                 .child(
                     text("Join Voice")
                         .font(theme::SMALL_MED)
@@ -311,20 +401,247 @@ fn voice_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
         .child(controls);
     let mut body = row().w_full().grow(1.0).min_h(0.0).child(stage_column);
     if s.voice_chat {
-        body = body.child(voice_chat_panel(s, channel, p));
+        body = body.child(voice_chat_panel(s, cx, channel, p));
     }
-    col()
+    let mut view = col()
         .key("chat")
         .grow(1.0)
         .min_w(0.0)
         .min_h(0.0)
         .h_full()
         .fill(p.chat)
-        .child(header)
-        .child(body)
+        .child(header);
+    if channel.kind == ChannelKind::Stage {
+        view = view.child(stage_speaker_bar(s, channel, p));
+    }
+    if let Some(card) = activity_card(s, channel.id, p) {
+        view = view.child(card);
+    }
+    view.child(body)
 }
 
-fn voice_chat_panel(s: &App, channel: &Channel, p: Palette) -> El {
+/// Speakers, raised hands and the audience list for a stage channel.
+fn stage_speaker_bar(s: &App, channel: &Channel, p: Palette) -> El {
+    let id = channel.id;
+    let joined = s
+        .voice
+        .get(&s.me.id)
+        .is_some_and(|state| state.channel_id == Some(id));
+    let state = s.stages.get(&id).cloned().unwrap_or_default();
+    let speakers: Vec<Id> = state
+        .speakers
+        .iter()
+        .filter(|speaker| speaker.speaking)
+        .map(|speaker| speaker.user_id)
+        .collect();
+    let requested: Vec<Id> = state
+        .speakers
+        .iter()
+        .filter(|speaker| speaker.requested && !speaker.speaking)
+        .map(|speaker| speaker.user_id)
+        .collect();
+    let mine = state
+        .speakers
+        .iter()
+        .find(|speaker| speaker.user_id == s.me.id)
+        .cloned();
+    let can_manage = s.guild_can(perm::MUTE_MEMBERS) || s.guild_can(perm::MANAGE_CHANNELS);
+
+    let mut speakers_row = row().gap(8.0).flex_wrap().items_center();
+    if speakers.is_empty() {
+        speakers_row = speakers_row.child(
+            text("No speakers yet")
+                .font(theme::TINY)
+                .color(p.text_faint),
+        );
+    }
+    for user in &speakers {
+        let account = s.user(*user).cloned().unwrap_or_default();
+        let mut chip = row()
+            .key(format!("stage-speaker-{user}"))
+            .h(34.0)
+            .px(8.0)
+            .radius(17.0)
+            .gap(6.0)
+            .center_y()
+            .fill(p.card);
+        chip = chip.child(avatar(&account, 22.0, p)).child(
+            text(account.display_name.clone())
+                .font(theme::TINY)
+                .color(p.text_bright),
+        );
+        if can_manage && *user != s.me.id {
+            let target = *user;
+            chip = chip.child(
+                el().key(format!("stage-move-audience-{user}"))
+                    .h(20.0)
+                    .px(6.0)
+                    .radius(10.0)
+                    .center()
+                    .role("button")
+                    .label(format!("Move {} to audience", account.display_name))
+                    .fill(p.input)
+                    .hover(p.input_hover)
+                    .on_press(move |s: &mut App| s.stage_action(id, "audience", Some(target)))
+                    .child(text("Audience").font(theme::TINY).color(p.text_muted)),
+            );
+        }
+        speakers_row = speakers_row.child(chip);
+    }
+
+    let mut actions = row().gap(6.0).center_y();
+    if !joined {
+        actions = actions.child(
+            el().key("stage-join-audience")
+                .h(30.0)
+                .px(12.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Join the audience")
+                .fill(p.accent)
+                .hover(p.accent_hover)
+                .on_press(move |s: &mut App| s.join_stage(id))
+                .child(text("Join Audience").font(theme::TINY).color(Color::WHITE)),
+        );
+    } else if mine.as_ref().is_some_and(|speaker| speaker.speaking) {
+        actions = actions.child(
+            el().key("stage-leave-speakers")
+                .h(30.0)
+                .px(12.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Move yourself to the audience")
+                .fill(p.input)
+                .hover(p.input_hover)
+                .on_press(move |s: &mut App| s.stage_action(id, "audience", None))
+                .child(
+                    text("Move to Audience")
+                        .font(theme::TINY)
+                        .color(p.text_bright),
+                ),
+        );
+    } else if mine.as_ref().is_some_and(|speaker| speaker.requested) {
+        actions = actions.child(
+            el().key("stage-cancel-request")
+                .h(30.0)
+                .px(12.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Cancel your request to speak")
+                .fill(p.input)
+                .hover(p.input_hover)
+                .on_press(move |s: &mut App| s.stage_action(id, "cancel", None))
+                .child(
+                    text("Requested - Cancel")
+                        .font(theme::TINY)
+                        .color(p.text_muted),
+                ),
+        );
+    } else {
+        actions = actions.child(
+            el().key("stage-request-speak")
+                .h(30.0)
+                .px(12.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Raise your hand to speak")
+                .fill(p.input)
+                .hover(p.input_hover)
+                .on_press(move |s: &mut App| s.stage_action(id, "request", None))
+                .child(text("Raise Hand").font(theme::TINY).color(p.text_bright)),
+        );
+    }
+
+    let mut hands = row().gap(6.0).flex_wrap();
+    for user in &requested {
+        let account = s.user(*user).cloned().unwrap_or_default();
+        let target = *user;
+        let mut chip = row()
+            .key(format!("stage-hand-{user}"))
+            .h(28.0)
+            .px(8.0)
+            .radius(14.0)
+            .gap(6.0)
+            .center_y()
+            .fill(p.yellow.alpha(0.2));
+        chip = chip.child(icon(&icons::MIC, 12.0).color(p.yellow)).child(
+            text(account.display_name.clone())
+                .font(theme::TINY)
+                .color(p.text_bright),
+        );
+        if can_manage {
+            chip = chip.child(
+                el().key(format!("stage-invite-speaker-{user}"))
+                    .h(20.0)
+                    .px(6.0)
+                    .radius(10.0)
+                    .center()
+                    .role("button")
+                    .label(format!("Invite {} to speak", account.display_name))
+                    .fill(p.green)
+                    .on_press(move |s: &mut App| s.stage_action(id, "speak", Some(target)))
+                    .child(text("Invite").font(theme::TINY).color(Color::WHITE)),
+            );
+        }
+        hands = hands.child(chip);
+    }
+
+    let audience = s
+        .voice
+        .values()
+        .filter(|state| state.channel_id == Some(id))
+        .filter(|state| !speakers.contains(&state.user_id))
+        .count();
+
+    col()
+        .key("stage-bar")
+        .w_full()
+        .px(20.0)
+        .py(8.0)
+        .gap(6.0)
+        .fill(p.sidebar)
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
+        .child(
+            row()
+                .w_full()
+                .center_y()
+                .gap(8.0)
+                .child(
+                    text(if state.topic.is_empty() {
+                        "Stage".to_string()
+                    } else {
+                        state.topic.clone()
+                    })
+                    .font(theme::SMALL_MED)
+                    .color(p.text_bright)
+                    .grow(1.0),
+                )
+                .child(
+                    text(format!(
+                        "{} speakers - {audience} in the audience",
+                        speakers.len()
+                    ))
+                    .font(theme::TINY)
+                    .color(p.text_faint),
+                )
+                .child(actions),
+        )
+        .child(speakers_row)
+        .children((!requested.is_empty()).then(|| {
+            row()
+                .w_full()
+                .gap(6.0)
+                .center_y()
+                .child(text("HANDS").font(theme::SECTION).color(p.text_muted))
+                .child(hands)
+        }))
+}
+
+fn voice_chat_panel(s: &App, cx: &Cx<App>, channel: &Channel, p: Palette) -> El {
     let empty = s
         .messages
         .get(&channel.id)
@@ -348,7 +665,7 @@ fn voice_chat_panel(s: &App, channel: &Channel, p: Palette) -> El {
                     .color(p.text_muted),
             )
     } else {
-        message_list(s, channel, p)
+        message_list(s, cx, channel, p)
     };
     col()
         .key("voice-chat-panel")
@@ -466,7 +783,105 @@ fn thread_context(s: &App, channel: &Channel, p: Palette) -> El {
         }))
 }
 
-pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
+fn dm_call_strip(s: &App, channel: &Channel, p: Palette) -> Option<El> {
+    let participants: Vec<Id> = s
+        .voice
+        .values()
+        .filter(|state| state.channel_id == Some(channel.id))
+        .map(|state| state.user_id)
+        .collect();
+    if participants.is_empty() {
+        return None;
+    }
+    let mut avatars = row().gap(6.0).center_y();
+    for user in participants.iter().take(6) {
+        let account = s.user(*user).cloned().unwrap_or_default();
+        avatars = avatars.child(avatar(&account, 26.0, p));
+    }
+    let muted = s.voice_mute;
+    let deafened = s.voice_deaf;
+    Some(
+        row()
+            .key("dm-call")
+            .w_full()
+            .h(52.0)
+            .px(20.0)
+            .gap(10.0)
+            .center_y()
+            .fill(p.sidebar)
+            .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
+            .child(
+                text("Voice connected")
+                    .font(theme::SMALL_MED)
+                    .color(p.green),
+            )
+            .child(avatars)
+            .child(el().grow(1.0))
+            .child(
+                el().key("dm-call-mute")
+                    .size(30.0, 30.0)
+                    .radius(15.0)
+                    .center()
+                    .role("button")
+                    .label(if muted { "Unmute" } else { "Mute" })
+                    .fill(if muted { p.danger } else { p.input })
+                    .hover(p.input_hover)
+                    .on_press(|s: &mut App| s.toggle_voice_mute())
+                    .child(icon(&icons::MIC, 16.0).color(Color::WHITE)),
+            )
+            .child(
+                el().key("dm-call-deafen")
+                    .size(30.0, 30.0)
+                    .radius(15.0)
+                    .center()
+                    .role("button")
+                    .label(if deafened { "Undeafen" } else { "Deafen" })
+                    .fill(if deafened { p.danger } else { p.input })
+                    .hover(p.input_hover)
+                    .on_press(|s: &mut App| s.toggle_voice_deafen())
+                    .child(icon(&icons::HEADPHONES, 16.0).color(Color::WHITE)),
+            )
+            .child(
+                el().key("dm-call-camera")
+                    .size(30.0, 30.0)
+                    .radius(15.0)
+                    .center()
+                    .role("button")
+                    .label("Toggle camera")
+                    .fill(if s.voice_camera { p.accent } else { p.input })
+                    .hover(p.input_hover)
+                    .on_press(|s: &mut App| s.toggle_voice_camera())
+                    .child(icon(&icons::VIDEO, 16.0).color(Color::WHITE)),
+            )
+            .child(
+                el().key("dm-call-screen")
+                    .size(30.0, 30.0)
+                    .radius(15.0)
+                    .center()
+                    .role("button")
+                    .label("Share your screen")
+                    .fill(if s.voice_screen { p.accent } else { p.input })
+                    .hover(p.input_hover)
+                    .on_press(|s: &mut App| s.toggle_voice_screen())
+                    .child(icon(&icons::MONITOR, 16.0).color(Color::WHITE)),
+            )
+            .child(
+                el().key("dm-call-hangup")
+                    .h(30.0)
+                    .px(14.0)
+                    .radius(15.0)
+                    .center()
+                    .role("button")
+                    .label("Leave call")
+                    .fill(p.danger)
+                    .hover(p.danger.alpha(0.85))
+                    .on_press(|s: &mut App| s.set_voice(None))
+                    .child(text("Leave").font(theme::TINY).color(Color::WHITE)),
+            ),
+    )
+}
+
+fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
     let is_dm = channel.guild_id.is_none();
     let title_row = if is_dm {
         let dm = s
@@ -477,12 +892,19 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
             .unwrap_or_default();
         let title = crate::ui::dms::dm_title(&dm);
         let group = dm.channel.kind == ChannelKind::GroupDm;
-        row()
+        let mut title_row = row()
             .gap(8.0)
             .center_y()
             .child(crate::ui::dms::dm_avatar(s, &dm, 24.0, p, p.header, true))
-            .child(text(title).font(theme::NAME).color(p.text_bright))
             .child(
+                text(title)
+                    .font(theme::NAME)
+                    .color(p.text_bright)
+                    .truncate()
+                    .min_w(0.0),
+            );
+        if !mobile() {
+            title_row = title_row.child(
                 text(if group {
                     format!("{} members", dm.recipients.len() + 1)
                 } else {
@@ -493,7 +915,9 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
                 })
                 .font(theme::SMALL)
                 .color(p.text_muted),
-            )
+            );
+        }
+        title_row
     } else {
         let manage = s.guild_can(perm::MANAGE_CHANNELS);
         let channel_icon = match channel.kind {
@@ -510,7 +934,9 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
             .child(
                 text(channel.name.clone())
                     .font(theme::NAME)
-                    .color(p.text_bright),
+                    .color(p.text_bright)
+                    .truncate()
+                    .min_w(0.0),
             );
         if manage {
             let id = channel.id;
@@ -520,16 +946,22 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
                 .help("Edit channel")
                 .on_press(move |s: &mut App| s.open_channel_edit(id));
         }
-        title
-            .child(el().w(1.0).h(24.0).fill(p.divider).ml(6.0).mr(6.0))
-            .child(
-                text(channel.topic.clone())
-                    .font(theme::SMALL)
-                    .color(p.text_muted)
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .truncate(),
-            )
+        if mobile() {
+            // A phone header has room for the name, not the topic.
+            title = title.min_w(0.0);
+            title
+        } else {
+            title
+                .child(el().w(1.0).h(24.0).fill(p.divider).ml(6.0).mr(6.0))
+                .child(
+                    text(channel.topic.clone())
+                        .font(theme::SMALL)
+                        .color(p.text_muted)
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .truncate(),
+                )
+        }
     };
 
     let channel_id = channel.id;
@@ -544,28 +976,58 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
     if is_dm {
         tools = tools
             .child(
-                tool_button("dm-call", &icons::PHONE, p)
-                    .on_press(|s: &mut App| s.toast("Voice calls need audio transport")),
+                tool_button("dm-call", &icons::PHONE, p).on_press(move |s: &mut App| {
+                    if s.my_voice_channel() == Some(channel_id) {
+                        s.set_voice(None);
+                    } else {
+                        s.set_voice(Some(channel_id));
+                    }
+                }),
             )
             .child(
-                tool_button("dm-video", &icons::VIDEO, p)
-                    .on_press(|s: &mut App| s.toast("Video calls need audio transport")),
+                tool_button("dm-video", &icons::VIDEO, p).on_press(move |s: &mut App| {
+                    s.set_voice(Some(channel_id));
+                    if !s.voice_camera {
+                        s.toggle_voice_camera();
+                    }
+                }),
             );
     } else {
-        tools = tools
-            .child(
-                tool_button("threads", &icons::THREAD, p)
-                    .on_press(|s: &mut App| s.modal = Modal::Threads),
-            )
-            .child(
-                tool_button("notifications", &icons::BELL, p)
-                    .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
-            )
-            .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
-            .child(
-                tool_button("members", &icons::USERS, p)
-                    .on_press(|s: &mut App| s.show_members = !s.show_members),
-            );
+        if mobile() {
+            tools = tools
+                .child(
+                    tool_button("search", &icons::SEARCH, p)
+                        .on_press(|s: &mut App| s.modal = Modal::Search),
+                )
+                .child(
+                    tool_button("threads", &icons::THREAD, p)
+                        .on_press(|s: &mut App| s.modal = Modal::Threads),
+                )
+                .child(
+                    tool_button("notifications", &icons::BELL, p)
+                        .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
+                )
+                .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
+                .child(
+                    tool_button("members", &icons::USERS, p)
+                        .on_press(|s: &mut App| s.members_drawer = !s.members_drawer),
+                );
+        } else {
+            tools = tools
+                .child(
+                    tool_button("threads", &icons::THREAD, p)
+                        .on_press(|s: &mut App| s.modal = Modal::Threads),
+                )
+                .child(
+                    tool_button("notifications", &icons::BELL, p)
+                        .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
+                )
+                .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
+                .child(
+                    tool_button("members", &icons::USERS, p)
+                        .on_press(|s: &mut App| s.show_members = !s.show_members),
+                );
+        }
     }
     if channel.kind == ChannelKind::Voice {
         tools = tools.child(
@@ -573,51 +1035,65 @@ pub(crate) fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32)
                 .on_press(|s: &mut App| s.voice_chat = !s.voice_chat),
         );
     }
-    tools = tools
-        .child(
-            row()
-                .key("search")
-                .w(144.0)
-                .h(24.0)
-                .radius(4.0)
-                .fill(p.rail)
-                .px(6.0)
-                .gap(4.0)
-                .center_y()
-                .role("button")
-                .label("Search messages")
-                .help("Search messages")
-                .hover(p.rail_hover)
-                .on_press(|s: &mut App| s.modal = Modal::Search)
-                .child(icon(&icons::SEARCH, 14.0).color(p.text_faint))
-                .child(
-                    text("Search")
-                        .font(TextStyle::new(13.0, 400.0))
-                        .color(p.text_faint),
-                ),
-        )
-        .child(tool_button("inbox", &icons::INBOX, p).on_press(|s: &mut App| s.open_inbox()))
-        .child(
-            tool_button("help", &icons::HELP, p).on_press(|s: &mut App| s.toast("Runecord 0.1")),
-        );
+    if !mobile() {
+        tools = tools
+            .child(
+                row()
+                    .key("search")
+                    .w(144.0)
+                    .h(24.0)
+                    .radius(4.0)
+                    .fill(p.rail)
+                    .px(6.0)
+                    .gap(4.0)
+                    .center_y()
+                    .role("button")
+                    .label("Search messages")
+                    .help("Search messages")
+                    .hover(p.rail_hover)
+                    .on_press(|s: &mut App| s.modal = Modal::Search)
+                    .child(icon(&icons::SEARCH, 14.0).color(p.text_faint))
+                    .child(
+                        text("Search")
+                            .font(TextStyle::new(13.0, 400.0))
+                            .color(p.text_faint),
+                    ),
+            )
+            .child(tool_button("inbox", &icons::INBOX, p).on_press(|s: &mut App| s.open_inbox()))
+            .child(
+                tool_button("help", &icons::HELP, p)
+                    .on_press(|s: &mut App| s.toast("Runecord 0.1")),
+            );
+    }
 
-    row()
+    let mut header = row()
         .key("chat-header")
         .w_full()
-        .h(50.0)
-        .pl(20.0)
+        .h(if mobile() { 56.0 } else { 50.0 })
+        .pl(if mobile() { 6.0 } else { 20.0 })
         .pr(8.0 + trailing)
-        .gap(10.0)
+        .gap(if mobile() { 4.0 } else { 10.0 })
         .center_y()
         .fill(p.header)
         .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
-        .window_drag()
-        .child(title_row)
-        .child(el().grow(1.0))
-        .child(tools)
+        .window_drag();
+    if mobile() {
+        header = header.child(
+            el().key("chat-back")
+                .size(40.0, 40.0)
+                .radius(6.0)
+                .center()
+                .role("button")
+                .label("Back to the channel list")
+                .hover(p.rail)
+                .on_press(|s: &mut App| s.close_mobile_chat())
+                .child(icon(&icons::CHEVRON_LEFT, 22.0).color(p.text_muted)),
+        );
+    }
+    header.child(title_row).child(el().grow(1.0)).child(tools)
 }
 
-pub(crate) fn message_list(s: &App, channel: &Channel, p: Palette) -> El {
+pub(crate) fn message_list(s: &App, cx: &Cx<App>, channel: &Channel, p: Palette) -> El {
     let messages = s
         .messages
         .get(&channel.id)
@@ -625,21 +1101,34 @@ pub(crate) fn message_list(s: &App, channel: &Channel, p: Palette) -> El {
         .unwrap_or(&[]);
     let count = messages.len();
     let channel_id = channel.id;
-    let mut scroll = col()
+    // The viewport itself must not be `justify_end`: that makes overflow
+    // unreachable to the wheel. The content column is at least one viewport
+    // tall and bottom-aligned, so short conversations sit on the composer and
+    // long ones still scroll normally.
+    let viewport_height = cx
+        .layout_size("messages-scroll")
+        .map(|size| size[1])
+        .unwrap_or(0.0);
+    let scroll = col()
         .key("messages-scroll")
         .grow(1.0)
         .min_h(0.0)
         .scroll(ScrollSpec { stick_bottom: true })
         .scroll_edge_fade(8.0);
+    let mut content = col()
+        .key("messages-content")
+        .w_full()
+        .min_h(viewport_height)
+        .justify_end();
     if channel.guild_id.is_some()
         && matches!(
             channel.kind,
             ChannelKind::Text | ChannelKind::Announcement | ChannelKind::Forum
         )
     {
-        scroll = scroll.child(intro(s, channel, p));
+        content = content.child(intro(s, channel, p)).child(el().grow(1.0));
     }
-    scroll.child(
+    content = content.child(
         col()
             .key("message-rows")
             .w_full()
@@ -694,7 +1183,8 @@ pub(crate) fn message_list(s: &App, channel: &Channel, p: Palette) -> El {
                 }
                 false
             }),
-    )
+    );
+    scroll.child(content)
 }
 
 fn empty_channel_intro(s: &App, channel: &Channel, p: Palette) -> El {
@@ -730,7 +1220,8 @@ pub(crate) fn intro(s: &App, channel: &Channel, p: Palette) -> El {
         )
         .child(
             text(format!("Welcome to #{}!", channel.name))
-                .font(theme::INTRO)
+                .wrap()
+                .font(if mobile() { theme::HERO } else { theme::INTRO })
                 .color(p.text_bright),
         )
         .child(
@@ -738,6 +1229,7 @@ pub(crate) fn intro(s: &App, channel: &Channel, p: Palette) -> El {
                 "This is the start of the #{} channel.",
                 channel.name
             ))
+            .wrap()
             .font(theme::BODY)
             .color(p.text_muted),
         )
@@ -758,57 +1250,380 @@ pub(crate) fn intro(s: &App, channel: &Channel, p: Palette) -> El {
         }))
 }
 
-pub(crate) fn message_text(s: &App, content: &str, p: Palette) -> El {
-    let mut parts: Vec<(String, bool)> = Vec::new();
+enum MentionPiece {
+    Text(String),
+    User(Id, String),
+    Role(Id, String),
+    Channel(Id, String),
+}
+
+/// Adds a text run to a wrap row, honouring the inline Markdown a composer
+/// preview and a message share: bold, italic, strike and inline code.
+fn push_inline_markdown(mut row_el: El, p: Palette, content: &str) -> El {
+    let mut bold = false;
+    let mut italic = false;
+    let mut strike = false;
+    let mut code = false;
+    let mut buffer = String::new();
+    let mut index = 0;
+    while index < content.len() {
+        let rest = &content[index..];
+        let marker = if rest.starts_with("**") {
+            Some((2, 0))
+        } else if rest.starts_with("__") {
+            Some((2, 1))
+        } else if rest.starts_with("~~") {
+            Some((2, 2))
+        } else if rest.starts_with('`') {
+            Some((1, 3))
+        } else if rest.starts_with('*') || rest.starts_with('_') {
+            Some((1, 4))
+        } else {
+            None
+        };
+        if let Some((size, kind)) = marker {
+            row_el = flush_inline(row_el, &mut buffer, p, bold, italic, strike, code);
+            match kind {
+                0 | 1 => bold = !bold,
+                2 => strike = !strike,
+                3 => code = !code,
+                _ => italic = !italic,
+            }
+            index += size;
+            continue;
+        }
+        let ch = rest.chars().next().unwrap_or(' ');
+        buffer.push(ch);
+        index += ch.len_utf8();
+    }
+    flush_inline(row_el, &mut buffer, p, bold, italic, strike, code)
+}
+
+/// Unix timestamp tags (`<t:unix:style>`), rendered in local time.
+fn expand_timestamps(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
     let mut rest = content;
-    while let Some(start) = rest.find("<@") {
+    while let Some(start) = rest.find("<t:") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 3..];
+        let Some(end) = after.find('>') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let inner = &after[..end];
+        let mut parts = inner.split(':');
+        let seconds = parts.next().and_then(|value| value.parse::<i64>().ok());
+        let style = parts.next().unwrap_or("f");
+        if let Some(seconds) = seconds
+            && let Some(at) = chrono::DateTime::from_timestamp(seconds, 0)
+        {
+            let local = at.with_timezone(&chrono::Local);
+            out.push_str(&match style {
+                "t" => local.format("%H:%M").to_string(),
+                "T" => local.format("%H:%M:%S").to_string(),
+                "d" => local.format("%Y-%m-%d").to_string(),
+                "D" => local.format("%B %-d, %Y").to_string(),
+                "R" => {
+                    // `Utc::now` panics on wasm; the shared clock reads `Date.now`
+                    // there and `SystemTime` on desktop.
+                    let delta = runecord_protocol::now_ms() / 1000 - seconds;
+                    if delta >= 0 {
+                        format!("{} ago", relative_label(delta))
+                    } else {
+                        format!("in {}", relative_label(-delta))
+                    }
+                }
+                _ => local.format("%B %-d, %Y %H:%M").to_string(),
+            });
+        } else {
+            out.push_str(&rest[start..start + 3 + end + 1]);
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn relative_label(seconds: i64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3_600 {
+        format!("{}m", seconds / 60)
+    } else if seconds < 86_400 {
+        format!("{}h", seconds / 3_600)
+    } else {
+        format!("{}d", seconds / 86_400)
+    }
+}
+
+fn flush_inline(
+    row_el: El,
+    buffer: &mut String,
+    p: Palette,
+    bold: bool,
+    italic: bool,
+    strike: bool,
+    code: bool,
+) -> El {
+    if buffer.is_empty() {
+        return row_el;
+    }
+    let style = if code {
+        theme::MONO
+    } else {
+        TextStyle {
+            weight: if bold { 700.0 } else { 400.0 },
+            italic,
+            ..theme::BODY
+        }
+    };
+    let length = buffer.len();
+    let mut part =
+        text(std::mem::take(buffer))
+            .font(style)
+            .color(if code { p.text_link } else { p.text });
+    if strike {
+        part = part.strike(0, length, Some(p.text_muted));
+    }
+    if code {
+        row_el.child(el().px(3.0).radius(3.0).fill(p.code_bg).child(part))
+    } else {
+        row_el.child(part)
+    }
+}
+
+/// Splits `||spoiler||` runs out of a message body. Spoiler runs stay hidden
+/// behind a pill until the reader clicks them.
+pub(crate) fn message_text_keyed(s: &App, content: &str, key: &str, p: Palette) -> El {
+    let expanded = expand_timestamps(content);
+    let content = expanded.as_str();
+    if !content.contains("||") {
+        return message_body(s, content, p);
+    }
+    let mut row_el = row().key("message-text").w_full().flex_wrap().gap(2.0);
+    let mut rest = content;
+    let mut hidden = false;
+    let mut segment = 0usize;
+    while let Some(at) = rest.find("||") {
+        let chunk = &rest[..at];
+        if !chunk.is_empty() {
+            row_el = if hidden {
+                row_el.child(spoiler_pill(s, chunk, key, segment, p))
+            } else {
+                push_inline_markdown(row_el, p, chunk)
+            };
+        }
+        if hidden {
+            segment += 1;
+        }
+        hidden = !hidden;
+        rest = &rest[at + 2..];
+    }
+    if !rest.is_empty() {
+        row_el = if hidden {
+            row_el.child(spoiler_pill(s, rest, key, segment, p))
+        } else {
+            push_inline_markdown(row_el, p, rest)
+        };
+    }
+    row_el
+}
+
+fn spoiler_pill(s: &App, content: &str, key: &str, segment: usize, p: Palette) -> El {
+    let id = format!("{key}:{segment}");
+    if s.revealed_spoilers.contains(&id) {
+        return el()
+            .px(3.0)
+            .radius(3.0)
+            .fill(p.code_bg)
+            .child(text(content.to_string()).font(theme::BODY).color(p.text));
+    }
+    let reveal = id.clone();
+    el().key(format!("spoiler-{id}"))
+        .px(4.0)
+        .radius(3.0)
+        .role("button")
+        .label("Reveal spoiler")
+        .fill(p.input)
+        .hover(p.input_hover)
+        .on_press(move |s: &mut App| {
+            s.revealed_spoilers.insert(reveal.clone());
+        })
+        .child(text(content.to_string()).font(theme::BODY).color(p.input))
+}
+
+fn message_body(s: &App, content: &str, p: Palette) -> El {
+    let trimmed = content.trim();
+    if trimmed.starts_with(':')
+        && trimmed.ends_with(':')
+        && trimmed.matches(':').count() == 2
+        && let Some(emoji) = s.emojis.iter().find(|emoji| {
+            emoji.sticker
+                && emoji
+                    .name
+                    .eq_ignore_ascii_case(&trimmed[1..trimmed.len() - 1])
+        })
+        && let Some(pixels) = s.images.get(&emoji.url)
+    {
+        return el()
+            .key("sticker-message")
+            .size(112.0, 112.0)
+            .pixels_fit(pixels, rune::SurfaceFit::Fit);
+    }
+    let mut parts: Vec<MentionPiece> = Vec::new();
+    let mut rest = content;
+    loop {
+        let user_at = rest.find("<@");
+        let channel_at = rest.find("<#");
+        let start = match (user_at, channel_at) {
+            (Some(a), Some(b)) => a.min(b),
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            (None, None) => break,
+        };
         let Some(close) = rest[start + 2..].find('>') else {
             break;
         };
         let inner = &rest[start + 2..start + 2 + close];
-        let (role, id) = match inner.strip_prefix('&') {
-            Some(value) => (true, value),
-            None => (false, inner),
+        let channel_link = rest[start + 1..].starts_with('#');
+        let (role, id) = if channel_link {
+            (false, inner)
+        } else {
+            match inner.strip_prefix('&') {
+                Some(value) => (true, value),
+                None => (false, inner.strip_prefix('!').unwrap_or(inner)),
+            }
         };
         let Ok(id) = id.parse::<runecord_protocol::Id>() else {
             break;
         };
         if start > 0 {
-            parts.push((rest[..start].to_string(), false));
+            parts.push(MentionPiece::Text(rest[..start].to_string()));
         }
-        let label = if role {
-            s.guild_roles(s.active_guild)
+        if channel_link {
+            let label = s
+                .channel(id)
+                .map(|channel| channel.name.clone())
+                .unwrap_or_else(|| "channel".into());
+            parts.push(MentionPiece::Channel(id, label));
+        } else if role {
+            let label = s
+                .guild_roles(s.active_guild)
                 .iter()
                 .find(|item| item.id == id)
                 .map(|item| item.name.clone())
-                .unwrap_or_else(|| "role".into())
+                .unwrap_or_else(|| "role".into());
+            parts.push(MentionPiece::Role(id, label));
         } else {
-            s.user(id)
+            let label = s
+                .user(id)
                 .map(|user| user.display_name.clone())
-                .unwrap_or_else(|| "user".into())
-        };
-        parts.push((format!("@{label}"), true));
+                .unwrap_or_else(|| "user".into());
+            parts.push(MentionPiece::User(id, label));
+        }
         rest = &rest[start + 2 + close + 1..];
     }
     if parts.is_empty() {
         return markdown(s, content, p);
     }
     if !rest.is_empty() {
-        parts.push((rest.to_string(), false));
+        parts.push(MentionPiece::Text(rest.to_string()));
     }
     let mut row_el = row().key("message-text").w_full().flex_wrap().gap(2.0);
-    for (part, mention) in parts {
-        if mention {
-            row_el = row_el.child(
-                el().h(21.0)
+    for part in parts {
+        match part {
+            MentionPiece::Text(text_part) => {
+                row_el = push_inline_markdown(row_el, p, &text_part);
+            }
+            MentionPiece::User(id, label) => {
+                let mine = id == s.me.id;
+                row_el = row_el.child(
+                    el().key(format!("mention-user-{id}"))
+                        .h(21.0)
+                        .px(4.0)
+                        .radius(3.0)
+                        .fill(if mine {
+                            p.mention
+                        } else {
+                            p.mention.alpha(0.35)
+                        })
+                        .hover(p.mention_hover)
+                        .role("button")
+                        .label(format!("View {label}'s profile"))
+                        .on_press(move |s: &mut App| s.modal = Modal::Profile(id))
+                        .center()
+                        .child(
+                            text(format!("@{label}"))
+                                .font(theme::BODY)
+                                .color(p.text_link),
+                        ),
+                );
+            }
+            MentionPiece::Role(id, label) => {
+                let role = s
+                    .guild_roles(s.active_guild)
+                    .iter()
+                    .find(|role| role.id == id);
+                let known = role.is_some();
+                // A role mention takes the role's own colour, tinted into the
+                // pill background, the way Discord renders role pings.
+                let tint = role
+                    .filter(|role| role.color != 0)
+                    .map(|role| theme::color(&format!("#{:06x}", role.color)))
+                    .unwrap_or(p.mention);
+                let mut pill = el()
+                    .key(format!("mention-role-{id}"))
+                    .h(21.0)
                     .px(4.0)
                     .radius(3.0)
-                    .fill(p.mention.alpha(0.35))
+                    .fill(tint.alpha(0.2))
                     .center()
-                    .child(text(part).font(theme::BODY).color(p.text_link)),
-            );
-        } else {
-            row_el = row_el.child(text(part).font(theme::BODY).color(p.text));
+                    .child(
+                        text(format!("@{label}"))
+                            .font(theme::BODY)
+                            .color(tint),
+                    );
+                if known {
+                    pill = pill
+                        .role("button")
+                        .label(format!("Open the {label} role"))
+                        .hover(p.mention_hover)
+                        .on_press(move |s: &mut App| {
+                            s.open_server_settings();
+                            s.server_tab = crate::app::ServerTab::Roles;
+                            s.select_role(id);
+                        });
+                }
+                row_el = row_el.child(pill);
+            }
+            MentionPiece::Channel(id, label) => {
+                row_el = row_el.child(
+                    el().key(format!("mention-channel-{id}"))
+                        .h(21.0)
+                        .px(4.0)
+                        .radius(3.0)
+                        .fill(p.mention.alpha(0.35))
+                        .hover(p.mention_hover)
+                        .role("button")
+                        .label(format!("Go to #{label}"))
+                        .on_press(move |s: &mut App| {
+                            match s.channel(id).map(|channel| channel.guild_id.is_some()) {
+                                Some(true) => {
+                                    s.screen = Screen::Guild;
+                                    s.switch_channel(id);
+                                }
+                                Some(false) => s.open_dm(id),
+                                None => s.toast("That channel is not available."),
+                            }
+                        })
+                        .center()
+                        .child(
+                            text(format!("#{label}"))
+                                .font(theme::BODY)
+                                .color(p.text_link),
+                        ),
+                );
+            }
         }
     }
     row_el
@@ -828,10 +1643,12 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         .as_ref()
         .or_else(|| s.user(msg.author_id))
         .unwrap_or(&fallback);
+    let nameplate_color = theme::nameplate_colors(&author.nameplate)
+        .map(|(primary, _, _)| primary);
     let name_color = if let Some(hook) = &msg.webhook {
         theme::color(&format!("#{:06x}", hook.color))
-    } else if msg.author_id == s.me.id {
-        p.text_bright
+    } else if let Some(color) = nameplate_color {
+        color
     } else if s.screen == Screen::Guild {
         s.member_color(s.active_guild, msg.author_id)
             .map(|c| theme::color(&format!("#{:06x}", c)))
@@ -840,6 +1657,31 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         p.text_bright
     };
     let mut content = col().key("message-content").grow(1.0).min_w(0.0);
+
+    if let Some(forwarded) = &msg.forwarded {
+        content = content.child(
+            row()
+                .key("forwarded-head")
+                .gap(4.0)
+                .center_y()
+                .pb(2.0)
+                .child(icon(&icons::REPLY, 12.0).color(p.text_faint))
+                .child(text("FORWARDED FROM").font(theme::TINY).color(p.text_faint))
+                .child(
+                    text(format!("#{}", forwarded.channel_name))
+                        .font(theme::TINY)
+                        .color(p.text_link),
+                )
+                .child(
+                    text(format!("by {}", forwarded.author_name))
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .truncate()
+                        .grow(1.0)
+                        .min_w(0.0),
+                ),
+        );
+    }
 
     if let Some(reply) = &msg.reply_to {
         content = content.child(
@@ -886,7 +1728,19 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
     }
 
     if !msg.content.is_empty() {
-        content = content.child(message_text(s, &msg.content, p));
+        content = content.child(message_text_keyed(s, &msg.content, &msg.id.to_string(), p));
+    }
+
+    if let Some(poll) = &msg.poll {
+        content = content.child(poll_card(msg.id, poll, p));
+    }
+
+    for embed in &msg.embeds {
+        content = content.child(embed_card(s, embed, p));
+    }
+
+    if !msg.components.is_empty() {
+        content = content.child(components_row(msg, p));
     }
 
     for attachment in &msg.attachments {
@@ -968,15 +1822,29 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
     let row_preview = msg.preview();
     let row_label = format!("{}: {}", author.display_name, msg.preview());
     let compact = s.compact;
-    let highlighted = s.pinned_target == Some(msg.id);
+    // Discord-style highlight: a message that mentions you (or a reply that
+    // pings you) gets a tinted row and a left accent bar.
+    let mentioned = msg.mentions.contains(&s.me.id)
+        || (msg.author_id != s.me.id
+            && msg
+                .reply_to
+                .as_ref()
+                .is_some_and(|reply| reply.author_id == s.me.id));
+    let pinned_highlight = s.pinned_target == Some(msg.id);
     let row_el = row()
         .key(format!("message-{}", msg.id))
         .w_full()
-        .fill(if highlighted {
+        .fill(if pinned_highlight {
             p.mention.alpha(0.35)
+        } else if mentioned {
+            p.mention.alpha(0.12)
         } else {
             Color::TRANSPARENT
         })
+        .border_sides(
+            [0.0, 0.0, 0.0, if mentioned { 2.0 } else { 0.0 }],
+            p.mention,
+        )
         .pt(if compact {
             if grouped { 1.0 } else { 8.0 }
         } else if grouped {
@@ -1005,7 +1873,10 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
             }
             let mut menu = rune::PopupMenu::new()
                 .item(rune::PopupItem::new("copy", "Copy Text"))
+                .item(rune::PopupItem::new("copy-link", "Copy Message Link"))
+                .item(rune::PopupItem::new("copy-id", "Copy Message ID"))
                 .item(rune::PopupItem::new("reply", "Reply"))
+                .item(rune::PopupItem::new("forward", "Forward"))
                 .item(rune::PopupItem::new("pin", "Pin / Unpin"));
             if s.channel(row_msg_id).is_some() {
                 menu = menu.item(rune::PopupItem::new("thread", "Create Thread"));
@@ -1026,7 +1897,12 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
                 press,
                 move |s: &mut App, picked, tx: &mut rune::Tx| match picked {
                     Some("copy") => tx.copy(copy.clone()),
+                    Some("copy-link") => {
+                        tx.copy(format!("runecord://channel/{channel}/{row_msg_id}"))
+                    }
+                    Some("copy-id") => tx.copy(row_msg_id.to_string()),
                     Some("reply") => s.set_reply(row_msg_id, row_author, &preview),
+                    Some("forward") => s.open_forward(row_msg_id),
                     Some("pin") => s.toggle_pin(row_msg_id),
                     Some("thread") => {
                         s.profile_edit = rune::TextEdit::new(plain_thread_name(&preview));
@@ -1056,27 +1932,44 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         .border(1.0, p.divider)
         .shadow(2.0, 8.0, p.shadow)
         .group_opacity(0.0, 1.0)
-        .children(
-            can_react
-                .then(|| action_button(&icons::SMILE, p, move |s: &mut App| s.open_reaction(mid))),
-        )
+        .children(can_react.then(|| {
+            action_button_named(&icons::SMILE, "Add reaction", p, move |s: &mut App| {
+                s.open_reaction(mid)
+            })
+        }))
         .children(can_send.then(|| {
-            action_button(&icons::REPLY, p, move |s: &mut App| {
+            action_button_named(&icons::REPLY, "Reply", p, move |s: &mut App| {
                 s.set_reply(mid, author_id, &preview.clone())
             })
         }))
-        .child(action_button(&icons::MORE, p, move |s: &mut App| {
-            s.modal = Modal::MessageMenu(mid)
-        }));
+        .child(action_button_named(
+            &icons::MORE,
+            "More actions",
+            p,
+            move |s: &mut App| s.modal = Modal::MessageMenu(mid),
+        ));
 
     let row_el = if grouped {
         row_el.child(content)
     } else {
-        row_el
-            .child(avatar(author, if compact { 28.0 } else { 40.0 }, p))
-            .child(content)
+        let size = if compact { 28.0 } else { 40.0 };
+        let mut avatar_el = avatar(author, size, p);
+        // A webhook has no profile behind it; everyone else opens their card.
+        if msg.webhook.is_none() {
+            let profile = msg.author_id;
+            avatar_el = avatar_el
+                .role("button")
+                .label(format!("View {}'s profile", author.display_name))
+                .on_press(move |s: &mut App| s.modal = Modal::Profile(profile));
+        }
+        row_el.child(avatar_el).child(content)
     };
-    let row_el = row_el.child(toolbar);
+    // A phone has no hover: the long-press menu carries these actions.
+    let row_el = if mobile() {
+        row_el
+    } else {
+        row_el.child(toolbar)
+    };
     if let Some(day) = day {
         col()
             .w_full()
@@ -1098,6 +1991,206 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
     }
 }
 
+fn components_row(msg: &Message, p: Palette) -> El {
+    let mut row_el = row()
+        .key("components")
+        .w_full()
+        .gap(6.0)
+        .pt(6.0)
+        .flex_wrap();
+    for component in &msg.components {
+        let fill = match component.style.as_str() {
+            "primary" => p.accent,
+            "success" => p.green,
+            "danger" => p.danger,
+            "link" => p.input,
+            _ => p.input,
+        };
+        let mut button = el()
+            .key(format!("component-{}-{}", msg.id, component.label))
+            .h(30.0)
+            .px(12.0)
+            .radius(4.0)
+            .center()
+            .role("button")
+            .label(component.label.clone())
+            .fill(fill)
+            .hover(if fill == p.input {
+                p.input_hover
+            } else {
+                fill.alpha(0.85)
+            })
+            .child(
+                text(component.label.clone())
+                    .font(theme::SMALL_MED)
+                    .color(Color::WHITE),
+            );
+        if !component.url.is_empty() {
+            let url = component.url.clone();
+            button = button.on_press_tx(move |_: &mut App, tx: &mut rune::Tx| {
+                let _ = tx.open_url(&url);
+            });
+        } else if !component.custom_id.is_empty() {
+            let custom_id = component.custom_id.clone();
+            let message = msg.id;
+            button =
+                button.on_press(move |s: &mut App| s.click_component(message, custom_id.clone()));
+        }
+        row_el = row_el.child(button);
+    }
+    row_el
+}
+
+fn embed_card(s: &App, embed: &runecord_protocol::Embed, p: Palette) -> El {
+    let mut card = col()
+        .key("embed")
+        .w_full()
+        .max_w(440.0)
+        .radius(6.0)
+        .clip_rounded(6.0)
+        .fill(p.card)
+        .border_sides([0.0, 0.0, 0.0, 3.0], p.accent)
+        .padding(10.0)
+        .gap(4.0);
+    if !embed.site_name.is_empty() {
+        card = card.child(
+            text(embed.site_name.clone())
+                .font(theme::TINY)
+                .color(p.text_muted),
+        );
+    }
+    if !embed.title.is_empty() {
+        card = card.child(
+            text(embed.title.clone())
+                .font(theme::BODY_BOLD)
+                .color(p.text_link),
+        );
+    }
+    if !embed.description.is_empty() {
+        card = card.child(
+            text(embed.description.clone())
+                .font(theme::SMALL)
+                .color(p.text)
+                .max_lines(4),
+        );
+    }
+    let image_key = format!("{}?w=480", embed.image_url);
+    if !embed.image_url.is_empty()
+        && let Some(pixels) = s.images.get(&image_key)
+    {
+        card = card.child(
+            el().w_full()
+                .h(180.0)
+                .radius(4.0)
+                .clip_rounded(4.0)
+                .pixels_fit(pixels, rune::SurfaceFit::Fill),
+        );
+    }
+    let url = embed.url.clone();
+    card.role("button")
+        .label(format!("Open {}", embed.url))
+        .hover(p.card_hover)
+        .on_press_tx(move |_: &mut App, tx: &mut rune::Tx| {
+            let _ = tx.open_url(&url);
+        })
+}
+
+fn poll_card(message: Id, poll: &runecord_protocol::Poll, p: Palette) -> El {
+    let mut card = col()
+        .key(format!("poll-{message}"))
+        .w_full()
+        .max_w(440.0)
+        .radius(8.0)
+        .fill(p.input)
+        .border(1.0, p.divider)
+        .padding(12.0)
+        .gap(8.0)
+        .child(
+            text(poll.question.clone())
+                .font(theme::BODY_BOLD)
+                .color(p.text_bright),
+        );
+    for option in &poll.options {
+        let percent = if poll.total_votes == 0 {
+            0.0
+        } else {
+            option.votes as f32 / poll.total_votes as f32
+        };
+        let mut row_el = row()
+            .key(format!("poll-option-{message}-{}", option.index))
+            .w_full()
+            .h(36.0)
+            .radius(4.0)
+            .clip_rounded(4.0)
+            .fill(if option.me { p.mention } else { p.card })
+            .border(1.0, if option.me { p.accent } else { p.divider_soft })
+            .px(10.0)
+            .gap(8.0)
+            .center_y();
+        if !poll.closed {
+            let index = option.index;
+            row_el = row_el
+                .role("button")
+                .label(format!("Vote for {}", option.text))
+                .hover(p.card_hover)
+                .on_press(move |s: &mut App| s.vote_poll(message, index));
+        }
+        card = card.child(
+            row_el
+                .child(
+                    text(option.text.clone())
+                        .font(theme::SMALL)
+                        .color(p.text_bright)
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .truncate(),
+                )
+                .child(
+                    text(format!("{}%", (percent * 100.0).round() as u32))
+                        .font(theme::TINY)
+                        .color(if option.me {
+                            p.text_bright
+                        } else {
+                            p.text_muted
+                        }),
+                )
+                .child(
+                    text(format!("({})", option.votes))
+                        .font(theme::TINY)
+                        .color(p.text_faint),
+                )
+                .children(option.me.then(|| icon(&icons::CHECK, 13.0).color(p.accent))),
+        );
+    }
+    let mut meta = format!(
+        "{} {}",
+        poll.total_votes,
+        if poll.total_votes == 1 {
+            "vote"
+        } else {
+            "votes"
+        }
+    );
+    if poll.multiple {
+        meta.push_str(" - Multiple choice");
+    }
+    if poll.anonymous {
+        meta.push_str(" - Anonymous");
+    }
+    if poll.closed {
+        meta.push_str(" - Poll closed");
+    } else if let Some(at) = poll.expires_at {
+        let remaining = at.saturating_sub(now_ms());
+        let hours = remaining / (60 * 60 * 1000);
+        if hours > 0 {
+            meta.push_str(&format!(" - Ends in {hours}h"));
+        } else {
+            meta.push_str(&format!(" - Ends in {}m", remaining / (60 * 1000)));
+        }
+    }
+    card.child(text(meta).font(theme::TINY).color(p.text_faint))
+}
+
 pub(crate) fn bot_tag(p: Palette) -> El {
     el().h(15.0)
         .px(4.0)
@@ -1111,17 +2204,204 @@ pub(crate) fn bot_tag(p: Palette) -> El {
         )
 }
 
+fn thread_tag_bar(s: &App, channel: &Channel, p: Palette) -> Option<El> {
+    let info = channel.thread.as_ref()?;
+    let tags: Vec<runecord_protocol::ForumTag> = s
+        .forum_tags
+        .iter()
+        .filter(|tag| tag.channel_id == info.parent_id)
+        .cloned()
+        .collect();
+    if tags.is_empty() {
+        return None;
+    }
+    let thread = channel.id;
+    let mut chips = row()
+        .key("thread-tags")
+        .w_full()
+        .px(20.0)
+        .pb(6.0)
+        .gap(6.0)
+        .flex_wrap();
+    for tag in tags {
+        let id = tag.id;
+        let selected = info.tags.contains(&id);
+        chips = chips.child(
+            el().key(format!("thread-tag-edit-{id}"))
+                .h(24.0)
+                .px(9.0)
+                .radius(12.0)
+                .center()
+                .role("checkbox")
+                .label(format!("Toggle tag {}", tag.name))
+                .checked(selected)
+                .fill(if selected { p.accent } else { p.input })
+                .hover(p.card_hover)
+                .on_press(move |s: &mut App| {
+                    let mut next = s
+                        .channel(thread)
+                        .and_then(|channel| channel.thread.as_ref().map(|info| info.tags.clone()))
+                        .unwrap_or_default();
+                    if let Some(index) = next.iter().position(|known| *known == id) {
+                        next.remove(index);
+                    } else {
+                        next.push(id);
+                    }
+                    s.send(crate::net::Command::SetThreadTags { thread, tags: next });
+                })
+                .child(
+                    text(format!("{}{}", tag.emoji, tag.name))
+                        .font(theme::TINY)
+                        .color(if selected { Color::WHITE } else { p.text_muted }),
+                ),
+        );
+    }
+    Some(chips)
+}
+
+fn forum_toolbar(
+    s: &App,
+    parent: Id,
+    tags: &[runecord_protocol::ForumTag],
+    count: usize,
+    p: Palette,
+) -> El {
+    let mut chips = row().gap(6.0).flex_wrap().grow(1.0).min_w(0.0);
+    let all_selected = s.forum_tag_filter.is_none();
+    chips = chips.child(
+        el().key("forum-tag-all")
+            .h(26.0)
+            .px(10.0)
+            .radius(13.0)
+            .center()
+            .role("radio")
+            .label("All posts")
+            .checked(all_selected)
+            .fill(if all_selected { p.accent } else { p.input })
+            .hover(p.card_hover)
+            .on_press(|s: &mut App| s.forum_tag_filter = None)
+            .child(
+                text(format!("All {count}"))
+                    .font(theme::TINY)
+                    .color(if all_selected {
+                        Color::WHITE
+                    } else {
+                        p.text_muted
+                    }),
+            ),
+    );
+    for tag in tags {
+        let id = tag.id;
+        let selected = s.forum_tag_filter == Some(id);
+        chips = chips.child(
+            el().key(format!("forum-tag-{id}"))
+                .h(26.0)
+                .px(10.0)
+                .radius(13.0)
+                .center()
+                .role("radio")
+                .label(format!("Filter by {}", tag.name))
+                .checked(selected)
+                .fill(if selected { p.accent } else { p.input })
+                .hover(p.card_hover)
+                .on_press(move |s: &mut App| {
+                    s.forum_tag_filter = (s.forum_tag_filter != Some(id)).then_some(id);
+                })
+                .child(
+                    text(format!("{}{}", tag.emoji, tag.name))
+                        .font(theme::TINY)
+                        .color(if selected { Color::WHITE } else { p.text_muted }),
+                ),
+        );
+    }
+    let _ = parent;
+
+    row()
+        .key("forum-toolbar")
+        .w_full()
+        .px(24.0)
+        .pt(10.0)
+        .gap(10.0)
+        .center_y()
+        .child(chips)
+        .child(
+            el().key("forum-sort")
+                .h(26.0)
+                .px(10.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Toggle sort order")
+                .fill(p.input)
+                .hover(p.input_hover)
+                .on_press(|s: &mut App| s.forum_sort_new = !s.forum_sort_new)
+                .child(
+                    text(if s.forum_sort_new {
+                        "Newest"
+                    } else {
+                        "Latest activity"
+                    })
+                    .font(theme::TINY)
+                    .color(p.text_muted),
+                ),
+        )
+        .child(
+            el().key("forum-layout")
+                .h(26.0)
+                .px(10.0)
+                .radius(4.0)
+                .center()
+                .role("button")
+                .label("Toggle forum layout")
+                .fill(p.input)
+                .hover(p.input_hover)
+                .on_press(|s: &mut App| s.forum_list_layout = !s.forum_list_layout)
+                .child(
+                    text(if s.forum_list_layout { "List" } else { "Grid" })
+                        .font(theme::TINY)
+                        .color(p.text_muted),
+                ),
+        )
+}
+
 pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
     let parent = channel.id;
-    let mut cards = row().w_full().gap(12.0).flex_wrap();
+    let tags: Vec<runecord_protocol::ForumTag> = s
+        .forum_tags
+        .iter()
+        .filter(|tag| tag.channel_id == parent)
+        .cloned()
+        .collect();
+    let mut threads: Vec<&Channel> = s
+        .guild_channels(s.active_guild)
+        .iter()
+        .filter(|thread| {
+            thread.kind == ChannelKind::Thread
+                && thread.thread.as_ref().map(|t| t.parent_id) == Some(parent)
+        })
+        .collect();
+    if let Some(filter) = s.forum_tag_filter {
+        threads.retain(|thread| {
+            thread
+                .thread
+                .as_ref()
+                .is_some_and(|info| info.tags.contains(&filter))
+        });
+    }
+    if s.forum_sort_new {
+        threads.sort_by_key(|thread| std::cmp::Reverse(thread.id));
+    } else {
+        threads
+            .sort_by_key(|thread| std::cmp::Reverse(thread.last_message_id.unwrap_or(thread.id)));
+    }
+
+    let mut cards = if s.forum_list_layout {
+        col().w_full().gap(8.0)
+    } else {
+        row().w_full().gap(12.0).flex_wrap()
+    };
     let mut count = 0;
-    for thread in s.guild_channels(s.active_guild) {
-        if thread.kind != ChannelKind::Thread {
-            continue;
-        }
-        if thread.thread.as_ref().map(|t| t.parent_id) != Some(parent) {
-            continue;
-        }
+    for thread in threads {
         count += 1;
         let id = thread.id;
         let messages = s.messages.get(&id).map(Vec::as_slice).unwrap_or(&[]);
@@ -1147,6 +2427,31 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
             .and_then(|owner| s.user(owner))
             .map(|user| user.display_name.clone())
             .unwrap_or_else(|| "Unknown".to_string());
+        let post_tags: Vec<runecord_protocol::ForumTag> = thread
+            .thread
+            .as_ref()
+            .map(|info| {
+                tags.iter()
+                    .filter(|tag| info.tags.contains(&tag.id))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut tag_chips = row().gap(4.0).flex_wrap();
+        for tag in &post_tags {
+            tag_chips = tag_chips.child(
+                el().h(20.0)
+                    .px(6.0)
+                    .radius(10.0)
+                    .center()
+                    .fill(p.input)
+                    .child(
+                        text(format!("{}{}", tag.emoji, tag.name))
+                            .font(theme::TINY)
+                            .color(p.text_bright),
+                    ),
+            );
+        }
         cards = cards.child(
             col()
                 .key(format!("forum-{}", thread.id))
@@ -1176,6 +2481,7 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
                                 .max_lines(2),
                         ),
                 )
+                .children((!post_tags.is_empty()).then_some(tag_chips))
                 .child(
                     text(preview)
                         .font(theme::SMALL)
@@ -1233,6 +2539,7 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
         .h_full()
         .fill(p.chat)
         .child(header)
+        .child(forum_toolbar(s, parent, &tags, count, p))
         .child(
             row()
                 .w_full()
@@ -1241,7 +2548,7 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
                 .center_y()
                 .gap(12.0)
                 .child(
-                    text(format!("POSTS — {count}"))
+                    text(format!("POSTS - {count}"))
                         .font(theme::SECTION)
                         .color(p.text_muted)
                         .grow(1.0),

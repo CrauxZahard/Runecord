@@ -8,6 +8,9 @@ impl App {
     pub fn switch_guild(&mut self, id: Id) {
         self.screen = Screen::Guild;
         self.active_guild = id;
+        // The phone layout starts a guild at its channel list.
+        self.mobile_chat = false;
+        self.members_drawer = false;
         self.member_search.clear();
         self.member_search_live.clear();
         self.member_search_due = 0.0;
@@ -121,6 +124,9 @@ impl App {
 
     pub fn switch_channel(&mut self, id: Id) {
         self.pinned_target = None;
+        // Selecting a channel opens the chat pane on a phone.
+        self.mobile_chat = true;
+        self.members_drawer = false;
         let current = match self.screen {
             Screen::Guild => self.active_channel,
             Screen::Dms => self.active_dm,
@@ -149,10 +155,27 @@ impl App {
         self.screen = Screen::Dms;
         self.dm_home = false;
         self.active_dm = id;
+        self.mobile_chat = true;
+        self.members_drawer = false;
         self.channel_seen.insert(id, now_ms());
         self.ensure_messages(id);
         self.mark_read(id);
         self.trim_images();
+    }
+
+    pub fn close_mobile_chat(&mut self) {
+        self.mobile_chat = false;
+        self.members_drawer = false;
+    }
+
+    /// Leaves a settings section for the section list on a narrow screen.
+    pub fn close_mobile_settings(&mut self) {
+        self.mobile_settings = false;
+    }
+
+    /// Leaves a server settings section for its list on a narrow screen.
+    pub fn close_mobile_server_settings(&mut self) {
+        self.mobile_server_settings = false;
     }
 
     pub fn current_channel_id(&self) -> Id {
@@ -200,6 +223,9 @@ impl App {
         self.event_name.clear();
         self.event_description.clear();
         self.event_start_minutes = TextEdit::new("60");
+        self.event_start_date =
+            TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string());
+        self.event_start_time = TextEdit::new(&chrono::Local::now().format("%H:%M").to_string());
         self.modal = Modal::CreateEvent;
     }
 
@@ -209,22 +235,50 @@ impl App {
             self.toast("Name the event");
             return;
         }
-        let minutes = self
+        let date = self.event_start_date.text.trim();
+        let time = self.event_start_time.text.trim();
+        let calendar = chrono::NaiveDateTime::parse_from_str(
+            &format!("{date} {time}"),
+            "%Y-%m-%d %H:%M",
+        )
+        .ok()
+        .and_then(|naive| naive.and_local_timezone(chrono::Local).single());
+        let fallback_minutes = self
             .event_start_minutes
             .text
             .trim()
             .parse::<i64>()
             .unwrap_or(60)
             .clamp(1, 60 * 24 * 30);
+        let start_at = calendar
+            .map(|date| date.timestamp_millis())
+            .unwrap_or_else(|| now_ms() + fallback_minutes * 60_000);
         let description = self.event_description.text.trim().to_string();
         self.send(Command::CreateGuildEvent {
             guild: self.active_guild,
             name,
             description,
-            start_at: now_ms() + minutes * 60_000,
+            start_at,
             channel: Some(self.current_channel_id()).filter(|id| *id != 0),
+            recurrence: self.event_recurrence.clone(),
+            duration_minutes: self
+                .event_duration
+                .text
+                .trim()
+                .parse::<u32>()
+                .unwrap_or(60)
+                .clamp(1, 1440),
+            reminder_minutes: self.event_reminder,
         });
         self.modal = Modal::Events;
+    }
+
+    pub fn rsvp_event(&mut self, event: Id, status: &str) {
+        self.send(Command::RsvpEvent {
+            guild: self.active_guild,
+            event,
+            status: status.to_string(),
+        });
     }
 
     pub fn delete_event(&mut self, event: Id) {

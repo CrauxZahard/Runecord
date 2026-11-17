@@ -175,7 +175,7 @@ pub(crate) fn video_decoder(
     log(&format!(
         "video decoder user={user} native={native_width}x{native_height} output={width}x{height}"
     ));
-    let mut child = match Command::new(ffmpeg_path())
+    let mut child = match helper(&ffmpeg_path())
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

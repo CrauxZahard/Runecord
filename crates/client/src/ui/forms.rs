@@ -78,7 +78,8 @@ pub(crate) fn modal_input(
             if s.modal == Modal::CreateServer {
                 s.create_guild_now();
             } else if s.modal == Modal::CreateChannel {
-                s.create_channel_now(ChannelKind::Text);
+                // Honour the channel type the user selected in the picker.
+                s.create_channel_now(s.create_channel_kind);
             }
         })
 }
@@ -95,7 +96,7 @@ pub(crate) fn modal_frame(
     modal_frame_inner(key, title, sub, p, body, action, p2, true)
 }
 
-/// A modal whose footer offers only the primary action, as Discord's invite sheet does.
+/// A modal whose footer offers only the primary action, as an invite sheet does.
 pub(crate) fn modal_frame_done(
     key: &'static str,
     title: &str,
@@ -143,7 +144,7 @@ fn modal_frame_inner(
     );
     col()
         .key(key)
-        .w(440.0)
+        .w(sheet_w(440.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

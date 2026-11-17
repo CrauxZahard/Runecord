@@ -188,66 +188,200 @@ pub(crate) fn voice_tab(s: &App, p: Palette) -> El {
         )
         .child(section("INPUT MODE", p))
         .child({
-            let mode = |key: &'static str, label: &'static str, value: &'static str, p: Palette| {
+            let mode = |key: &'static str,
+                        label: &'static str,
+                        detail: &'static str,
+                        value: &'static str,
+                        p: Palette| {
                 let selected = s.voice_mode == value;
                 el().key(key)
                     .w_full()
-                    .h(38.0)
-                    .px(12.0)
-                    .radius(4.0)
-                    .gap(8.0)
+                    .min_h(56.0)
+                    .px(14.0)
+                    .py(9.0)
+                    .radius(6.0)
+                    .gap(12.0)
                     .center_y()
                     .role("radio")
                     .label(label)
                     .checked(selected)
-                    .fill(if selected {
-                        p.selected
-                    } else {
-                        Color::TRANSPARENT
-                    })
+                    .fill(if selected { p.selected } else { p.card })
+                    .border(1.0, if selected { p.accent } else { p.divider })
                     .hover(p.card_hover)
+                    .motion(motion::SNAPPY)
                     .on_press(move |s: &mut App| s.set_voice_mode(value))
                     .child(
-                        el().size(14.0, 14.0)
-                            .radius(7.0)
-                            .border(2.0, if selected { p.accent } else { p.text_muted })
-                            .child(if selected {
-                                el().size(6.0, 6.0).radius(3.0).fill(p.accent)
-                            } else {
-                                el()
-                            }),
+                        el().size(18.0, 18.0)
+                            .radius(9.0)
+                            .border(2.0, if selected { p.accent } else { p.text_faint })
+                            .center()
+                            .children(selected.then(|| {
+                                el().size(8.0, 8.0).radius(4.0).fill(p.accent)
+                            })),
                     )
-                    .child(text(label).font(theme::SMALL_MED).color(p.text_bright))
+                    .child(
+                        col()
+                            .grow(1.0)
+                            .min_w(0.0)
+                            .gap(3.0)
+                            .child(
+                                text(label)
+                                    .font(theme::SMALL_MED)
+                                    .color(p.text_bright),
+                            )
+                            .child(text(detail).wrap().font(theme::TINY).color(p.text_muted)),
+                    )
             };
             col()
                 .w_full()
-                .gap(4.0)
-                .child(mode("voice-mode-voice", "Voice Activity", "voice", p))
-                .child(mode("voice-mode-ptt", "Push to Talk", "ptt", p))
+                .gap(8.0)
+                .child(mode(
+                    "voice-mode-voice",
+                    "Voice Activity",
+                    "Transmit automatically when your microphone picks up speech.",
+                    "voice",
+                    p,
+                ))
+                .child(mode(
+                    "voice-mode-ptt",
+                    "Push to Talk",
+                    "Transmit only while you hold your shortcut key.",
+                    "ptt",
+                    p,
+                ))
                 .children((s.voice_mode == "ptt").then(|| {
-                    row()
+                    let label = crate::voice::push_to_talk_key_label();
+                    col()
                         .w_full()
-                        .h(30.0)
-                        .px(12.0)
-                        .gap(8.0)
-                        .center_y()
-                        .child(el().size(8.0, 8.0).radius(4.0).fill(
-                            if crate::voice::push_to_talk_held() {
-                                p.green
-                            } else {
-                                p.text_faint
-                            },
-                        ))
+                        .gap(4.0)
                         .child(
-                            text(if crate::voice::push_to_talk_held() {
-                                "Transmitting — F8 held"
-                            } else {
-                                "Hold F8 to talk"
-                            })
-                            .font(theme::TINY)
-                            .color(p.text_muted),
+                            row()
+                                .w_full()
+                                .h(30.0)
+                                .px(12.0)
+                                .gap(8.0)
+                                .center_y()
+                                .child(el().size(8.0, 8.0).radius(4.0).fill(
+                                    if crate::voice::push_to_talk_held() {
+                                        p.green
+                                    } else {
+                                        p.text_faint
+                                    },
+                                ))
+                                .child(
+                                    text(if crate::voice::push_to_talk_held() {
+                                        format!("Transmitting - {label} held")
+                                    } else {
+                                        format!("Hold {label} to talk")
+                                    })
+                                    .font(theme::TINY)
+                                    .color(p.text_muted),
+                                ),
+                        )
+                        .child(
+                            row()
+                                .w_full()
+                                .gap(8.0)
+                                .center_y()
+                                .child(
+                                    el().key("voice-ptt-key")
+                                        .h(30.0)
+                                        .px(12.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("button")
+                                        .label("Change Push-to-Talk key")
+                                        .fill(if s.ptt_capture { p.accent } else { p.input })
+                                        .hover(p.input_hover)
+                                        .on_press(|s: &mut App| s.ptt_capture = !s.ptt_capture)
+                                        .child(
+                                            text(if s.ptt_capture {
+                                                "Press a key...".to_string()
+                                            } else {
+                                                format!("Shortcut: {label}")
+                                            })
+                                            .font(theme::TINY)
+                                            .color(if s.ptt_capture {
+                                                Color::WHITE
+                                            } else {
+                                                p.text_bright
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    el().key("voice-ptt-reset")
+                                        .h(30.0)
+                                        .px(10.0)
+                                        .radius(4.0)
+                                        .center()
+                                        .role("button")
+                                        .label("Reset Push-to-Talk key to F8")
+                                        .hover(p.card_hover)
+                                        .on_press(|s: &mut App| s.set_push_to_talk_key(0x77))
+                                        .child(
+                                            text("Reset to F8")
+                                                .font(theme::TINY)
+                                                .color(p.text_muted),
+                                        ),
+                                ),
                         )
                 }))
+                .child(
+                    row()
+                        .key("voice-noise-suppression")
+                        .w_full()
+                        .min_h(56.0)
+                        .px(14.0)
+                        .py(9.0)
+                        .radius(6.0)
+                        .gap(12.0)
+                        .center_y()
+                        .role("checkbox")
+                        .label("Noise Suppression")
+                        .checked(s.voice_noise_suppression)
+                        .fill(p.card)
+                        .border(1.0, p.divider)
+                        .hover(p.card_hover)
+                        .on_press(|s: &mut App| {
+                            let next = !s.voice_noise_suppression;
+                            s.set_noise_suppression(next)
+                        })
+                        .child(
+                            el().size(20.0, 20.0)
+                                .radius(5.0)
+                                .border(2.0, if s.voice_noise_suppression {
+                                    p.accent
+                                } else {
+                                    p.text_faint
+                                })
+                                .fill(if s.voice_noise_suppression {
+                                    p.accent
+                                } else {
+                                    p.input
+                                })
+                                .center()
+                                .children(s.voice_noise_suppression.then(|| {
+                                    icon(&icons::CHECK, 13.0).color(Color::WHITE)
+                                })),
+                        )
+                        .child(
+                            col()
+                                .grow(1.0)
+                                .min_w(0.0)
+                                .gap(3.0)
+                                .child(
+                                    text("Noise Suppression")
+                                        .font(theme::SMALL_MED)
+                                        .color(p.text_bright),
+                                )
+                                .child(
+                                    text("Tracks the room's noise floor and pulls steady hum and fan noise out of your mic.")
+                                        .wrap()
+                                        .font(theme::TINY)
+                                        .color(p.text_muted),
+                                ),
+                        ),
+                )
         })
         .child(section("INPUT SENSITIVITY", p))
         .child(
@@ -305,7 +439,7 @@ pub(crate) fn voice_tab(s: &App, p: Palette) -> El {
         })
         .child(
             text(if auto {
-                "Discord-style automatic sensitivity follows the noise floor."
+                "Automatic sensitivity follows the noise floor."
             } else {
                 "Drag the bar to set the cutoff for transmitting your microphone."
             })

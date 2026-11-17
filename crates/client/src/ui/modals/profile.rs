@@ -1,4 +1,4 @@
-﻿//! Profile and message menus.
+//! Profile and message menus.
 
 use super::super::*;
 
@@ -58,7 +58,7 @@ fn profile_card(s: &App, p: Palette, id: runecord_protocol::Id, full: bool) -> E
     };
     col()
         .key("profile-sheet")
-        .w(if full { 560.0 } else { 340.0 })
+        .w(sheet_w(if full { 560.0 } else { 340.0 }))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(card_color)
@@ -147,6 +147,8 @@ fn profile_card(s: &App, p: Palette, id: runecord_protocol::Id, full: bool) -> E
                         .key("profile-full")
                         .font(theme::TINY)
                         .color(p.text_link)
+                        .role("link")
+                        .label("View full profile")
                         .on_press(move |s: &mut App| s.modal = Modal::FullProfile(id))
                 }))
                 .children(activity_card(s, &user, p))
@@ -160,7 +162,7 @@ fn profile_card(s: &App, p: Palette, id: runecord_protocol::Id, full: bool) -> E
                     text(if user.is_bot {
                         "CREATED"
                     } else {
-                        "JOINED DISCORD"
+                        "JOINED RUNECORD"
                     })
                     .font(theme::SECTION)
                     .color(p.text_muted),
@@ -258,14 +260,8 @@ fn effect_colors(kind: &str) -> Option<(Color, Color)> {
     }
 }
 
-fn nameplate_colors(kind: &str) -> Option<(Color, Color)> {
-    match kind {
-        "midnight" => Some((theme::color("#232b52"), theme::color("#5865f2"))),
-        "aurora" => Some((theme::color("#1db954"), theme::color("#5865f2"))),
-        "sunset" => Some((theme::color("#eb459e"), theme::color("#faa61a"))),
-        "candy" => Some((theme::color("#ff73fa"), theme::color("#ffb3fd"))),
-        _ => None,
-    }
+fn nameplate_colors(kind: &str) -> Option<(Color, Color, bool)> {
+    theme::nameplate_colors(kind)
 }
 
 fn profile_avatar(s: &App, user: &User, size: f32, p: Palette, ring: Color) -> El {
@@ -302,25 +298,26 @@ fn profile_avatar(s: &App, user: &User, size: f32, p: Palette, ring: Color) -> E
     stack
 }
 
-fn profile_name(s: &App, user: &User, p: Palette) -> El {
-    let Some((first, second)) = nameplate_colors(&user.nameplate) else {
+fn profile_name(_s: &App, user: &User, p: Palette) -> El {
+    let Some((primary, secondary, gradient)) = nameplate_colors(&user.nameplate) else {
         return text(user.display_name.clone())
             .font(theme::TITLE)
             .color(p.text_bright);
     };
-    let pulse = 0.82 + 0.18 * (s.clock as f32 * 1.2).sin().abs();
-    row()
-        .h(32.0)
-        .px(10.0)
-        .radius(6.0)
-        .gap(6.0)
-        .center_y()
-        .gradient(first.alpha(pulse), second)
-        .child(
-            text(user.display_name.clone())
-                .font(theme::TITLE)
-                .color(Color::WHITE),
-        )
+    let name = user.display_name.clone();
+    if gradient {
+        // A nameplate colours the username itself, not a pill around it. A
+        // second, vertically faded copy gives a primary -> secondary gradient.
+        el()
+            .child(text(name.clone()).font(theme::TITLE).color(primary))
+            .child(
+                el().absolute(0.0, 0.0)
+                    .clip_fade(0.0, 24.0, 0.0, 0.0)
+                    .child(text(name).font(theme::TITLE).color(secondary)),
+            )
+    } else {
+        text(name).font(theme::TITLE).color(primary)
+    }
 }
 
 fn profile_widget(
@@ -391,6 +388,11 @@ fn profile_widget(
 }
 
 fn activity_card(s: &App, user: &User, p: Palette) -> Option<El> {
+    // An activity card implies the person is around; don't show it for someone
+    // who is offline or invisible.
+    if user.status == runecord_protocol::Presence::Offline {
+        return None;
+    }
     let activity = user.activity.as_ref()?;
     let spotify = activity.kind.eq_ignore_ascii_case("spotify");
     let accent = if spotify {
@@ -671,6 +673,111 @@ fn member_details(s: &App, member: Option<&runecord_protocol::Member>, p: Palett
     details
 }
 
+pub(crate) fn forward_sheet(s: &App, p: Palette, message: runecord_protocol::Id) -> El {
+    let item = |key: String, label: String, detail: String, channel: Id, p: Palette| {
+        row()
+            .key(key)
+            .w_full()
+            .h(46.0)
+            .px(10.0)
+            .radius(4.0)
+            .gap(10.0)
+            .center_y()
+            .role("button")
+            .label(format!("Forward to {label}"))
+            .hover(p.card_hover)
+            .on_press(move |s: &mut App| s.forward_to(message, channel))
+            .child(icon(&icons::HASH, 18.0).color(p.text_muted))
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .child(
+                        text(label)
+                            .font(theme::SMALL_MED)
+                            .color(p.text_bright)
+                            .truncate(),
+                    )
+                    .child(text(detail).font(theme::TINY).color(p.text_faint)),
+            )
+    };
+    let mut rows = col().w_full().gap(1.0);
+    for channel in s.guild_channels(s.active_guild) {
+        if !matches!(
+            channel.kind,
+            ChannelKind::Text
+                | ChannelKind::Announcement
+                | ChannelKind::Forum
+                | ChannelKind::Thread
+        ) || !has(channel.my_permissions, perm::SEND_MESSAGES)
+        {
+            continue;
+        }
+        rows = rows.child(item(
+            format!("forward-channel-{}", channel.id),
+            format!("#{}", channel.name),
+            "Text channel".to_string(),
+            channel.id,
+            p,
+        ));
+    }
+    if !s.dms.is_empty() {
+        rows = rows.child(
+            text("DIRECT MESSAGES")
+                .font(theme::SECTION)
+                .color(p.text_muted)
+                .padding(8.0),
+        );
+    }
+    for dm in &s.dms {
+        rows = rows.child(item(
+            format!("forward-dm-{}", dm.channel.id),
+            crate::ui::dms::dm_title(dm),
+            "Direct message".to_string(),
+            dm.channel.id,
+            p,
+        ));
+    }
+    col()
+        .key("forward-sheet")
+        .w(sheet_w(460.0))
+        .h(sheet_h(520.0))
+        .radius(8.0)
+        .clip_rounded(8.0)
+        .fill(p.modal)
+        .padding(18.0)
+        .gap(10.0)
+        .shadow(12.0, 32.0, p.shadow)
+        .modal(true, |s: &mut App| s.modal = Modal::None)
+        .child(
+            row()
+                .w_full()
+                .items_center()
+                .child(
+                    text("Forward Message")
+                        .font(theme::TITLE)
+                        .color(p.text_bright)
+                        .grow(1.0),
+                )
+                .child(close_button(p)),
+        )
+        .child(
+            text("Choose where to send a copy. The original stays where it is.")
+                .font(theme::SMALL)
+                .color(p.text_muted),
+        )
+        .child(
+            col()
+                .w_full()
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(rows),
+        )
+}
+
 pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El {
     let Some(msg) = s.messages.values().flatten().find(|m| m.id == id).cloned() else {
         return el();
@@ -709,17 +816,25 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
     };
 
     let mut reactions = row().gap(2.0).px(4.0).py(2.0);
-    for emoji in ["≡ƒöÑ", "≡ƒÿé", "≡ƒÆ£", "≡ƒæì", "≡ƒæÇ", "≡ƒÄë"] {
+    // These used to be mojibake strings (UTF-8 emoji bytes decoded as a legacy
+    // code page), which drew as unreadable "≡ƒ..." glyphs. Use real Unicode
+    // emoji so the quick-reaction row reads correctly for everyone.
+    for emoji in ["😂", "❤️", "👍", "🎉", "😮", "😢"] {
+        let label = format!("React with {emoji}");
         reactions = reactions.child(
-            text(emoji)
-                .font(TextStyle::new(20.0, 400.0))
-                .padding(4.0)
+            el().key(format!("quick-react-{emoji}"))
                 .radius(4.0)
+                .center()
+                .role("button")
+                .label(label.clone())
+                .help(label)
+                .padding(4.0)
                 .hover(p.selected)
                 .on_press(move |s: &mut App| {
                     s.react(mid, emoji);
                     s.modal = Modal::None;
-                }),
+                })
+                .child(text(emoji).font(TextStyle::new(20.0, 400.0)).color(p.text)),
         );
     }
 
@@ -740,6 +855,11 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
             })
         }))
         .children(can_send.then(|| {
+            item("Forward", false, "menu-forward", p).on_press(move |s: &mut App| {
+                s.open_forward(mid);
+            })
+        }))
+        .children(can_send.then(|| {
             item("Create Thread", false, "menu-thread", p).on_press(move |s: &mut App| {
                 s.profile_edit = rune::TextEdit::new(plain_thread_name(&thread_preview));
                 s.modal = Modal::ThreadCreate {
@@ -753,6 +873,20 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
                 tx.copy(content_copy.clone());
             },
         ))
+        .child(
+            item("Copy Message Link", false, "menu-copy-link", p).on_press_tx(
+                move |_: &mut App, tx: &mut rune::Tx| {
+                    tx.copy(format!("runecord://channel/{channel_id}/{mid}"));
+                },
+            ),
+        )
+        .child(
+            item("Copy Message ID", false, "menu-copy-id", p).on_press_tx(
+                move |_: &mut App, tx: &mut rune::Tx| {
+                    tx.copy(mid.to_string());
+                },
+            ),
+        )
         .children(can_manage.then(|| {
             item(
                 if pinned {
@@ -784,7 +918,7 @@ pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El
 pub(crate) fn edit_sheet(s: &App, p: Palette, _id: runecord_protocol::Id) -> El {
     col()
         .key("edit-sheet")
-        .w(520.0)
+        .w(sheet_w(520.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

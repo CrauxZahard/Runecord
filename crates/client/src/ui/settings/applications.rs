@@ -40,6 +40,87 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                 .radius(8.0)
                 .fill(p.card)
                 .padding(18.0)
+                .gap(6.0)
+                .child(
+                    text("BOTS & APPS")
+                        .font(theme::SECTION)
+                        .color(p.text_muted),
+                )
+                .child(
+                    text("Bots and applications are created in the Runecord Developer Portal (Soon), just like Discord. They are no longer managed inside the app.")
+                        .wrap()
+                        .font(theme::SMALL)
+                        .color(p.text),
+                ),
+        )
+        .child(
+            col()
+                .w_full()
+                .radius(8.0)
+                .fill(p.card)
+                .padding(18.0)
+                .gap(12.0)
+                .child(
+                    text("GAME OVERLAY")
+                        .font(theme::SECTION)
+                        .color(p.text_muted),
+                )
+                .child(
+                    text("A small always-on-top card lists who is in your voice channel while you play. It never takes keyboard focus.")
+                        .wrap()
+                        .font(theme::TINY)
+                        .color(p.text_muted),
+                )
+                .child(
+                    row()
+                        .key("overlay-toggle")
+                        .w_full()
+                        .h(36.0)
+                        .gap(10.0)
+                        .center_y()
+                        .role("checkbox")
+                        .label("Enable the in-game overlay")
+                        .checked(s.overlay_enabled)
+                        .hover(p.card_hover)
+                        .on_press(|s: &mut App| {
+                            let next = !s.overlay_enabled;
+                            s.set_overlay_enabled(next)
+                        })
+                        .child(
+                            el().size(16.0, 16.0)
+                                .radius(4.0)
+                                .border(1.0, p.divider)
+                                .fill(if s.overlay_enabled { p.green } else { p.input })
+                                .center()
+                                .children(s.overlay_enabled.then(|| {
+                                    icon(&icons::CHECK, 11.0).color(Color::WHITE)
+                                })),
+                        )
+                        .child(
+                            col()
+                                .gap(1.0)
+                                .child(
+                                    text("Show the voice overlay")
+                                        .font(theme::SMALL_MED)
+                                        .color(p.text_bright),
+                                )
+                                .child(
+                                    text(format!(
+                                        "Overlay window: {}",
+                                        crate::overlay::availability()
+                                    ))
+                                    .font(theme::TINY)
+                                    .color(p.text_faint),
+                                ),
+                        ),
+                ),
+        )
+        .child(
+            col()
+                .w_full()
+                .radius(8.0)
+                .fill(p.card)
+                .padding(18.0)
                 .gap(12.0)
                 .child(
                     text("BACKEND SERVER")
@@ -59,11 +140,13 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                     p,
                     |s: &mut App| &mut s.server_url,
                 ))
-                .child(
-                    row()
-                        .w_full()
-                        .gap(8.0)
-                        .center_y()
+                .child({
+                    let mut actions = row().w_full().gap(8.0).center_y();
+                    if mobile() {
+                        // Three buttons exceed a phone's card; let them wrap.
+                        actions = actions.flex_wrap();
+                    }
+                    actions
                         .child(button(
                             "server-url-save",
                             if s.server_checking {
@@ -102,8 +185,8 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                             text("Unsaved changes")
                                 .font(theme::TINY)
                                 .color(p.yellow)
-                        })),
-                )
+                        }))
+                })
                 .children(s.server_config_error.clone().map(|message| {
                     text(format!("Saved setting: {message}"))
                         .wrap()
@@ -152,4 +235,94 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                         .color(p.text_muted),
                 ),
         )
+        .child(updates_card(s, p))
+}
+
+/// The notify-only update check: the app never installs anything, it points at
+/// the release page.
+fn updates_card(s: &App, p: Palette) -> El {
+    let current = env!("CARGO_PKG_VERSION");
+    let (status, color) = match &s.update_status {
+        crate::update::Status::Idle => (format!("Runecord {current} is installed."), p.text_muted),
+        crate::update::Status::Checking => ("Checking for updates…".to_string(), p.text_muted),
+        crate::update::Status::Latest => (
+            format!("Runecord {current} is the newest version."),
+            p.green,
+        ),
+        crate::update::Status::Available(release) => (
+            format!("Runecord {} is available.", release.version),
+            p.yellow,
+        ),
+        crate::update::Status::Failed(error) => {
+            (format!("Could not check for updates: {error}"), p.danger)
+        }
+    };
+    let mut card = col()
+        .key("updates-card")
+        .w_full()
+        .radius(8.0)
+        .fill(p.card)
+        .padding(18.0)
+        .gap(10.0)
+        .child(text("UPDATES").font(theme::SECTION).color(p.text_muted))
+        .child(text(status).wrap().font(theme::SMALL).color(color))
+        .child(
+            row()
+                .w_full()
+                .gap(8.0)
+                .center_y()
+                .child(
+                    el().key("check-updates")
+                        .h(34.0)
+                        .px(14.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Check for updates")
+                        .fill(p.rail)
+                        .hover(p.rail_hover)
+                        .on_press(|s: &mut App| s.check_updates())
+                        .child(
+                            text(
+                                if matches!(&s.update_status, crate::update::Status::Checking) {
+                                    "Checking…"
+                                } else {
+                                    "Check for updates"
+                                },
+                            )
+                            .font(theme::SMALL_MED)
+                            .color(p.text_bright),
+                        ),
+                )
+                .children(match &s.update_status {
+                    crate::update::Status::Available(release) => Some(
+                        el().key("open-release")
+                            .h(34.0)
+                            .px(14.0)
+                            .radius(4.0)
+                            .center()
+                            .role("link")
+                            .label("Open the release page")
+                            .fill(p.accent)
+                            .hover(p.accent_hover)
+                            .on_press_tx({
+                                let url = release.url.clone();
+                                move |_: &mut App, tx: &mut rune::Tx| {
+                                    let _ = tx.open_url(&url);
+                                }
+                            })
+                            .child(text("Download").font(theme::SMALL_MED).color(Color::WHITE)),
+                    ),
+                    _ => None,
+                }),
+        );
+    if matches!(&s.update_status, crate::update::Status::Available(_)) {
+        card = card.child(
+            text("Downloading is manual: the installer on the release page replaces this copy and keeps your data.")
+                .wrap()
+                .font(theme::TINY)
+                .color(p.text_muted),
+        );
+    }
+    card
 }

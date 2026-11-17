@@ -10,8 +10,15 @@ impl App {
             .flat_map(|user| [user.avatar_url.clone(), user.banner_url.clone()])
             .filter(|url| !url.is_empty())
             .collect();
-        for user in users {
+        for mut user in users {
             self.user_requests.remove(&user.id);
+            if user.id == self.me.id {
+                user.status = if self.connected {
+                    self.my_presence
+                } else {
+                    Presence::Offline
+                };
+            }
             self.presence.insert(user.id, user.status);
             self.users.insert(user.id, user);
         }

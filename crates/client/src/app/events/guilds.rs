@@ -15,6 +15,24 @@ impl App {
         let _ = guild;
         self.guild_events.retain(|item| item.id != event);
     }
+    pub(crate) fn apply_automod_config(&mut self, config: AutoModConfig) {
+        self.automod_rules = config.rules;
+    }
+
+    pub(crate) fn apply_onboarding_updated(&mut self, onboarding: GuildOnboarding) {
+        self.onboarding_welcome = onboarding.welcome_enabled;
+        self.onboarding_title = rune::TextEdit::new(onboarding.welcome_title.clone());
+        self.onboarding_description = rune::TextEdit::new(onboarding.welcome_description.clone());
+        self.onboarding_rules = rune::TextEdit::new(onboarding.rules.join("\n"));
+        self.onboarding_verification = onboarding.verification_level;
+        if let Some(detail) = self.guild_details.get_mut(&self.active_guild) {
+            detail.onboarding = onboarding.clone();
+        }
+        if onboarding.accepted {
+            self.modal = Modal::None;
+        }
+    }
+
     pub(crate) fn apply_guild_detail(&mut self, d: Box<GuildDetail>) {
         let detail = *d;
         let guild = detail.guild.id;
@@ -29,7 +47,21 @@ impl App {
             .map(|role| role.icon_url.clone())
             .filter(|url| !url.is_empty())
             .collect();
+        let onboarding = detail.onboarding.clone();
+        self.forum_tags = detail.forum_tags.clone();
         self.guild_details.insert(guild, detail);
+        self.onboarding_welcome = onboarding.welcome_enabled;
+        self.onboarding_title = rune::TextEdit::new(onboarding.welcome_title.clone());
+        self.onboarding_description = rune::TextEdit::new(onboarding.welcome_description.clone());
+        self.onboarding_rules = rune::TextEdit::new(onboarding.rules.join("\n"));
+        self.onboarding_verification = onboarding.verification_level;
+        if guild == self.active_guild
+            && !onboarding.rules.is_empty()
+            && !onboarding.accepted
+            && self.modal == Modal::None
+        {
+            self.modal = Modal::OnboardingRules(guild);
+        }
         self.request_urls(role_icons);
         self.stale_guilds.remove(&guild);
         self.trim_guild_caches();
@@ -86,10 +118,26 @@ impl App {
             state.complete = page.next_offset.is_none();
         }
         let members = page.members;
+        // Fetch avatars AND banners for the members we just learned about.
+        // Without this only your own banner is ever downloaded, so other
+        // people's profile banners fall back to the plain gradient.
+        let urls: Vec<String> = members
+            .iter()
+            .flat_map(|member| {
+                [
+                    member.user.avatar_url.clone(),
+                    member.user.banner_url.clone(),
+                ]
+            })
+            .filter(|url| !url.is_empty())
+            .collect();
         for member in &members {
             self.users
                 .entry(member.user.id)
                 .or_insert_with(|| member.user.clone());
+        }
+        if !urls.is_empty() {
+            self.request_urls(urls);
         }
         let list = self.members.entry(guild).or_default();
         if replace {

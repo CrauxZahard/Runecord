@@ -3,7 +3,7 @@ use super::*;
 pub(crate) fn list_devices() -> (Vec<String>, Vec<String>) {
     let mut audio = Vec::new();
     let mut video = Vec::new();
-    let Ok(output) = Command::new(ffmpeg_path())
+    let Ok(output) = helper(&ffmpeg_path())
         .args([
             "-hide_banner",
             "-list_devices",
@@ -58,7 +58,7 @@ pub(crate) fn microphone() -> Option<String> {
     if let Some(device) = selected_input_device() {
         return Some(device);
     }
-    let output = Command::new(ffmpeg_path())
+    let output = helper(&ffmpeg_path())
         .args([
             "-hide_banner",
             "-list_devices",
@@ -86,7 +86,7 @@ pub(crate) fn camera() -> Option<String> {
     if let Some(device) = selected_camera_device() {
         return Some(device);
     }
-    let output = Command::new(ffmpeg_path())
+    let output = helper(&ffmpeg_path())
         .args([
             "-hide_banner",
             "-list_devices",

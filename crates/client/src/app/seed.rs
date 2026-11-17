@@ -177,6 +177,70 @@ impl App {
             },
             ch(221, "General", ChannelKind::Voice, 9, Some(220), ""),
             ch(222, "Focus Room", ChannelKind::Voice, 10, Some(220), ""),
+            ch(
+                223,
+                "town-hall",
+                ChannelKind::Stage,
+                11,
+                Some(220),
+                "Roadmap AMA with the team",
+            ),
+            Channel {
+                id: 230,
+                guild_id: Some(100),
+                name: "Community".into(),
+                kind: ChannelKind::Category,
+                position: 11,
+                ..Channel::default()
+            },
+            ch(
+                215,
+                "forum",
+                ChannelKind::Forum,
+                12,
+                Some(230),
+                "Long-form posts with tags",
+            ),
+            Channel {
+                id: 216,
+                guild_id: Some(100),
+                name: "Keyboard shortcuts cheat sheet".into(),
+                kind: ChannelKind::Thread,
+                position: 13,
+                parent_id: Some(215),
+                owner_id: Some(3),
+                last_message_id: Some(3001),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 215,
+                    name: "Keyboard shortcuts cheat sheet".into(),
+                    message_count: 4,
+                    archived: false,
+                    preview: "Every shortcut I use daily, in one place.".into(),
+                    tags: vec![2301],
+                }),
+                ..Channel::default()
+            },
+            Channel {
+                id: 217,
+                guild_id: Some(100),
+                name: "Sidebar spacing feels off on 1440p".into(),
+                kind: ChannelKind::Thread,
+                position: 14,
+                parent_id: Some(215),
+                owner_id: Some(2),
+                last_message_id: Some(3101),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 215,
+                    name: "Sidebar spacing feels off on 1440p".into(),
+                    message_count: 2,
+                    archived: false,
+                    preview: "The 12px gap looks bigger than the 8px one at that scale.".into(),
+                    tags: vec![2302, 2303],
+                }),
+                ..Channel::default()
+            },
         ];
         let members = vec![
             Member {
@@ -262,8 +326,9 @@ impl App {
             boosts: 0,
             boost_level: 0,
             boosted_by_me: false,
-            upload_limit_bytes: 48 * 1024 * 1024,
-            voice_kbps: 64,
+            reputation_cooldown_until: 0,
+            upload_limit_bytes: 128 * 1024 * 1024,
+            voice_kbps: 384,
         };
         self.guilds.push(summary.clone());
         self.guild_details.insert(
@@ -274,8 +339,37 @@ impl App {
                 roles: roles.clone(),
                 overwrites: Vec::new(),
                 permissions: u64::MAX / 2,
+                onboarding: runecord_protocol::GuildOnboarding::default(),
+                forum_tags: vec![
+                    runecord_protocol::ForumTag {
+                        id: 2301,
+                        channel_id: 215,
+                        name: "Guide".into(),
+                        emoji: String::new(),
+                        position: 0,
+                    },
+                    runecord_protocol::ForumTag {
+                        id: 2302,
+                        channel_id: 215,
+                        name: "Bug".into(),
+                        emoji: String::new(),
+                        position: 1,
+                    },
+                    runecord_protocol::ForumTag {
+                        id: 2303,
+                        channel_id: 215,
+                        name: "Design".into(),
+                        emoji: String::new(),
+                        position: 2,
+                    },
+                ],
             },
         );
+        self.forum_tags = self
+            .guild_details
+            .get(&100)
+            .map(|detail| detail.forum_tags.clone())
+            .unwrap_or_default();
         self.channels.insert(100, guild_channels);
         self.members.insert(100, members.clone());
         self.member_state.insert(
@@ -351,8 +445,9 @@ impl App {
                 boosts: 0,
                 boost_level: 0,
                 boosted_by_me: false,
-                upload_limit_bytes: 48 * 1024 * 1024,
-                voice_kbps: 64,
+                reputation_cooldown_until: 0,
+                upload_limit_bytes: 128 * 1024 * 1024,
+                voice_kbps: 384,
             };
             self.guilds.push(summary.clone());
             self.guild_details.insert(
@@ -363,6 +458,8 @@ impl App {
                     roles: vec![roles[0].clone()],
                     overwrites: Vec::new(),
                     permissions: u64::MAX / 2,
+                    onboarding: runecord_protocol::GuildOnboarding::default(),
+                    forum_tags: Vec::new(),
                 },
             );
         }
@@ -418,9 +515,47 @@ impl App {
             msg(1009, 6, 90, "just joined — is there a channel for keyboard shortcuts?"),
             msg(1010, 3, 88, "ctrl+k is the quick switcher. ctrl+shift+m toggles mute. esc closes whatever you opened"),
             msg(1011, 1, 60, "pinned it in #welcome so it doesn't get lost"),
+            msg(
+                1012,
+                5,
+                50,
+                "the roadmap leak is ||Phase 6 is only a rumour|| and ||it stays hidden until you click||",
+            ),
         ];
         general.sort_by_key(|m| m.timestamp);
         self.messages.insert(211, general);
+        self.messages.insert(
+            216,
+            vec![
+                Message {
+                    id: 3000,
+                    channel_id: 216,
+                    author_id: 3,
+                    content: "Every shortcut I use daily, in one place.".into(),
+                    timestamp: t - 7_200_000,
+                    ..Message::default()
+                },
+                Message {
+                    id: 3001,
+                    channel_id: 216,
+                    author_id: 1,
+                    content: "ctrl+shift+m for mute is the one I keep forgetting.".into(),
+                    timestamp: t - 3_600_000,
+                    ..Message::default()
+                },
+            ],
+        );
+        self.messages.insert(
+            217,
+            vec![Message {
+                id: 3100,
+                channel_id: 217,
+                author_id: 2,
+                content: "The 12px gap looks bigger than the 8px one at that scale.".into(),
+                timestamp: t - 5_400_000,
+                ..Message::default()
+            }],
+        );
         self.messages.insert(
             201,
             vec![Message {

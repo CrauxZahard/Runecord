@@ -4,16 +4,16 @@ use super::super::*;
 use crate::net::Command;
 
 impl App {
-    pub fn begin_user_image_crop(&mut self, path: std::path::PathBuf, banner: bool) {
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+    pub fn begin_user_image_crop(&mut self, source: crate::net::UploadSource, banner: bool) {
+        let bytes = match source.read() {
+            Ok((_, bytes)) => bytes,
             Err(error) => {
-                self.toast(format!("Could not read image: {error}"));
+                self.toast(error);
                 return;
             }
         };
         if crate::image_anim::is_animated(&bytes) {
-            self.send(Command::UploadUserImage { banner, path });
+            self.send(Command::UploadUserImage { banner, source });
             self.toast(if banner {
                 "Uploading animated banner."
             } else {
@@ -54,7 +54,7 @@ impl App {
         });
     }
 
-    pub fn begin_guild_image_crop(&mut self, path: std::path::PathBuf, banner: bool) {
+    pub fn begin_guild_image_crop(&mut self, source: crate::net::UploadSource, banner: bool) {
         self.crop_dm = 0;
         if banner
             && self
@@ -66,10 +66,10 @@ impl App {
             self.toast("Server banners unlock at Boost Level 2 (7 Boosts)");
             return;
         }
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+        let bytes = match source.read() {
+            Ok((_, bytes)) => bytes,
             Err(error) => {
-                self.toast(format!("Could not read image: {error}"));
+                self.toast(error);
                 return;
             }
         };
@@ -77,7 +77,7 @@ impl App {
             self.send(Command::UploadGuildImage {
                 guild: self.active_guild,
                 banner,
-                path,
+                source,
             });
             self.toast("Uploading animated server image.");
             return;
@@ -217,12 +217,16 @@ impl App {
             self.toast("Nothing to crop");
             return;
         };
-        let path =
-            std::env::temp_dir().join(format!("runecord-crop-{}.png", runecord_protocol::now_ms()));
-        if image::save_buffer(&path, &rgba, width, height, image::ColorType::Rgba8).is_err() {
-            self.toast("Could not prepare the image");
-            return;
-        }
+        let source = match encode_png(&rgba, width, height) {
+            Some(bytes) => crate::net::UploadSource::Bytes {
+                name: format!("crop-{}.png", runecord_protocol::now_ms()),
+                bytes,
+            },
+            None => {
+                self.toast("Could not prepare the image");
+                return;
+            }
+        };
         let banner = self.crop_banner;
         let user = self.crop_user;
         let dm = self.crop_dm;
@@ -232,12 +236,18 @@ impl App {
         self.crop_dm = 0;
         if dm != 0 {
             self.modal = Modal::DmSettings { channel: dm };
-            self.send(Command::UploadDmIcon { channel: dm, path });
+            self.send(Command::UploadDmIcon {
+                channel: dm,
+                source: source.clone(),
+            });
             self.toast("Uploading group icon.");
         } else if user {
             self.modal = Modal::Settings(SettingsTab::Profile);
             self.sync_profile_edits();
-            self.send(Command::UploadUserImage { banner, path });
+            self.send(Command::UploadUserImage {
+                banner,
+                source: source.clone(),
+            });
             self.toast(if banner {
                 "Uploading profile banner."
             } else {
@@ -246,7 +256,7 @@ impl App {
         } else {
             self.server_tab = ServerTab::Overview;
             self.modal = Modal::ServerSettings;
-            self.upload_guild_image(path, banner);
+            self.upload_guild_image(source, banner);
         }
     }
 
@@ -267,11 +277,11 @@ impl App {
         }
     }
 
-    pub fn upload_guild_image(&mut self, path: std::path::PathBuf, banner: bool) {
+    pub fn upload_guild_image(&mut self, source: crate::net::UploadSource, banner: bool) {
         self.send(Command::UploadGuildImage {
             guild: self.active_guild,
             banner,
-            path,
+            source,
         });
         self.toast(if banner {
             "Uploading server banner…"
@@ -297,11 +307,9 @@ impl App {
             guild: self.active_guild,
             on,
         });
-        self.toast(if on {
-            "Boosted the server"
-        } else {
-            "Boost removed"
-        });
+        if !on {
+            self.toast("Reputation removed");
+        }
     }
 
     pub fn set_viewer_quality(&mut self, quality: crate::voice::ViewQuality) {
@@ -318,4 +326,15 @@ impl App {
         self.toast(format!("Video quality: {}", quality.label()));
         self.modal = Modal::None;
     }
+}
+
+/// Encodes RGBA pixels as PNG in memory, so a cropped image never needs a
+/// temporary file (and works in the browser, which has no filesystem).
+fn encode_png(rgba: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let image = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .ok()?;
+    Some(out)
 }

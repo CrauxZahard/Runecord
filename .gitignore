@@ -27,3 +27,7 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Linux cross-link helper copied next to the workspace
+/libxkbcommon.so.0.0.0
+/crates/client/libxkbcommon.so.0.0.0

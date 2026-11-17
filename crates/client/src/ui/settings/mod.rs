@@ -5,7 +5,6 @@ use super::*;
 mod account;
 mod appearance;
 mod applications;
-mod developers;
 mod keybinds;
 mod notifications;
 mod profile;
@@ -13,7 +12,6 @@ mod voice;
 pub(crate) use account::*;
 pub(crate) use appearance::*;
 pub(crate) use applications::*;
-pub(crate) use developers::*;
 pub(crate) use keybinds::*;
 pub(crate) use notifications::*;
 pub(crate) use profile::*;
@@ -22,8 +20,8 @@ pub(crate) use voice::*;
 pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
     row()
         .key("settings-sheet")
-        .w(800.0)
-        .h(600.0)
+        .w(sheet_w(800.0))
+        .h(sheet_h(600.0))
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -33,14 +31,21 @@ pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
         .child(settings_body(s, p, tab, true, 0.0))
 }
 
-/// Settings as a full-window page, matching Discord's own settings screen rather
-/// than a centred dialog.
+/// Settings as a full-window page rather than a centred dialog.
 pub(crate) fn settings_page(s: &App, cx: &mut Cx<App>, p: Palette, tab: SettingsTab) -> El {
+    if mobile() {
+        return if s.mobile_settings {
+            mobile_settings_body(s, cx, p, tab)
+        } else {
+            mobile_settings_index(s, p)
+        };
+    }
     let trailing = cx.chrome_insets().trailing;
     col()
         .key("settings-page")
         .w_full()
-        .h_full()
+        .grow(1.0)
+        .min_h(0.0)
         .fill(p.chat)
         .child(
             row()
@@ -52,17 +57,132 @@ pub(crate) fn settings_page(s: &App, cx: &mut Cx<App>, p: Palette, tab: Settings
         )
 }
 
+/// The phone settings index: a full-width section list with a way out.
+fn mobile_settings_index(s: &App, p: Palette) -> El {
+    col()
+        .key("settings-page")
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
+        .fill(p.modal_sidebar)
+        .child(
+            row()
+                .key("settings-mobile-head")
+                .w_full()
+                .h(52.0)
+                .px(6.0)
+                .gap(4.0)
+                .center_y()
+                .child(mobile_header_button(
+                    "settings-close",
+                    "Close settings",
+                    &icons::CLOSE,
+                    |s: &mut App| s.modal = Modal::None,
+                    p,
+                ))
+                .child(
+                    text("Settings")
+                        .font(theme::TITLE)
+                        .color(p.text_bright)
+                        .grow(1.0),
+                ),
+        )
+        .child(
+            col()
+                .w_full()
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(settings_nav(s, p, s.settings_tab, 0.0)),
+        )
+}
+
+/// One settings section on a phone, with a back button to the section list.
+fn mobile_settings_body(s: &App, cx: &mut Cx<App>, p: Palette, tab: SettingsTab) -> El {
+    col()
+        .key("settings-page")
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
+        .fill(p.chat)
+        .child(
+            row()
+                .key("settings-mobile-head")
+                .w_full()
+                .h(52.0)
+                .px(6.0)
+                .gap(4.0)
+                .center_y()
+                .child(mobile_header_button(
+                    "settings-back",
+                    "Back to the settings list",
+                    &icons::CHEVRON_LEFT,
+                    |s: &mut App| s.close_mobile_settings(),
+                    p,
+                ))
+                .child(
+                    text(settings_tab_title(tab))
+                        .font(theme::TITLE)
+                        .color(p.text_bright)
+                        .grow(1.0),
+                )
+                .child(mobile_header_button(
+                    "settings-close",
+                    "Close settings",
+                    &icons::CLOSE,
+                    |s: &mut App| s.modal = Modal::None,
+                    p,
+                )),
+        )
+        .child(settings_body(s, p, tab, false, cx.chrome_insets().trailing))
+}
+
+fn settings_tab_title(tab: SettingsTab) -> &'static str {
+    match tab {
+        SettingsTab::Account => "My Account",
+        SettingsTab::Profile => "Profile",
+        SettingsTab::Application => "Application",
+        SettingsTab::Appearance => "Appearance",
+        SettingsTab::Notifications => "Notifications",
+        SettingsTab::Voice => "Voice & Video",
+        SettingsTab::Keybinds => "Keybinds",
+        // Bots & apps are created in the Runecord developer portal (soon).
+        SettingsTab::Bots => "Application",
+    }
+}
+
+/// A square icon button sized for a finger, used by the phone headers.
+pub(crate) fn mobile_header_button(
+    key: &'static str,
+    label: &'static str,
+    ic: &'static rune::Icon,
+    action: fn(&mut App),
+    p: Palette,
+) -> El {
+    el().key(key)
+        .size(44.0, 44.0)
+        .radius(8.0)
+        .center()
+        .role("button")
+        .label(label)
+        .hover(p.rail)
+        .on_press(move |s: &mut App| action(s))
+        .child(icon(ic, 22.0).color(p.text_muted))
+}
+
 fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
     let nav_item = |label: &'static str, t: SettingsTab, key: &'static str| {
         let selected = tab == t;
         el().key(key)
             .w_full()
-            .h(32.0)
+            .h(if mobile() { 44.0 } else { 32.0 })
             .px(8.0)
             .radius(4.0)
             .center_y()
             .role("tab")
-            .label(label)
+            .label(crate::i18n::t(label))
             .fill(if selected {
                 p.selected
             } else {
@@ -71,16 +191,21 @@ fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
             .hover(p.rail)
             .motion(motion::SNAPPY)
             .on_press(move |s: &mut App| s.select_settings_tab(t))
-            .child(text(label).font(theme::SMALL_MED).color(if selected {
-                p.text_bright
-            } else {
-                p.text_muted
-            }))
+            .child(
+                text(crate::i18n::t(label))
+                    .font(theme::SMALL_MED)
+                    .color(if selected {
+                        p.text_bright
+                    } else {
+                        p.text_muted
+                    }),
+            )
     };
 
     col()
         .key("settings-nav")
-        .w(width)
+        .w_full()
+        .max_w(if width > 0.0 { width } else { f32::INFINITY })
         .h_full()
         .fill(p.modal_sidebar)
         .px(8.0)
@@ -146,7 +271,6 @@ fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
         ))
         .child(nav_item("Voice & Video", SettingsTab::Voice, "tab-voice"))
         .child(nav_item("Keybinds", SettingsTab::Keybinds, "tab-keybinds"))
-        .child(nav_item("Bots & Apps", SettingsTab::Bots, "tab-bots"))
         .child(el().grow(1.0))
         .child(
             row()
@@ -229,15 +353,14 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
         SettingsTab::Notifications => notifications_tab(s, p),
         SettingsTab::Voice => voice_tab(s, p),
         SettingsTab::Keybinds => keybinds_tab(s, p),
-        SettingsTab::Bots => bots_apps_tab(s, p),
+        // Bots & apps are made in the developer portal (soon); the old tab now
+        // simply shows the Application settings instead.
+        SettingsTab::Bots => application_tab(s, p),
     };
 
-    col()
-        .key("settings-body")
-        .grow(1.0)
-        .min_w(0.0)
-        .h_full()
-        .child(
+    let mut shell = col().key("settings-body").grow(1.0).min_w(0.0).h_full();
+    if !mobile() {
+        shell = shell.child(
             row()
                 .key("settings-top")
                 .h(64.0)
@@ -247,26 +370,29 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
                 .window_drag()
                 .child(el().grow(1.0))
                 .child(close_button(p)),
-        )
-        .child(
-            col()
-                .key("settings-scroll")
-                .grow(1.0)
-                .min_h(0.0)
-                .scroll(ScrollSpec {
-                    stick_bottom: false,
-                })
-                .child(
-                    col()
-                        .key("settings-content")
-                        .w_full()
-                        .max_w(820.0)
-                        .px(40.0)
-                        .pb(48.0)
-                        .gap(20.0)
-                        .child(body),
-                ),
-        )
+        );
+    }
+    shell.child(
+        col()
+            .key("settings-scroll")
+            .grow(1.0)
+            .min_h(0.0)
+            .scroll(ScrollSpec {
+                stick_bottom: false,
+            })
+            .child(
+                col()
+                    .key("settings-content")
+                    .w(sheet_w(820.0))
+                    .px(if mobile() { 16.0 } else { 40.0 })
+                    .pb(48.0)
+                    .gap(20.0)
+                    .child(body),
+            ),
+    )
+    // Sticky footer: unlike the old button at the end of the profile section,
+    // this stays visible while scrolling through the long profile form.
+    .children((tab == SettingsTab::Profile).then(|| profile_save_bar(s, p)))
 }
 
 fn color_swatches(selected: u32, set: fn(&mut App, u32), p: Palette) -> El {
@@ -301,6 +427,8 @@ fn color_swatches(selected: u32, set: fn(&mut App, u32), p: Palette) -> El {
 pub(crate) fn server_menu(s: &App, p: Palette) -> El {
     let guild = s.active_guild().cloned().unwrap_or_default();
     let is_owner = guild.owner_id == s.me.id;
+    let can_manage = s.can_manage_server();
+    let can_channels = s.guild_can(perm::MANAGE_CHANNELS);
     let boost_pink = theme::color("#ff73fa");
     let boosts = guild.boosts;
     let level = guild.boost_level;
@@ -354,15 +482,15 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
                 .gap(6.0)
                 .center_y()
                 .role("button")
-                .label("Server boost progress")
+                .label("Server reputation progress")
                 .hover(p.rail_hover)
                 .on_press(|s: &mut App| s.open_server_settings())
                 .child(icon(&icons::SPARKLES, 14.0).color(boost_pink))
                 .child(
                     text(if level > 0 {
-                        format!("Level {level}")
+                        format!("Reputation Lv {level}")
                     } else {
-                        "No boosts".to_string()
+                        "No reputation".to_string()
                     })
                     .font(theme::TINY)
                     .color(p.text_bright),
@@ -393,24 +521,24 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
             p,
             |s: &mut App| s.open_invite(),
         ))
-        .child(menu_item(
-            "Server Settings",
-            false,
-            "menu-settings",
-            p,
-            |s: &mut App| s.open_server_settings(),
-        ))
-        .child(menu_item(
-            "Create Channel",
-            false,
-            "menu-channel",
-            p,
-            |s: &mut App| {
-                s.create_parent = None;
-                s.profile_edit.clear();
-                s.modal = Modal::CreateChannel;
-            },
-        ))
+        .children(can_manage.then(|| {
+            menu_item(
+                "Server Settings",
+                false,
+                "menu-settings",
+                p,
+                |s: &mut App| s.open_server_settings(),
+            )
+        }))
+        .children(can_channels.then(|| {
+            menu_item(
+                "Create Channel",
+                false,
+                "menu-channel",
+                p,
+                |s: &mut App| s.open_create_channel(None),
+            )
+        }))
         .child(menu_item(
             "Notification Settings",
             false,
@@ -424,13 +552,6 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
             "menu-privacy",
             p,
             |s: &mut App| s.open_privacy(),
-        ))
-        .child(menu_item(
-            "App Directory",
-            false,
-            "menu-apps",
-            p,
-            |s: &mut App| s.open_settings(SettingsTab::Bots),
         ))
         .children((!is_owner).then(|| el().w_full().h(1.0).fill(p.divider).my(4.0)))
         .children((!is_owner).then(|| {

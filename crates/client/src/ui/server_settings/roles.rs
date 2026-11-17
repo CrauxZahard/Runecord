@@ -4,11 +4,20 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
     let mut roles: Vec<Role> = s.guild_roles(s.active_guild).to_vec();
     roles.sort_by_key(|role| std::cmp::Reverse(role.position));
     let mut list = col().key("role-list").w(240.0).gap(4.0);
+    let dragging = s.role_drag;
     for role in &roles {
         let id = role.id;
         let selected = s.selected_role == id;
-        list = list.child(
-            row()
+        // The dragged row is lifted toward the pointer and shaded so the reorder
+        // reads as a real drag, while the rows it passes slide aside on their own.
+        let (lift, dragged) = match dragging {
+            Some((dragged_id, applied, dy)) if dragged_id == id => {
+                let residual = dy - applied as f32 * 42.0;
+                (residual.clamp(-126.0, 126.0), true)
+            }
+            _ => (0.0, false),
+        };
+        let mut role_row = row()
                 .key(format!("role-select-{id}"))
                 .w_full()
                 .h(42.0)
@@ -18,36 +27,39 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
                 .center_y()
                 .role("button")
                 .label(format!("{} role", role.name))
-                .fill(if selected {
+                .fill(if dragged {
+                    p.selected
+                } else if selected {
                     p.selected
                 } else {
                     Color::TRANSPARENT
                 })
+                .border(if dragged { 1.0 } else { 0.0 }, p.accent)
                 .hover(p.card_hover)
                 .on_drag(
                     move |s: &mut App, drag: &mut rune::Drag, _: &mut rune::Tx| match drag.phase {
                         rune::Phase::Down => {
                             s.select_role(id);
-                            s.role_drag = Some((id, 0));
+                            s.role_drag = Some((id, 0, 0.0));
                         }
                         rune::Phase::Move => {
-                            let Some((dragged, applied)) = s.role_drag else {
+                            let Some((dragged_id, applied, _)) = s.role_drag else {
                                 return;
                             };
-                            if dragged != id {
+                            if dragged_id != id {
                                 return;
                             }
                             let target = (drag.dy / 42.0).round() as i32;
                             if target != applied {
                                 let direction = if target > applied { 1 } else { -1 };
                                 s.move_selected_role(direction);
-                                s.role_drag = Some((id, applied + direction));
                             }
+                            s.role_drag = Some((id, target, drag.dy));
                         }
                         rune::Phase::Up => {
                             if drag.cancelled()
-                                && let Some((dragged, applied)) = s.role_drag
-                                && dragged == id
+                                && let Some((dragged_id, applied, _)) = s.role_drag
+                                && dragged_id == id
                             {
                                 let direction = if applied > 0 { -1 } else { 1 };
                                 for _ in 0..applied.abs() {
@@ -58,7 +70,13 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
                         }
                     },
                 )
-                .on_press(move |s: &mut App| s.select_role(id))
+                .on_press(move |s: &mut App| s.select_role(id));
+        if dragged {
+            role_row = role_row.offset(0.0, lift).shadow(4.0, 10.0, p.shadow);
+        } else {
+            role_row = role_row.motion(motion::SNAPPY);
+        }
+        list = list.child(role_row
                 .child(
                     if let Some(pixels) = s
                         .images
@@ -108,30 +126,11 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
                         .child(text("New Role").font(theme::SMALL_MED).color(Color::WHITE)),
                 )
                 .child(
-                    el().h(30.0)
-                        .px(12.0)
-                        .radius(4.0)
-                        .key("role-up")
-                        .role("button")
-                        .label("Move role up")
-                        .fill(p.rail)
-                        .hover(p.rail_hover)
-                        .center()
-                        .on_press(|s: &mut App| s.move_selected_role(-1))
-                        .child(text("Up").font(theme::LABEL).color(p.text_bright)),
-                )
-                .child(
-                    el().h(30.0)
-                        .px(12.0)
-                        .radius(4.0)
-                        .key("role-down")
-                        .role("button")
-                        .label("Move role down")
-                        .fill(p.rail)
-                        .hover(p.rail_hover)
-                        .center()
-                        .on_press(|s: &mut App| s.move_selected_role(1))
-                        .child(text("Down").font(theme::LABEL).color(p.text_bright)),
+                    text("Drag roles to reorder")
+                        .wrap()
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .grow(1.0),
                 ),
         )
         .child(
@@ -473,6 +472,59 @@ pub(crate) fn role_editor(s: &App, p: Palette) -> El {
                 .disabled(everyone)
                 .on_edit(|s: &mut App| &mut s.role_name),
         )
+        .child(text("ROLE ID").font(theme::SECTION).color(p.text_muted))
+        .child(
+            row()
+                .w_full()
+                .h(34.0)
+                .gap(8.0)
+                .center_y()
+                .child(
+                    el().grow(1.0)
+                        .min_w(0.0)
+                        .h(34.0)
+                        .radius(4.0)
+                        .fill(p.input)
+                        .px(10.0)
+                        .center_y()
+                        .child(
+                            text(role.id.to_string())
+                                .font(theme::MONO)
+                                .color(p.text)
+                                .truncate(),
+                        ),
+                )
+                .child(
+                    el().key("role-copy-id")
+                        .h(34.0)
+                        .px(12.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Copy role ID")
+                        .hover(p.card_hover)
+                        .on_press_tx(move |s: &mut App, tx: &mut rune::Tx| {
+                            tx.copy(role.id.to_string());
+                            s.toast("Role ID copied");
+                        })
+                        .child(text("Copy ID").font(theme::LABEL).color(p.text_muted)),
+                )
+                .child(
+                    el().key("role-copy-mention")
+                        .h(34.0)
+                        .px(12.0)
+                        .radius(4.0)
+                        .center()
+                        .role("button")
+                        .label("Copy role mention")
+                        .hover(p.card_hover)
+                        .on_press_tx(move |s: &mut App, tx: &mut rune::Tx| {
+                            tx.copy(format!("<@&{}>", role.id));
+                            s.toast("Role mention copied");
+                        })
+                        .child(text("Copy Mention").font(theme::LABEL).color(p.text_muted)),
+                ),
+        )
         .child(text("ROLE COLOR").font(theme::SECTION).color(p.text_muted))
         .child(
             text("Members use the color of the highest role they have on the roles list.")
@@ -584,11 +636,10 @@ pub(crate) fn role_editor(s: &App, p: Palette) -> El {
 }
 
 pub(crate) fn role_icon_row(s: &App, role: &Role, p: Palette) -> El {
-    let unlocked = s
-        .active_guild()
-        .map(|guild| guild.boost_level >= 2)
-        .unwrap_or(false);
+    // Role icons are a free cosmetic in this build.
+    let unlocked = true;
     let role_id = role.id;
+    let guild_id = s.active_guild;
     let icon_url = role.icon_url.clone();
     let preview = if let Some(pixels) = s.images.get(&icon_url).filter(|_| !icon_url.is_empty()) {
         el().size(44.0, 44.0)
@@ -620,18 +671,17 @@ pub(crate) fn role_icon_row(s: &App, role: &Role, p: Palette) -> El {
                     .fill(p.accent)
                     .hover(p.accent_hover)
                     .on_press_tx(move |_s: &mut App, tx: &mut rune::Tx| {
-                        let options = rune::FileDialogOptions {
-                            title: "Upload role icon".to_string(),
-                            directory: None,
-                            file_name: None,
-                            filters: Vec::new(),
-                        }
-                        .filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]);
-                        tx.open_file(options, move |s: &mut App, result, _| {
-                            if let Ok(Some(path)) = result {
-                                s.upload_role_icon(role_id, path);
-                            }
-                        });
+                        let kind = crate::files::PickKind::RoleIcon {
+                            guild: guild_id,
+                            role: role_id,
+                        };
+                        crate::files::open(
+                            tx,
+                            kind.clone(),
+                            "Upload role icon",
+                            &["png", "jpg", "jpeg", "gif", "webp"],
+                            move |s, path| s.accept_picked_path(kind.clone(), path),
+                        );
                     })
                     .child(text("Upload Icon").font(theme::LABEL).color(Color::WHITE)),
             )

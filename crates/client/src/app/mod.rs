@@ -15,6 +15,7 @@ pub enum Screen {
 pub enum Modal {
     None,
     Settings(SettingsTab),
+    StatusPicker,
     CreateServer,
     CreateChannel,
     EditChannel(Id),
@@ -35,6 +36,14 @@ pub enum Modal {
     },
     Threads,
     EditMessage(Id),
+    ForwardMessage(Id),
+    CreatePoll,
+    SlashCommand,
+    StickerPicker,
+    UserVolume(Id),
+    Activities(Id),
+    GifPicker,
+    ScheduledMessages,
     MessageMenu(Id),
     ConfirmDelete(Id),
     ConfirmLeave(Id),
@@ -82,9 +91,24 @@ pub enum Modal {
     BanAppeal,
     InviteJoin,
     ServerSettings,
+    OnboardingRules(Id),
     #[allow(dead_code)] // reserved for the dedicated roles screen
     Roles,
     ChannelPermissions(Id),
+}
+
+/// The in-app context menu, positioned where the secondary click landed.
+#[derive(Clone, Debug)]
+pub struct ContextMenu {
+    pub kind: ContextMenuKind,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Clone, Debug)]
+pub enum ContextMenuKind {
+    Channel(Id),
+    Member(Id),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +155,10 @@ impl TimeoutUnit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServerTab {
     Overview,
+    Onboarding,
+    AutoMod,
+    Templates,
+    Integrations,
     Roles,
     Members,
     Bans,
@@ -179,12 +207,37 @@ pub struct App {
     pub reads: HashMap<Id, Option<Id>>,
     pub presence: HashMap<Id, Presence>,
     pub voice: HashMap<Id, VoiceState>,
+    pub stages: HashMap<Id, StageState>,
+    pub presence_auto: bool,
+    pub last_presence_scan: f64,
+    pub auto_presence: String,
+    pub overlay_enabled: bool,
+    pub activities: Vec<Activity>,
+    pub activity_sessions: HashMap<Id, ActivitySession>,
+    pub gifs: Vec<GifItem>,
+    pub gif_query: TextEdit,
     pub active_guild: Id,
     pub active_channel: Id,
     pub active_dm: Id,
     pub last_guild_channel: HashMap<Id, Id>,
     pub collapsed: HashSet<Id>,
     pub show_members: bool,
+    /// On a narrow screen, whether the chat pane is open instead of its list.
+    pub mobile_chat: bool,
+    /// On a narrow screen, the member list drawn as a drawer over the chat.
+    pub members_drawer: bool,
+    /// On a narrow screen, whether a settings section is open instead of the list.
+    pub mobile_settings: bool,
+    /// On a narrow screen, whether a server settings section is open.
+    pub mobile_server_settings: bool,
+    /// Disk rail width, dragged by the edge between the channel list and chat.
+    pub sidebar_width: f32,
+    /// Member list width, dragged by its leading edge.
+    pub members_width: f32,
+    /// Channel kind chosen in the Create Channel sheet.
+    pub create_channel_kind: ChannelKind,
+    /// Right-click menu drawn in the app (the app's own menu, not the OS one).
+    pub context_menu: Option<ContextMenu>,
     pub composer: TextEdit,
     pub search: TextEdit,
     pub member_search: TextEdit,
@@ -205,18 +258,26 @@ pub struct App {
     pub logged_in: bool,
     pub connected: bool,
     pub connecting: bool,
+    /// Result of the notify-only release check (Settings → Application).
+    pub update_status: crate::update::Status,
     pub auth_error: Option<String>,
     pub auth_register: bool,
     pub auth_busy: bool,
     pub auth_user: TextEdit,
     pub auth_pass: TextEdit,
     pub auth_display: TextEdit,
+    /// Signup code for a code-gated server.
+    pub auth_code: TextEdit,
+    /// `open`, `code` or `closed`, reported by `/api/version`.
+    pub signup_mode: String,
     pub typing: HashMap<Id, Vec<(Id, i64)>>,
     pub images: HashMap<String, Pixels>,
     pub animations: HashMap<String, AnimationPlayer>,
     pub image_requests: HashSet<String>,
     pub user_requests: HashSet<Id>,
     pub visible_messages: HashMap<Id, (usize, usize)>,
+    /// Spoiler pills the reader has clicked open, keyed by `message:segment`.
+    pub revealed_spoilers: HashSet<String>,
     pub loading_older: HashSet<Id>,
     pub older_complete: HashSet<Id>,
     pub image_sizes: HashMap<String, usize>,
@@ -226,8 +287,21 @@ pub struct App {
     pub last_typing: f64,
     pub invite_code: Option<String>,
     pub profile_edit: TextEdit,
+    pub poll_question: TextEdit,
+    pub poll_option_1: TextEdit,
+    pub poll_option_2: TextEdit,
+    pub poll_option_3: TextEdit,
+    pub poll_option_4: TextEdit,
+    pub poll_multiple: bool,
+    pub poll_anonymous: bool,
+    pub poll_duration: TextEdit,
+    pub scheduled: Vec<ScheduledMessage>,
+    pub schedule_content: TextEdit,
+    pub schedule_minutes: TextEdit,
     pub edit_text: TextEdit,
     pub reply_to: Option<MessageReply>,
+    /// Whether replying pings the author. Toggled with the "@ off" chip.
+    pub reply_notify: bool,
     pub cache_profile: String,
     pub cache_dirty_at: Option<f64>,
     pub last_cache_save: f64,
@@ -244,6 +318,9 @@ pub struct App {
     pub drop_hover: bool,
     pub notify_dm: bool,
     pub notify_mentions: bool,
+    /// The status you chose for yourself. "Invisible" is represented by
+    /// `Presence::Offline` and is kept locally, like Discord's invisible mode.
+    pub my_presence: Presence,
     pub member_search_live: String,
     pub member_search_due: f64,
     pub last_member_query: String,
@@ -251,6 +328,14 @@ pub struct App {
     pub profile_pronouns: TextEdit,
     pub profile_badges: std::collections::BTreeSet<String>,
     pub profile_decoration: String,
+    /// Draft profile styling. The settings screen edits these locally; they are
+    /// sent to the server only from `save_profile`.
+    pub profile_effect: String,
+    pub profile_nameplate: String,
+    pub profile_widget: String,
+    pub profile_color: u32,
+    pub profile_border: u32,
+    pub profile_banner_color: u32,
     pub voice_input_device: String,
     pub voice_output_device: String,
     pub voice_camera_device: String,
@@ -259,6 +344,9 @@ pub struct App {
     pub voice_sensitivity: f32,
     pub voice_auto_sensitivity: bool,
     pub voice_mode: String,
+    pub voice_noise_suppression: bool,
+    pub ptt_key: u32,
+    pub ptt_capture: bool,
     pub voice_chat: bool,
     pub audio_devices: Vec<String>,
     pub output_devices: Vec<String>,
@@ -283,6 +371,8 @@ pub struct App {
     pub pending_install_app: Option<Id>,
     pub server_tab: ServerTab,
     pub selected_role: Id,
+    pub perm_target: Id,
+    pub perm_target_kind: String,
     pub role_name: TextEdit,
     pub role_color: u32,
     pub role_permissions: u64,
@@ -292,13 +382,21 @@ pub struct App {
     pub role_links: HashMap<Id, Vec<RoleLink>>,
     pub role_link_label: TextEdit,
     pub role_link_url: TextEdit,
-    pub role_drag: Option<(Id, i32)>,
+    /// (role id, whole slots moved so far, raw pointer travel in points). The
+    /// last value drives the "picked up" visual offset while reordering.
+    pub role_drag: Option<(Id, i32, f32)>,
     pub inbox: Option<Inbox>,
     pub inbox_tab: u8,
     pub guild_events: Vec<GuildEvent>,
     pub event_name: TextEdit,
     pub event_description: TextEdit,
     pub event_start_minutes: TextEdit,
+    /// Calendar date (YYYY-MM-DD) and local time (HH:MM) for new events.
+    pub event_start_date: TextEdit,
+    pub event_start_time: TextEdit,
+    pub event_recurrence: String,
+    pub event_reminder: u32,
+    pub event_duration: TextEdit,
     pub profile_activity_kind: TextEdit,
     pub profile_activity_title: TextEdit,
     pub profile_activity_subtitle: TextEdit,
@@ -306,19 +404,31 @@ pub struct App {
     pub profile_activity_url: TextEdit,
     pub profile_connection_kind: TextEdit,
     pub profile_connection_name: TextEdit,
+    pub profile_connection_url: TextEdit,
+    pub connection_code: String,
     pub selected_member: Option<Id>,
     pub overview_name: TextEdit,
     pub overview_description: TextEdit,
     pub overview_tag: TextEdit,
     pub overview_color: u32,
     pub overview_discoverable: bool,
+    pub onboarding_welcome: bool,
+    pub onboarding_title: TextEdit,
+    pub onboarding_description: TextEdit,
+    pub onboarding_rules: TextEdit,
+    pub onboarding_verification: u32,
     pub emojis: Vec<Emoji>,
     pub emoji_name: TextEdit,
+    pub emoji_sticker: bool,
     pub audit: Vec<AuditEntry>,
     pub audit_before: Option<Id>,
     pub audit_loading: bool,
     pub audit_complete: bool,
+    pub audit_actor: Option<Id>,
+    pub audit_action: Option<i32>,
     pub commands: Vec<ApplicationCommand>,
+    pub slash_command: Option<ApplicationCommand>,
+    pub slash_values: Vec<TextEdit>,
     pub thread_parent: Option<Id>,
     pub pending_forum: Option<Id>,
     pub editing_channel: Id,
@@ -358,6 +468,26 @@ pub struct App {
     pub appeals: Vec<BanAppeal>,
     pub ban_reason: TextEdit,
     pub bans: Vec<Ban>,
+    pub automod_rules: Vec<AutoModRule>,
+    pub automod_name: TextEdit,
+    pub automod_pattern: TextEdit,
+    pub automod_trigger: String,
+    pub automod_action: String,
+    pub automod_timeout: TextEdit,
+    pub templates: Vec<GuildTemplate>,
+    pub template_name: TextEdit,
+    pub template_description: TextEdit,
+    pub template_code: TextEdit,
+    pub webhooks: Vec<WebhookInfo>,
+    pub webhook_name: TextEdit,
+    pub webhook_channel: Id,
+    pub webhook_token: Option<(Id, String)>,
+    pub forum_tags: Vec<ForumTag>,
+    pub forum_tag_filter: Option<Id>,
+    pub forum_tag_draft: TextEdit,
+    pub forum_sort_new: bool,
+    pub forum_list_layout: bool,
+    pub thread_tag_ids: Vec<Id>,
     pub prune_days: u32,
     pub prune_roles: BTreeSet<Id>,
     pub prune_preview: Option<u32>,
@@ -394,12 +524,20 @@ impl App {
         let server_base = startup.url;
         let server_config_error = startup.error;
         let server_url_saved = crate::config::stored_server_url();
-        if !headless && crate::config::uses_bundled_server(&server_base) {
-            ensure_server();
+        if !headless {
+            crate::server_info::start(&server_base);
         }
-        let server_unreachable = !headless
-            && server_config_error.is_none()
-            && !crate::config::server_reachable(&server_base);
+        if !headless && crate::config::uses_bundled_server(&server_base) {
+            // Never hold the first frame for process startup or a TCP probe. The
+            // window paints immediately and the gateway reconnects when the server
+            // is ready, which removes the long white launch screen. The packaged
+            // build hosts the backend itself, so it must not spawn a second copy.
+            // A browser cannot spawn processes either; it talks to a server the
+            // page's origin already points at.
+            #[cfg(all(not(feature = "embedded-server"), not(target_arch = "wasm32")))]
+            std::thread::spawn(ensure_server);
+        }
+        let server_unreachable = false;
         let profile_name = profile().unwrap_or_else(|| "1".to_string());
         // Only paint a snapshot when a session token exists. A logged-out
         // profile must never look logged in just because an old cache exists.
@@ -438,12 +576,29 @@ impl App {
             reads: HashMap::new(),
             presence: HashMap::new(),
             voice: HashMap::new(),
+            stages: HashMap::new(),
+            presence_auto: true,
+            last_presence_scan: 0.0,
+            auto_presence: String::new(),
+            overlay_enabled: true,
+            activities: Vec::new(),
+            activity_sessions: HashMap::new(),
+            gifs: Vec::new(),
+            gif_query: TextEdit::new(""),
             active_guild: 0,
             active_channel: 0,
             active_dm: 0,
             last_guild_channel: HashMap::new(),
             collapsed: HashSet::new(),
             show_members: true,
+            mobile_chat: true,
+            members_drawer: false,
+            mobile_settings: false,
+            mobile_server_settings: false,
+            sidebar_width: 240.0,
+            members_width: 240.0,
+            create_channel_kind: ChannelKind::Text,
+            context_menu: None,
             composer: TextEdit::new(""),
             search: TextEdit::new(""),
             member_search: TextEdit::new(""),
@@ -464,18 +619,25 @@ impl App {
             logged_in: headless,
             connected: false,
             connecting: !headless,
+            update_status: crate::update::Status::Idle,
             auth_error: None,
             auth_register: false,
             auth_busy: false,
             auth_user: TextEdit::new(""),
             auth_pass: TextEdit::new(""),
             auth_display: TextEdit::new(""),
+            auth_code: TextEdit::new(""),
+            // Snapshots and tests can pin the mode; a real launch replaces it
+            // with the server's answer from `/api/version`.
+            signup_mode: std::env::var("RUNECORD_SIGNUP_MODE")
+                .unwrap_or_else(|_| "open".to_string()),
             typing: HashMap::new(),
             images: HashMap::new(),
             animations: HashMap::new(),
             image_requests: HashSet::new(),
             user_requests: HashSet::new(),
             visible_messages: HashMap::new(),
+            revealed_spoilers: HashSet::new(),
             loading_older: HashSet::new(),
             older_complete: HashSet::new(),
             image_sizes: HashMap::new(),
@@ -485,8 +647,20 @@ impl App {
             last_typing: -100.0,
             invite_code: None,
             profile_edit: TextEdit::new(""),
+            poll_question: TextEdit::new(""),
+            poll_option_1: TextEdit::new(""),
+            poll_option_2: TextEdit::new(""),
+            poll_option_3: TextEdit::new(""),
+            poll_option_4: TextEdit::new(""),
+            poll_multiple: false,
+            poll_anonymous: false,
+            poll_duration: TextEdit::new("24"),
+            scheduled: Vec::new(),
+            schedule_content: TextEdit::new(""),
+            schedule_minutes: TextEdit::new("60"),
             edit_text: TextEdit::new(""),
             reply_to: None,
+            reply_notify: true,
             cache_profile: profile_name,
             cache_dirty_at: None,
             last_cache_save: -100.0,
@@ -503,6 +677,7 @@ impl App {
             drop_hover: false,
             notify_dm: true,
             notify_mentions: true,
+            my_presence: Presence::Online,
             member_search_live: String::new(),
             member_search_due: 0.0,
             last_member_query: String::new(),
@@ -510,6 +685,12 @@ impl App {
             profile_pronouns: TextEdit::new(""),
             profile_badges: std::collections::BTreeSet::new(),
             profile_decoration: String::new(),
+            profile_effect: String::new(),
+            profile_nameplate: String::new(),
+            profile_widget: String::new(),
+            profile_color: 0,
+            profile_border: 0,
+            profile_banner_color: 0,
             voice_input_device: String::new(),
             voice_output_device: String::new(),
             voice_camera_device: String::new(),
@@ -518,6 +699,9 @@ impl App {
             voice_sensitivity: 0.02,
             voice_auto_sensitivity: true,
             voice_mode: "voice".to_string(),
+            voice_noise_suppression: false,
+            ptt_key: 0x77,
+            ptt_capture: false,
             voice_chat: false,
             audio_devices: Vec::new(),
             output_devices: Vec::new(),
@@ -542,6 +726,8 @@ impl App {
             pending_install_app: None,
             server_tab: ServerTab::Roles,
             selected_role: 0,
+            perm_target: 0,
+            perm_target_kind: "role".into(),
             role_name: TextEdit::new(""),
             role_color: 0,
             role_permissions: 0,
@@ -558,6 +744,13 @@ impl App {
             event_name: TextEdit::new(""),
             event_description: TextEdit::new(""),
             event_start_minutes: TextEdit::new("60"),
+            event_start_date: TextEdit::new(
+                &chrono::Local::now().format("%Y-%m-%d").to_string(),
+            ),
+            event_start_time: TextEdit::new(&chrono::Local::now().format("%H:%M").to_string()),
+            event_recurrence: String::new(),
+            event_reminder: 0,
+            event_duration: TextEdit::new("60"),
             profile_activity_kind: TextEdit::new(""),
             profile_activity_title: TextEdit::new(""),
             profile_activity_subtitle: TextEdit::new(""),
@@ -565,19 +758,31 @@ impl App {
             profile_activity_url: TextEdit::new(""),
             profile_connection_kind: TextEdit::new(""),
             profile_connection_name: TextEdit::new(""),
+            profile_connection_url: TextEdit::new(""),
+            connection_code: String::new(),
             selected_member: None,
             overview_name: TextEdit::new(""),
             overview_description: TextEdit::new(""),
             overview_tag: TextEdit::new(""),
             overview_color: 0x5865f2,
             overview_discoverable: true,
+            onboarding_welcome: false,
+            onboarding_title: TextEdit::new(""),
+            onboarding_description: TextEdit::new(""),
+            onboarding_rules: TextEdit::new(""),
+            onboarding_verification: 0,
             emojis: Vec::new(),
             emoji_name: TextEdit::new(""),
+            emoji_sticker: false,
             audit: Vec::new(),
             audit_before: None,
             audit_loading: false,
             audit_complete: false,
+            audit_actor: None,
+            audit_action: None,
             commands: Vec::new(),
+            slash_command: None,
+            slash_values: Vec::new(),
             thread_parent: None,
             pending_forum: None,
             editing_channel: 0,
@@ -617,6 +822,26 @@ impl App {
             appeals: Vec::new(),
             ban_reason: TextEdit::new(""),
             bans: Vec::new(),
+            automod_rules: Vec::new(),
+            automod_name: TextEdit::new(""),
+            automod_pattern: TextEdit::new(""),
+            automod_trigger: "keyword".into(),
+            automod_action: "block".into(),
+            automod_timeout: TextEdit::new("10"),
+            templates: Vec::new(),
+            template_name: TextEdit::new(""),
+            template_description: TextEdit::new(""),
+            template_code: TextEdit::new(""),
+            webhooks: Vec::new(),
+            webhook_name: TextEdit::new(""),
+            webhook_channel: 0,
+            webhook_token: None,
+            forum_tags: Vec::new(),
+            forum_tag_filter: None,
+            forum_tag_draft: TextEdit::new(""),
+            forum_sort_new: false,
+            forum_list_layout: false,
+            thread_tag_ids: Vec::new(),
             prune_days: 7,
             prune_roles: BTreeSet::new(),
             prune_preview: None,
@@ -652,6 +877,9 @@ impl App {
             crate::voice::set_viewer_quality(app.viewer_quality);
         }
         app.apply_voice_settings();
+        if !headless {
+            crate::update::start(false);
+        }
         app
     }
 
@@ -747,7 +975,49 @@ impl App {
     }
 
     pub fn guild_can(&self, bit: u64) -> bool {
-        has(self.active_guild().map(|g| g.permissions).unwrap_or(0), bit)
+        let guild = self.active_guild();
+        let owner = guild.is_some_and(|g| g.owner_id == self.me.id);
+        owner || has(guild.map(|g| g.permissions).unwrap_or(0), bit)
+    }
+
+    /// Server settings are only available to the owner and to members with a
+    /// management permission. Everyone else gets the UI hidden, like Discord.
+    pub fn can_manage_server(&self) -> bool {
+        self.guild_can(perm::MANAGE_GUILD) || self.guild_can(perm::ADMINISTRATOR)
+    }
+
+    /// True when the member has at least one section they may manage.
+    pub fn can_open_server_settings(&self) -> bool {
+        self.can_manage_server()
+            || [
+                crate::app::ServerTab::Roles,
+                crate::app::ServerTab::Members,
+                crate::app::ServerTab::Bans,
+                crate::app::ServerTab::Audit,
+            ]
+            .iter()
+            .any(|tab| self.can_manage_tab(*tab))
+    }
+
+    /// Which server-settings tabs a member is allowed to see.
+    pub fn can_manage_tab(&self, tab: crate::app::ServerTab) -> bool {
+        use crate::app::ServerTab as T;
+        match tab {
+            T::Overview | T::Onboarding | T::Templates | T::Integrations => {
+                self.can_manage_server()
+            }
+            T::AutoMod => self.can_manage_server() || self.guild_can(perm::MANAGE_MESSAGES),
+            T::Roles => self.can_manage_server() || self.guild_can(perm::MANAGE_ROLES),
+            T::Members => {
+                self.can_manage_server()
+                    || self.guild_can(perm::KICK_MEMBERS)
+                    || self.guild_can(perm::BAN_MEMBERS)
+                    || self.guild_can(perm::MANAGE_ROLES)
+            }
+            T::Bans => self.can_manage_server() || self.guild_can(perm::BAN_MEMBERS),
+            T::Emojis => self.can_manage_server(),
+            T::Audit => self.can_manage_server() || self.guild_can(perm::VIEW_AUDIT_LOG),
+        }
     }
 
     /// The highest role position a member holds, matching the server's own
@@ -835,6 +1105,11 @@ fn collect_image_urls(message: &Message, out: &mut Vec<String>) {
             out.push(url);
         }
     }
+    for embed in &message.embeds {
+        if !embed.image_url.is_empty() {
+            out.push(format!("{}?w=480", embed.image_url));
+        }
+    }
 }
 
 pub fn attachment_image_url(attachment: &Attachment) -> Option<String> {
@@ -872,6 +1147,18 @@ fn bench_messages(count: usize, now: i64) -> Vec<Message> {
 // Process environment
 // ---------------------------------------------------------------------------
 
+/// Writes an export next to the rest of the user's Runecord data.
+pub(crate) fn save_export(name: &str, body: &str) -> Result<String, String> {
+    let base = std::env::var("APPDATA").map_err(|_| "no APPDATA".to_string())?;
+    let dir = std::path::PathBuf::from(base)
+        .join("Runecord")
+        .join("exports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+    std::fs::write(&path, body).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
 fn prefs_path() -> Option<std::path::PathBuf> {
     let base = std::env::var("APPDATA")
         .ok()
@@ -908,6 +1195,7 @@ fn profile() -> Option<String> {
     std::env::var("RUNECORD_PROFILE").ok()
 }
 
+#[cfg(all(not(feature = "embedded-server"), not(target_arch = "wasm32")))]
 fn ensure_server() {
     if std::net::TcpStream::connect_timeout(
         &"127.0.0.1:47800".parse().unwrap(),
@@ -969,6 +1257,7 @@ fn ensure_server() {
     std::thread::sleep(std::time::Duration::from_millis(350));
 }
 
+#[cfg(not(feature = "embedded-server"))]
 fn project_root(mut dir: &std::path::Path) -> Option<std::path::PathBuf> {
     for _ in 0..6 {
         if dir.join("crates").join("client").is_dir() {
@@ -984,6 +1273,20 @@ fn project_root(mut dir: &std::path::Path) -> Option<std::path::PathBuf> {
 // ---------------------------------------------------------------------------
 
 pub fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    if s.ptt_capture {
+        if matches!(ev.key, Key::Escape) {
+            s.ptt_capture = false;
+            return true;
+        }
+        if let Some(code) = key_to_virtual(ev.key.clone()) {
+            s.set_push_to_talk_key(code);
+            s.toast(format!(
+                "Push to Talk is now {}",
+                crate::voice::push_to_talk_key_label()
+            ));
+        }
+        return true;
+    }
     if let Some(action) = s.recording_key.clone() {
         if matches!(ev.key, Key::Escape) && !ev.mods.cmd && !ev.mods.ctrl && !ev.mods.alt {
             s.recording_key = None;
@@ -1001,6 +1304,10 @@ pub fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return true;
     }
     if matches!(ev.key, Key::Escape) {
+        if s.context_menu.is_some() {
+            s.context_menu = None;
+            return true;
+        }
         if s.viewing_image.is_some() {
             if s.zoom.owns_escape() {
                 s.zoom.fit(tx);
@@ -1068,6 +1375,47 @@ pub fn display_chord(spec: &str) -> String {
         .join("+")
 }
 
+/// Maps a key press to the Windows virtual-key code the PTT poller watches.
+fn key_to_virtual(key: Key) -> Option<u32> {
+    let code = match key {
+        Key::Function(n) => 0x6F + u32::from(n),
+        Key::Text(text) => {
+            let mut chars = text.chars();
+            match (chars.next(), chars.next()) {
+                (Some(' '), None) => 0x20,
+                (Some(c), None) if c.is_ascii_alphabetic() => c.to_ascii_uppercase() as u32,
+                (Some(c), None) if c.is_ascii_digit() => c as u32,
+                (Some('['), None) => 0xDB,
+                (Some(']'), None) => 0xDD,
+                (Some(';'), None) => 0xBA,
+                (Some('\''), None) => 0xDE,
+                (Some(','), None) => 0xBC,
+                (Some('.'), None) => 0xBE,
+                (Some('/'), None) => 0xBF,
+                (Some('-'), None) => 0xBD,
+                (Some('='), None) => 0xBB,
+                (Some('`'), None) => 0xC0,
+                _ => return None,
+            }
+        }
+        Key::Tab => 0x09,
+        Key::Enter => 0x0D,
+        Key::Backspace => 0x08,
+        Key::Up => 0x26,
+        Key::Down => 0x28,
+        Key::Left => 0x25,
+        Key::Right => 0x27,
+        Key::Home => 0x24,
+        Key::End => 0x23,
+        Key::PageUp => 0x21,
+        Key::PageDown => 0x22,
+        Key::Insert => 0x2D,
+        Key::Delete => 0x2E,
+        _ => return None,
+    };
+    Some(code)
+}
+
 fn event_chord(ev: &KeyEvent) -> Option<String> {
     let mut parts = Vec::new();
     if ev.mods.cmd {
@@ -1116,7 +1464,7 @@ fn event_chord(ev: &KeyEvent) -> Option<String> {
 }
 
 mod actions;
-mod events;
+pub(crate) mod events;
 mod media;
 mod retention;
 mod seed;

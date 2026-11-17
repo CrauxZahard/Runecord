@@ -57,6 +57,69 @@ impl App {
         self.send(Command::FriendRemove { user: id });
     }
 
+    pub fn open_gif_picker(&mut self) {
+        self.gif_query.clear();
+        self.send(Command::LoadGifs {
+            query: String::new(),
+        });
+        self.modal = Modal::GifPicker;
+    }
+
+    pub fn search_gifs(&mut self) {
+        self.send(Command::LoadGifs {
+            query: self.gif_query.text.clone(),
+        });
+    }
+
+    pub fn send_gif(&mut self, slug: &str) {
+        let channel = self.current_channel_id();
+        if channel == 0 {
+            return;
+        }
+        self.send(Command::SendGif {
+            channel,
+            slug: slug.to_string(),
+        });
+        self.modal = Modal::None;
+    }
+
+    pub fn load_activities(&mut self) {
+        self.send(Command::LoadActivities {
+            guild: self.active_guild,
+        });
+    }
+
+    pub fn open_activities(&mut self, channel: Id) {
+        self.load_activities();
+        self.modal = Modal::Activities(channel);
+    }
+
+    pub fn start_activity(&mut self, channel: Id, activity: Id) {
+        self.send(Command::StartActivity { channel, activity });
+        self.modal = Modal::None;
+    }
+
+    pub fn stop_activity(&mut self, channel: Id) {
+        self.send(Command::StopActivity { channel });
+    }
+
+    pub fn stage_action(&mut self, channel: Id, action: &str, user: Option<Id>) {
+        self.send(Command::StageAction {
+            channel,
+            action: action.to_string(),
+            user,
+        });
+    }
+
+    pub fn load_stage(&mut self, channel: Id) {
+        self.send(Command::LoadStage { channel });
+    }
+
+    pub fn join_stage(&mut self, channel: Id) {
+        self.set_voice(Some(channel));
+        self.load_stage(channel);
+    }
+
     pub fn set_voice(&mut self, channel: Option<Id>) {
         crate::voice::set_local_user(self.me.id);
         crate::voice::set_quality(self.video_quality);
@@ -66,11 +129,22 @@ impl App {
             .filter(|kbps| *kbps > 0)
             .unwrap_or(64);
         crate::voice::set_audio_bitrate(bitrate);
-        let guild = self.active_guild;
+        let guild = channel
+            .and_then(|id| self.channel(id))
+            .and_then(|channel| channel.guild_id)
+            .or_else(|| self.active_guild().map(|guild| guild.id))
+            .unwrap_or(0);
         if channel.is_none() {
             self.voice_camera = false;
             self.voice_screen = false;
             self.voice_video.clear();
+            self.voice_video_info.clear();
+            // Update locally right away: otherwise the "Voice Connected"
+            // panel lingers until a gateway event arrives. With a guild id the
+            // backend's disconnect event is visible to everyone in the server.
+            self.voice.remove(&self.me.id);
+            self.sync_overlay();
+            self.mark_cache_dirty();
             self.send(Command::Video {
                 channel: None,
                 kind: "none".into(),
@@ -147,10 +221,12 @@ impl App {
         }
         let body = self.thread_body.text.trim().to_string();
         self.pending_thread_body = (!body.is_empty()).then_some(body);
+        let tag_ids = std::mem::take(&mut self.thread_tag_ids);
         self.send(Command::CreateThread {
             channel: parent,
             message,
             name,
+            tag_ids,
         });
         self.modal = Modal::None;
     }

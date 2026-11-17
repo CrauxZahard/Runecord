@@ -4,13 +4,21 @@ use super::super::*;
 use std::sync::Arc;
 
 pub(crate) fn login(shared: &Arc<Shared>, username: String, password: String) {
-    match shared.post("/api/login", &AuthRequest { username, password }) {
-        Ok(v) => match serde_json::from_value::<AuthResponse>(v) {
-            Ok(auth) => complete_auth(shared, auth),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Post,
+        "/api/login".to_string(),
+        AuthRequest {
+            username,
+            password,
+            signup_code: None,
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+        move |result: Result<AuthResponse, String>| match result {
+            Ok(auth) => complete_auth(&done, auth),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
 }
 
 pub(crate) fn register(
@@ -18,24 +26,42 @@ pub(crate) fn register(
     username: String,
     display_name: String,
     password: String,
+    signup_code: String,
 ) {
-    let body = serde_json::json!({ "username": username, "display_name": display_name, "password": password });
-    match shared.post("/api/register", &body) {
-        Ok(v) => match serde_json::from_value::<AuthResponse>(v) {
-            Ok(auth) => complete_auth(shared, auth),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let body = serde_json::json!({
+        "username": username,
+        "display_name": display_name,
+        "password": password,
+        "signup_code": signup_code,
+    });
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Post,
+        "/api/register".to_string(),
+        body,
+        move |result: Result<AuthResponse, String>| match result {
+            Ok(auth) => complete_auth(&done, auth),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
 pub(crate) fn logout(shared: &Arc<Shared>) {
-    let _ = shared.post("/api/logout", &serde_json::json!({}));
-    if let Ok(mut token) = shared.token.lock() {
-        *token = None;
-    }
-    write_token(&shared.profile, None);
-    shared.emit(NetEvent::Error(String::new()));
+    let done = shared.clone();
+    fire_then(
+        shared,
+        HttpMethod::Post,
+        "/api/logout".to_string(),
+        serde_json::json!({}),
+        move |_| {
+            if let Ok(mut token) = done.token.lock() {
+                *token = None;
+            }
+            write_token(&done.profile, None);
+            done.emit(NetEvent::Error(String::new()));
+        },
+    );
 }
 
 pub(crate) fn bootstrap(shared: &Arc<Shared>) {
@@ -52,52 +78,84 @@ pub(crate) fn update_profile_extras(
         "clear_activity": activity.is_none(),
         "connections": connections,
     });
-    match shared.patch("/api/me", &body) {
-        Ok(v) => match serde_json::from_value::<User>(v) {
-            Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Patch,
+        "/api/me".to_string(),
+        body,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
-pub(crate) fn upload_activity_artwork(shared: &Arc<Shared>, path: std::path::PathBuf) {
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let token = shared.token.lock().ok().and_then(|t| t.clone());
-            let mut req = shared
-                .client
-                .post(format!("{}/api/me/activity/artwork", shared.base))
-                .header("Content-Type", "application/octet-stream")
-                .body(bytes);
-            if let Some(t) = token {
-                req = req.bearer_auth(t);
+pub(crate) fn connection_challenge(shared: &Arc<Shared>) {
+    let done = shared.clone();
+    send_then(
+        shared,
+        HttpMethod::Post,
+        "/api/connections/challenge".to_string(),
+        serde_json::json!({}),
+        move |result| match result {
+            Ok(v) => {
+                let code = v
+                    .get("code")
+                    .and_then(|code| code.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                done.emit(NetEvent::ConnectionCode(code));
             }
-            match req.send() {
-                Ok(res) if res.status().is_success() => match res.json::<User>() {
-                    Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-                    Err(e) => shared.emit(NetEvent::Error(e.to_string())),
-                },
-                Ok(res) => shared.emit(NetEvent::Error(error_text(res))),
-                Err(e) => shared.emit(NetEvent::Error(format!(
-                    "Can't reach the local server: {e}"
-                ))),
-            }
-        }
-        Err(e) => shared.emit(NetEvent::Error(format!("Could not read image: {e}"))),
-    }
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
+}
+
+pub(crate) fn verify_connection(shared: &Arc<Shared>, kind: String, handle: String, url: String) {
+    let body = serde_json::json!({ "kind": kind, "handle": handle, "url": url });
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Post,
+        "/api/connections/verify".to_string(),
+        body,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
+}
+
+pub(crate) fn upload_activity_artwork(shared: &Arc<Shared>, source: UploadSource) {
+    let done = shared.clone();
+    upload_then(
+        shared,
+        "/api/me/activity/artwork".to_string(),
+        source,
+        "application/octet-stream".to_string(),
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
 }
 
 pub(crate) fn remove_activity_artwork(shared: &Arc<Shared>) {
-    match shared.delete_json("/api/me/activity/artwork") {
-        Ok(v) => match serde_json::from_value::<User>(v) {
-            Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Delete,
+        "/api/me/activity/artwork".to_string(),
+        serde_json::Value::Null,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn check_server(shared: &Arc<Shared>, url: String) {
     let target = format!("{}/api/version", url.trim_end_matches('/'));
     let result = shared
@@ -152,13 +210,17 @@ pub(crate) fn update_profile_style(
         "nameplate": nameplate,
         "profile_widget": widget,
     });
-    match shared.patch("/api/me", &body) {
-        Ok(v) => match serde_json::from_value::<User>(v) {
-            Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Patch,
+        "/api/me".to_string(),
+        body,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,19 +247,38 @@ pub(crate) fn update_profile(
         bio,
         custom_status,
     };
-    match shared.patch("/api/me", &body) {
-        Ok(v) => match serde_json::from_value::<User>(v) {
-            Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Patch,
+        "/api/me".to_string(),
+        body,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
 pub(crate) fn change_password(shared: &Arc<Shared>, current: String, new: String) {
     let body = serde_json::json!({ "current": current, "new": new });
-    match shared.post("/api/me/password", &body) {
-        Ok(_) => shared.emit(NetEvent::Notice("Password updated".into())),
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    let done = shared.clone();
+    send_then(
+        shared,
+        HttpMethod::Post,
+        "/api/me/password".to_string(),
+        body,
+        move |result| match result {
+            Ok(_) => done.emit(NetEvent::Notice("Password updated".into())),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
+}
+
+// Browser stub: probing another server uses the native client.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn check_server(shared: &Arc<Shared>, _url: String) {
+    shared.emit(NetEvent::Error(
+        "Checking a server address is not available in the web client yet.".to_string(),
+    ));
 }

@@ -10,119 +10,69 @@ pub(crate) fn video(shared: &Arc<Shared>, channel: Option<Id>, kind: String) {
     }
 }
 
-pub(crate) fn upload_user_image(shared: &Arc<Shared>, banner: bool, path: std::path::PathBuf) {
+pub(crate) fn upload_user_image(shared: &Arc<Shared>, banner: bool, source: UploadSource) {
     let kind = if banner { "banner" } else { "avatar" };
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let token = shared.token.lock().ok().and_then(|t| t.clone());
-            let mut req = shared
-                .client
-                .post(format!("{}/api/me/{kind}", shared.base))
-                .header("Content-Type", "application/octet-stream")
-                .body(bytes);
-            if let Some(t) = token {
-                req = req.bearer_auth(t);
-            }
-            match req.send() {
-                Ok(res) if res.status().is_success() => match res.json::<User>() {
-                    Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-                    Err(e) => shared.emit(NetEvent::Error(e.to_string())),
-                },
-                Ok(res) => shared.emit(NetEvent::Error(error_text(res))),
-                Err(e) => shared.emit(NetEvent::Error(format!(
-                    "Can't reach the local server: {e}"
-                ))),
-            }
-        }
-        Err(e) => shared.emit(NetEvent::Error(format!("Could not read image: {e}"))),
-    }
+    let done = shared.clone();
+    upload_then(
+        shared,
+        format!("/api/me/{kind}"),
+        source,
+        "application/octet-stream".to_string(),
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
 }
 
 pub(crate) fn remove_user_image(shared: &Arc<Shared>, banner: bool) {
     let kind = if banner { "banner" } else { "avatar" };
-    match shared.delete_json(&format!("/api/me/{kind}")) {
-        Ok(v) => match serde_json::from_value::<User>(v) {
-            Ok(user) => shared.emit(NetEvent::UserUpdate(Box::new(user))),
-            Err(e) => shared.emit(NetEvent::Error(e.to_string())),
+    let done = shared.clone();
+    send_then_json(
+        shared,
+        HttpMethod::Delete,
+        format!("/api/me/{kind}").to_string(),
+        serde_json::Value::Null,
+        move |result: Result<User, String>| match result {
+            Ok(user) => done.emit(NetEvent::UserUpdate(Box::new(user))),
+            Err(e) => done.emit(NetEvent::Error(e)),
         },
-        Err(e) => shared.emit(NetEvent::Error(e)),
-    }
+    );
 }
 
 pub(crate) fn fetch_image(shared: &Arc<Shared>, url: String) {
-    if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send()
-        && let Ok(bytes) = res.bytes()
-    {
-        if let Some(animation) = crate::image_anim::decode(&bytes) {
-            let first = animation.frames[0].rgba.clone();
-            shared.emit(NetEvent::Image {
-                url,
-                width: animation.width,
-                height: animation.height,
-                rgba: first,
-                frames: animation.frames,
-            });
-        } else {
-            match image::load_from_memory(&bytes) {
-                Ok(img) => {
-                    let rgba = img.to_rgba8();
-                    let (w, h) = rgba.dimensions();
-                    shared.emit(NetEvent::Image {
-                        url,
-                        width: w,
-                        height: h,
-                        rgba: rgba.into_raw(),
-                        frames: Vec::new(),
-                    });
-                }
-                Err(e) => shared.emit(NetEvent::Error(format!("Image: {e}"))),
-            }
-        }
-    }
+    fetch_image_then(shared, url);
 }
 
-pub(crate) fn upload(shared: &Arc<Shared>, channel: Id, path: std::path::PathBuf) {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "file".into());
-    let (w, h) = image::image_dimensions(&path).unwrap_or((0, 0));
-    let content_type = match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        _ => "application/octet-stream",
-    };
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let token = shared.token.lock().ok().and_then(|t| t.clone());
-            let res = shared
-                .client
-                .post(format!("{}/api/channels/{channel}/upload", shared.base))
-                .query(&[
-                    ("name", name),
-                    ("content_type", content_type.to_string()),
-                    ("width", w.to_string()),
-                    ("height", h.to_string()),
-                ])
-                .bearer_auth(token.unwrap_or_default())
-                .body(bytes)
-                .send();
-            match res {
-                Ok(r) if r.status().is_success() => match r.json::<UploadResponse>() {
-                    Ok(u) => shared.emit(NetEvent::Uploaded(Box::new(u.attachment))),
-                    Err(e) => shared.emit(NetEvent::Error(e.to_string())),
-                },
-                Ok(r) => shared.emit(NetEvent::Error(error_text(r))),
-                Err(e) => shared.emit(NetEvent::Error(e.to_string())),
-            }
+pub(crate) fn upload(shared: &Arc<Shared>, channel: Id, source: UploadSource) {
+    let (name, bytes) = match source.read() {
+        Ok(read) => read,
+        Err(e) => {
+            shared.emit(NetEvent::Error(e));
+            return;
         }
-        Err(e) => shared.emit(NetEvent::Error(format!("Could not read file: {e}"))),
-    }
+    };
+    let content_type = content_type_for(&name);
+    let (width, height) = image::load_from_memory(&bytes)
+        .map(|image| {
+            let rgba = image.to_rgba8();
+            rgba.dimensions()
+        })
+        .unwrap_or((0, 0));
+    let path = format!(
+        "/api/channels/{channel}/upload?name={}&content_type={}&width={width}&height={height}",
+        crate::net::encode_component(&name),
+        crate::net::encode_component(content_type),
+    );
+    let done = shared.clone();
+    upload_then(
+        shared,
+        path,
+        UploadSource::Bytes { name, bytes },
+        content_type.to_string(),
+        move |result: Result<UploadResponse, String>| match result {
+            Ok(response) => done.emit(NetEvent::Uploaded(Box::new(response.attachment))),
+            Err(e) => done.emit(NetEvent::Error(e)),
+        },
+    );
 }
