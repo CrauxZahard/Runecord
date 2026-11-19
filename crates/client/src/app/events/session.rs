@@ -119,7 +119,11 @@ impl App {
         if self.me.id != 0 {
             // Reconnecting must not clobber a status the user picked manually
             // (Idle, DND or Invisible).
-            let status = if up { self.my_presence } else { Presence::Offline };
+            let status = if up {
+                self.my_presence
+            } else {
+                Presence::Offline
+            };
             self.presence.insert(self.me.id, status);
             self.me.status = status;
             if let Some(user) = self.users.get_mut(&self.me.id) {

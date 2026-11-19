@@ -20,9 +20,9 @@ pub(crate) use voice::*;
 pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
     row()
         .key("settings-sheet")
-        .w(sheet_w(800.0))
-        .h(sheet_h(600.0))
-        .radius(8.0)
+        .w(800.0)
+        .h(600.0)
+        .radius(12.0)
         .clip_rounded(8.0)
         .fill(p.modal)
         .shadow(12.0, 32.0, p.shadow)
@@ -33,13 +33,6 @@ pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
 
 /// Settings as a full-window page rather than a centred dialog.
 pub(crate) fn settings_page(s: &App, cx: &mut Cx<App>, p: Palette, tab: SettingsTab) -> El {
-    if mobile() {
-        return if s.mobile_settings {
-            mobile_settings_body(s, cx, p, tab)
-        } else {
-            mobile_settings_index(s, p)
-        };
-    }
     let trailing = cx.chrome_insets().trailing;
     col()
         .key("settings-page")
@@ -57,129 +50,14 @@ pub(crate) fn settings_page(s: &App, cx: &mut Cx<App>, p: Palette, tab: Settings
         )
 }
 
-/// The phone settings index: a full-width section list with a way out.
-fn mobile_settings_index(s: &App, p: Palette) -> El {
-    col()
-        .key("settings-page")
-        .w_full()
-        .grow(1.0)
-        .min_h(0.0)
-        .fill(p.modal_sidebar)
-        .child(
-            row()
-                .key("settings-mobile-head")
-                .w_full()
-                .h(52.0)
-                .px(6.0)
-                .gap(4.0)
-                .center_y()
-                .child(mobile_header_button(
-                    "settings-close",
-                    "Close settings",
-                    &icons::CLOSE,
-                    |s: &mut App| s.modal = Modal::None,
-                    p,
-                ))
-                .child(
-                    text("Settings")
-                        .font(theme::TITLE)
-                        .color(p.text_bright)
-                        .grow(1.0),
-                ),
-        )
-        .child(
-            col()
-                .w_full()
-                .grow(1.0)
-                .min_h(0.0)
-                .scroll(ScrollSpec {
-                    stick_bottom: false,
-                })
-                .child(settings_nav(s, p, s.settings_tab, 0.0)),
-        )
-}
-
-/// One settings section on a phone, with a back button to the section list.
-fn mobile_settings_body(s: &App, cx: &mut Cx<App>, p: Palette, tab: SettingsTab) -> El {
-    col()
-        .key("settings-page")
-        .w_full()
-        .grow(1.0)
-        .min_h(0.0)
-        .fill(p.chat)
-        .child(
-            row()
-                .key("settings-mobile-head")
-                .w_full()
-                .h(52.0)
-                .px(6.0)
-                .gap(4.0)
-                .center_y()
-                .child(mobile_header_button(
-                    "settings-back",
-                    "Back to the settings list",
-                    &icons::CHEVRON_LEFT,
-                    |s: &mut App| s.close_mobile_settings(),
-                    p,
-                ))
-                .child(
-                    text(settings_tab_title(tab))
-                        .font(theme::TITLE)
-                        .color(p.text_bright)
-                        .grow(1.0),
-                )
-                .child(mobile_header_button(
-                    "settings-close",
-                    "Close settings",
-                    &icons::CLOSE,
-                    |s: &mut App| s.modal = Modal::None,
-                    p,
-                )),
-        )
-        .child(settings_body(s, p, tab, false, cx.chrome_insets().trailing))
-}
-
-fn settings_tab_title(tab: SettingsTab) -> &'static str {
-    match tab {
-        SettingsTab::Account => "My Account",
-        SettingsTab::Profile => "Profile",
-        SettingsTab::Application => "Application",
-        SettingsTab::Appearance => "Appearance",
-        SettingsTab::Notifications => "Notifications",
-        SettingsTab::Voice => "Voice & Video",
-        SettingsTab::Keybinds => "Keybinds",
-        // Bots & apps are created in the Runecord developer portal (soon).
-        SettingsTab::Bots => "Application",
-    }
-}
-
-/// A square icon button sized for a finger, used by the phone headers.
-pub(crate) fn mobile_header_button(
-    key: &'static str,
-    label: &'static str,
-    ic: &'static rune::Icon,
-    action: fn(&mut App),
-    p: Palette,
-) -> El {
-    el().key(key)
-        .size(44.0, 44.0)
-        .radius(8.0)
-        .center()
-        .role("button")
-        .label(label)
-        .hover(p.rail)
-        .on_press(move |s: &mut App| action(s))
-        .child(icon(ic, 22.0).color(p.text_muted))
-}
-
 fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
     let nav_item = |label: &'static str, t: SettingsTab, key: &'static str| {
         let selected = tab == t;
         el().key(key)
             .w_full()
-            .h(if mobile() { 44.0 } else { 32.0 })
+            .h(32.0)
             .px(8.0)
-            .radius(4.0)
+            .radius(8.0)
             .center_y()
             .role("tab")
             .label(crate::i18n::t(label))
@@ -278,7 +156,7 @@ fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
                 .w_full()
                 .h(32.0)
                 .px(8.0)
-                .radius(4.0)
+                .radius(8.0)
                 .center_y()
                 .role("button")
                 .label("Log Out")
@@ -302,7 +180,7 @@ fn settings_input(
         .key(key)
         .w_full()
         .h(38.0)
-        .radius(4.0)
+        .radius(8.0)
         .fill(p.input)
         .color(p.text)
         .role("textbox")
@@ -358,9 +236,12 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
         SettingsTab::Bots => application_tab(s, p),
     };
 
-    let mut shell = col().key("settings-body").grow(1.0).min_w(0.0).h_full();
-    if !mobile() {
-        shell = shell.child(
+    let shell = col()
+        .key("settings-body")
+        .grow(1.0)
+        .min_w(0.0)
+        .h_full()
+        .child(
             row()
                 .key("settings-top")
                 .h(64.0)
@@ -371,28 +252,28 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
                 .child(el().grow(1.0))
                 .child(close_button(p)),
         );
-    }
-    shell.child(
-        col()
-            .key("settings-scroll")
-            .grow(1.0)
-            .min_h(0.0)
-            .scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .child(
-                col()
-                    .key("settings-content")
-                    .w(sheet_w(820.0))
-                    .px(if mobile() { 16.0 } else { 40.0 })
-                    .pb(48.0)
-                    .gap(20.0)
-                    .child(body),
-            ),
-    )
-    // Sticky footer: unlike the old button at the end of the profile section,
-    // this stays visible while scrolling through the long profile form.
-    .children((tab == SettingsTab::Profile).then(|| profile_save_bar(s, p)))
+    shell
+        .child(
+            col()
+                .key("settings-scroll")
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(
+                    col()
+                        .key("settings-content")
+                        .w(820.0)
+                        .px(40.0)
+                        .pb(48.0)
+                        .gap(20.0)
+                        .child(body),
+                ),
+        )
+        // Sticky footer: unlike the old button at the end of the profile section,
+        // this stays visible while scrolling through the long profile form.
+        .children((tab == SettingsTab::Profile).then(|| profile_save_bar(s, p)))
 }
 
 fn color_swatches(selected: u32, set: fn(&mut App, u32), p: Palette) -> El {
@@ -453,7 +334,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
     col()
         .key("server-menu")
         .w(220.0)
-        .radius(8.0)
+        .radius(12.0)
         .fill(theme::color("#111214"))
         .padding(8.0)
         .gap(2.0)
@@ -462,7 +343,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
         .children((!guild.banner_url.is_empty()).then(|| {
             el().w_full()
                 .h(64.0)
-                .radius(6.0)
+                .radius(10.0)
                 .clip_rounded(6.0)
                 .child(guild_banner_el(s, &guild, 64.0, p))
         }))
@@ -478,7 +359,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
                 .w_full()
                 .h(30.0)
                 .px(6.0)
-                .radius(4.0)
+                .radius(8.0)
                 .gap(6.0)
                 .center_y()
                 .role("button")
@@ -504,7 +385,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
                 .child(
                     el().w(54.0)
                         .h(6.0)
-                        .radius(3.0)
+                        .radius(8.0)
                         .clip_rounded(3.0)
                         .fill(p.rail)
                         .child(
@@ -531,13 +412,9 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
             )
         }))
         .children(can_channels.then(|| {
-            menu_item(
-                "Create Channel",
-                false,
-                "menu-channel",
-                p,
-                |s: &mut App| s.open_create_channel(None),
-            )
+            menu_item("Create Channel", false, "menu-channel", p, |s: &mut App| {
+                s.open_create_channel(None)
+            })
         }))
         .child(menu_item(
             "Notification Settings",

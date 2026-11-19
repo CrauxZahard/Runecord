@@ -21,52 +21,8 @@ use self::prelude::*;
 /// Height of the in-app titlebar the window's caption buttons sit over.
 pub const TITLEBAR_HEIGHT: f32 = 36.0;
 
-thread_local! {
-    /// Whether this view runs the phone layout: the window is narrower than
-    /// [`MOBILE_BREAKPOINT`] points. Set by [`view`] from the root's layout.
-    static MOBILE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The root's size in points, so modal sheets can fit the screen.
-    static MOBILE_SIZE: std::cell::Cell<(f32, f32)> = const { std::cell::Cell::new((1360.0, 860.0)) };
-}
-
-/// The width at which the desktop columns stop fitting side by side.
-pub(crate) const MOBILE_BREAKPOINT: f32 = 720.0;
-
-/// A phone held sideways is wider than [`MOBILE_BREAKPOINT`] but too short for
-/// the desktop columns; below this height the phone layout still applies.
-pub(crate) const MOBILE_LANDSCAPE_HEIGHT: f32 = 520.0;
-
-/// Whether the current view runs the phone layout.
-pub(crate) fn mobile() -> bool {
-    MOBILE.get()
-}
-
-/// The root's size in points, as laid out.
-pub(crate) fn mobile_size() -> (f32, f32) {
-    MOBILE_SIZE.get()
-}
-
-/// A modal sheet's width: its desktop width, shrunk to the phone with a margin.
-pub(crate) fn sheet_w(desktop: f32) -> f32 {
-    if mobile() {
-        (mobile_size().0 - 24.0).clamp(280.0, desktop)
-    } else {
-        desktop
-    }
-}
-
-/// A modal sheet's height: its desktop height, capped to the phone. A phone
-/// keyboard takes roughly half the screen and WebView keeps the layout
-/// viewport full height, so a sheet taller than about half would slide under
-/// the keyboard; its body scrolls instead.
-pub(crate) fn sheet_h(desktop: f32) -> f32 {
-    if mobile() {
-        let (_, height) = mobile_size();
-        (height * 0.46).clamp(240.0, desktop).min(height - 24.0)
-    } else {
-        desktop
-    }
-}
+/// Height of the navigation dock that runs under the titlebar.
+pub const DOCK_HEIGHT: f32 = 58.0;
 
 pub fn palette(dark: bool) -> Palette {
     if dark {
@@ -78,23 +34,8 @@ pub fn palette(dark: bool) -> Palette {
 
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let p = palette(s.dark);
-    let root = cx
-        .layout_with("app", |rect| (rect[2], rect[3]))
-        .unwrap_or((1360.0, 860.0));
-    let root = if root.0 <= 0.0 || root.1 <= 0.0 {
-        (1360.0, 860.0)
-    } else {
-        root
-    };
-    MOBILE_SIZE.set(root);
-    let narrow = root.0 < MOBILE_BREAKPOINT || root.1 < MOBILE_LANDSCAPE_HEIGHT;
-    MOBILE.set(narrow);
-    // Browser safe-area insets (status bar, cutout, gesture bar). Zero on
-    // desktop; a browser reports them through `viewport-fit=cover`.
-    let safe = cx.safe_area();
-    // Keyboard focus for every pressable control, as a web page has it: Tab
-    // reaches the form fields and buttons, which also lets the phone shell
-    // drive the login without pointing at canvas coordinates.
+    // Keyboard focus for every pressable control: Tab reaches the form fields
+    // and buttons.
     cx.web_focus();
     cx.caption_color(if s.dark { Color::WHITE } else { Color::BLACK });
     let mut root = col()
@@ -102,10 +43,6 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .w_full()
         .h_full()
         .fill(p.chat)
-        .pl(safe[3])
-        .pr(safe[1])
-        .pt(safe[0])
-        .pb(safe[2])
         .child(title_bar(s, cx, p));
     if !s.logged_in {
         if let Modal::Settings(tab) = s.modal {
@@ -125,9 +62,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         }
         return root;
     }
-    if matches!(s.modal, Modal::ServerSettings | Modal::Roles)
-        && s.can_open_server_settings()
-    {
+    if matches!(s.modal, Modal::ServerSettings | Modal::Roles) && s.can_open_server_settings() {
         root = root.child(server_settings_page(s, cx, p));
         if let Some(t) = &s.toast {
             root = root.child(toast(t, p));
@@ -135,9 +70,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         return root;
     }
     let shell = match s.screen {
-        Screen::Guild if narrow => guild_shell_mobile(s, cx, p),
         Screen::Guild => guild_shell(s, cx, p),
-        Screen::Dms if narrow => dm_shell_mobile(s, cx, p),
         Screen::Dms => dm_shell(s, cx, p),
     };
     if s.developer {
@@ -147,12 +80,6 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     } else {
         root = root.child(col().grow(1.0).min_h(0.0).child(shell));
     }
-    if let Some(menu) = &s.context_menu {
-        root = root.child(context_menu_layer(s, cx, menu, p));
-    }
-    if narrow && s.members_drawer && s.screen == Screen::Guild && s.mobile_chat {
-        root = root.child(member_drawer(s, p));
-    }
     if s.modal == Modal::ServerMenu {
         root = root.child(
             el().key("server-menu-layer")
@@ -160,13 +87,18 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
                 .items_start()
                 .justify_start()
                 .child(
-                    el().pl(80.0)
-                        .pt(TITLEBAR_HEIGHT + 20.0)
+                    el().pl(16.0)
+                        .pt(TITLEBAR_HEIGHT + DOCK_HEIGHT + 18.0)
                         .child(server_menu(s, p)),
                 ),
         );
     } else if s.modal != Modal::None {
         root = root.child(modal(s, p));
+    }
+    // Context menus sit above modals so a post menu works inside the thread
+    // browser.
+    if let Some(menu) = &s.context_menu {
+        root = root.child(context_menu_layer(s, cx, menu, p));
     }
     if let Some((url, width, height)) = &s.viewing_image {
         let image = if let Some(pixels) = s.images.get(url) {
@@ -225,46 +157,54 @@ fn title_bar(s: &App, cx: &Cx<App>, p: Palette) -> El {
     } else {
         (p.text_faint, "Offline")
     };
+    // The bar itself is the dusk sky: violet into magenta, ruled along the
+    // bottom by the amber head of the same sunset.
     let bar = row()
         .key("titlebar")
         .w_full()
-        .h(if mobile() { 30.0 } else { TITLEBAR_HEIGHT })
+        .h(TITLEBAR_HEIGHT)
         .pl(insets.leading + 12.0)
         .pr(insets.trailing + 12.0)
         .gap(9.0)
         .center_y()
         .fill(p.rail)
-        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
+        .gradient(theme::sunset_violet(p.dark), theme::sunset_magenta(p.dark))
+        .border_sides(
+            [0.0, 0.0, 2.0, 0.0],
+            theme::sunset_amber(p.dark).alpha(0.85),
+        )
         .window_drag()
         .child(
-            el().size(21.0, 21.0)
-                .radius(6.0)
-                .fill(p.accent)
+            el().size(22.0, 22.0)
+                .radius(11.0)
+                .fill(theme::sunset_amber(p.dark))
+                .gradient(theme::sunset_amber(p.dark), theme::sunset_magenta(p.dark))
+                .border(1.0, Color::WHITE.alpha(0.6))
                 .center()
                 .child(
-                    text("R")
+                    text("K")
                         .font(TextStyle::new(12.0, 800.0))
-                        .color(Color::WHITE),
+                        .color(p.accent_text),
                 ),
         )
         .child(
-            text("Runecord")
-                .font(TextStyle::new(14.0, 700.0))
-                .color(p.text_bright),
-        );
-    if mobile() {
-        // The chat header already names the channel; a phone bar only carries
-        // the app and its connection.
-        return bar
-            .child(el().grow(1.0))
-            .child(el().size(7.0, 7.0).radius(4.0).fill(dot))
-            .child(text(status).font(theme::TINY).color(p.text_faint));
-    }
-    bar.child(el().w(1.0).h(14.0).fill(p.divider).mx(2.0))
-        .child(text(section).font(theme::SMALL).color(p.text_muted))
-        .child(el().grow(1.0))
-        .child(el().size(7.0, 7.0).radius(4.0).fill(dot))
-        .child(text(status).font(theme::TINY).color(p.text_faint))
+            text("Kiln")
+                .font(TextStyle::new(15.0, 800.0))
+                .color(Color::WHITE),
+        )
+        .child(text("·").font(theme::TINY).color(Color::WHITE.alpha(0.55)));
+    bar.child(
+        text(section)
+            .font(theme::SMALL)
+            .color(Color::WHITE.alpha(0.82)),
+    )
+    .child(el().grow(1.0))
+    .child(el().size(7.0, 7.0).radius(8.0).fill(dot))
+    .child(
+        text(status)
+            .font(theme::TINY)
+            .color(Color::WHITE.alpha(0.75)),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -288,11 +228,12 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
         let input = text_input(edit, theme::BODY)
             .key(key)
             .w_full()
-            .h(40.0)
-            .radius(3.0)
-            .fill(p.rail)
+            .h(42.0)
+            .radius(14.0)
+            .fill(p.input)
             .color(p.text)
-            .padding(10.0)
+            .border(1.0, theme::gloss_edge(p))
+            .padding(11.0)
             .single_line()
             .on_edit(move |s: &mut App| match key {
                 "auth-user" => &mut s.auth_user,
@@ -314,49 +255,41 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
         };
         col()
             .gap(8.0)
-            .child(text(label).font(theme::SECTION).color(p.text_muted))
+            .child(text(label).font(theme::SECTION).color(p.accent))
             .child(input)
     };
 
-    let mut card = col()
-        .key("auth-card")
-        .w_full()
-        .max_w(480.0)
-        .radius(8.0)
-        .fill(p.modal)
-        .padding(32.0)
-        .gap(20.0)
-        .shadow(16.0, 48.0, p.shadow)
-        .child(text(title).font(theme::HERO).color(p.text_bright))
-        .child(text(sub).font(theme::SMALL).color(p.text_muted));
+    let mut body = col().w_full().gap(16.0);
 
     if register {
-        card = card.child(field("DISPLAY NAME", &s.auth_display, "auth-display"));
-        card = card.child(field("USERNAME", &s.auth_user, "auth-user"));
-        card = card.child(field("PASSWORD", &s.auth_pass, "auth-pass"));
+        body = body.child(field("DISPLAY NAME", &s.auth_display, "auth-display"));
+        body = body.child(field("USERNAME", &s.auth_user, "auth-user"));
+        body = body.child(field("PASSWORD", &s.auth_pass, "auth-pass"));
         if s.signup_mode == "code" {
-            card = card.child(field("SIGNUP CODE", &s.auth_code, "auth-code"));
+            body = body.child(field("SIGNUP CODE", &s.auth_code, "auth-code"));
         }
     } else {
-        card = card.child(field("USERNAME", &s.auth_user, "auth-user"));
-        card = card.child(field("PASSWORD", &s.auth_pass, "auth-pass"));
+        body = body.child(field("USERNAME", &s.auth_user, "auth-user"));
+        body = body.child(field("PASSWORD", &s.auth_pass, "auth-pass"));
     }
 
     if let Some(err) = &s.auth_error {
-        card = card.child(text(err.clone()).font(theme::SMALL).color(p.danger));
+        body = body.child(text(err.clone()).font(theme::SMALL).color(p.danger));
     }
 
-    card = card.child(
+    body = body.child(
         el().key("auth-submit")
             .w_full()
-            .h(44.0)
-            .radius(3.0)
-            .fill(if s.auth_busy {
-                p.accent_hover
-            } else {
-                p.accent
-            })
+            .h(46.0)
+            .radius(23.0)
+            .fill(p.accent)
+            .gradient(theme::sunset_magenta(p.dark), theme::sunset_violet(p.dark))
+            .border(
+                1.0,
+                theme::sunset_amber(p.dark).alpha(if s.auth_busy { 0.35 } else { 0.8 }),
+            )
             .hover(p.accent_hover)
+            .motion(motion::SNAPPY)
             .center()
             .on_press(|s: &mut App| {
                 if s.auth_register && s.signup_mode != "closed" {
@@ -379,13 +312,13 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     );
 
     if s.signup_mode == "closed" && !register {
-        card = card.child(
+        body = body.child(
             text("Registration is closed on this server.")
                 .font(theme::SMALL)
                 .color(p.text_muted),
         );
     } else {
-        card = card.child(
+        body = body.child(
             row()
                 .gap(6.0)
                 .center_y()
@@ -413,11 +346,12 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     // Demo accounts exist only in development builds; a release install starts
     // empty, so advertising them there was misleading.
     if !cfg!(release_build) {
-        card = card.child(
+        body = body.child(
             col()
                 .w_full()
-                .radius(4.0)
-                .fill(p.rail)
+                .radius(14.0)
+                .fill(p.card)
+                .border(1.0, p.divider_soft)
                 .padding(12.0)
                 .gap(4.0)
                 .child(
@@ -441,7 +375,7 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
 
     let connection_failed = s.server_config_error.is_some() || s.server_unreachable;
     if connection_failed {
-        card = card.child(
+        body = body.child(
             col()
                 .key("auth-server-error")
                 .w_full()
@@ -450,9 +384,9 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
                     row()
                         .gap(6.0)
                         .center_y()
-                        .child(el().size(8.0, 8.0).radius(4.0).fill(p.danger))
+                        .child(el().size(8.0, 8.0).radius(8.0).fill(p.danger))
                         .child(
-                            text("Runecord can’t connect to the server")
+                            text("Kiln can’t connect to the server")
                                 .font(theme::SMALL_MED)
                                 .color(p.danger),
                         ),
@@ -473,14 +407,15 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
                 )
                 .child(
                     el().key("auth-server-settings")
-                        .h(28.0)
-                        .px(10.0)
-                        .radius(4.0)
+                        .h(30.0)
+                        .px(12.0)
+                        .radius(15.0)
                         .center()
                         .role("button")
                         .label("Open Application Settings")
-                        .fill(p.rail_hover)
-                        .hover(p.card_hover)
+                        .fill(p.input)
+                        .border(1.0, p.divider_soft)
+                        .hover(p.input_hover)
                         .on_press(|s: &mut App| s.open_settings(SettingsTab::Application))
                         .child(
                             text("Open Application Settings")
@@ -494,54 +429,96 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     // old "waiting for the server" line read as a fault when nothing was wrong.
     // A real failure is the card above, and it names the address.
 
-    // On a phone the card takes the width it is given and the page scrolls
-    // when a short screen cannot hold it; the desktop keeps the card centred.
+    // The card is the hero: a glossy aubergine panel with the sunset laid along
+    // its top edge, the way a neon sign sits on a hotel facade.
+    let card = col()
+        .key("auth-card")
+        .w_full()
+        .max_w(440.0)
+        .radius(24.0)
+        .clip_rounded(24.0)
+        .fill(p.modal)
+        .gradient(theme::sunset_violet(p.dark).alpha(0.28), p.modal)
+        .border(1.0, theme::gloss_edge(p))
+        .shadow(18.0, 52.0, p.shadow)
+        .child(
+            row()
+                .key("auth-sunset")
+                .w_full()
+                .h(6.0)
+                .child(el().grow(1.0).h_full().fill(theme::sunset_amber(p.dark)))
+                .child(el().grow(1.0).h_full().fill(theme::sunset_magenta(p.dark)))
+                .child(el().grow(1.0).h_full().fill(theme::sunset_violet(p.dark))),
+        )
+        .child(
+            col()
+                .w_full()
+                .padding(28.0)
+                .gap(16.0)
+                .child(text(title).font(theme::HERO).color(p.text_bright))
+                .child(text(sub).font(theme::SMALL).color(p.text_muted))
+                .child(body),
+        );
+
+    // The card takes the width it is given and the page scrolls when a short
+    // screen cannot hold it; the desktop keeps the card centred.
     let viewport_h = cx.layout_size("auth").map(|size| size[1]).unwrap_or(0.0);
     let column = col()
         .w_full()
         .min_h(viewport_h)
         .justify_center()
-        .px(if mobile() { 20.0 } else { 0.0 })
-        .py(if mobile() { 20.0 } else { 0.0 })
         .items_center()
         .child(card);
-    let mut page = col().key("auth").w_full().grow(1.0).min_h(0.0).fill(p.rail);
-    if mobile() {
-        page = page.scroll(ScrollSpec {
-            stick_bottom: false,
-        });
-    } else {
-        page = page.center();
-    }
-    page.child(column)
+    col()
+        .key("auth")
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
+        .fill(p.rail)
+        .gradient(theme::sunset_violet(p.dark).alpha(0.45), p.chat)
+        .center()
+        .child(column)
 }
 
 // ---------------------------------------------------------------------------
 // Shell
 // ---------------------------------------------------------------------------
 
-fn guild_shell(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    let mut shell = row()
-        .key("shell")
-        .w_full()
-        .h_full()
+/// The conversation as a floating card: rounded on every corner so the channel
+/// header reads as the card's own top edge and the composer never touches the
+/// window's bottom.
+fn conversation_card(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
+    col()
+        .grow(1.0)
+        .min_w(0.0)
+        .min_h(0.0)
+        .radius(22.0)
+        .clip_rounded(22.0)
         .fill(p.chat)
-        .child(rail(s, p))
-        .child(sidebar(s, p))
-        .child(resize_handle(
-            "sidebar-resize",
-            1.0,
-            180.0,
-            460.0,
-            |s: &mut App| &mut s.sidebar_width,
-            p,
-        ))
-        .child(chat(s, cx, p));
+        .border(1.0, theme::gloss_edge(p))
+        .child(chat(s, cx, p))
+}
+
+fn guild_shell(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     let in_voice = s
         .current_channel()
         .is_some_and(|channel| channel.kind == ChannelKind::Voice);
+    // Navigation rides the top edge, the channel tree is a strip beneath it,
+    // the conversation floats in the middle with members on the far right, and
+    // the voice/account controls close the window along the bottom.
+    let mut body = row()
+        .w_full()
+        .grow(1.0)
+        .min_h(0.0)
+        .fill(p.chat)
+        .pt(8.0)
+        .pb(8.0)
+        .pl(8.0)
+        .pr(8.0)
+        .gap(6.0)
+        .child(conversation_card(s, cx, p));
     if s.show_members && !in_voice {
-        shell = shell
+        body = body
             .child(resize_handle(
                 "members-resize",
                 -1.0,
@@ -550,63 +527,29 @@ fn guild_shell(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
                 |s: &mut App| &mut s.members_width,
                 p,
             ))
-            .child(member_list(
-                s,
-                p,
-                if cx.chrome_insets().trailing > 0.0 {
-                    32.0
-                } else {
-                    0.0
-                },
-            ));
+            .child(member_list(s, p, 0.0));
     }
-    shell
-}
-
-/// The phone layout. The rail and its list fill the screen until a channel is
-/// chosen, then the chat takes over; the titlebar's back button returns.
-fn guild_shell_mobile(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    if s.mobile_chat && s.active_channel != 0 {
-        return chat(s, cx, p);
-    }
-    row()
+    col()
         .key("shell")
         .w_full()
         .h_full()
         .fill(p.chat)
         .child(rail(s, p))
-        .child(sidebar(s, p).w_full().grow(1.0).min_w(0.0))
-}
-
-fn dm_shell_mobile(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    if s.mobile_chat && (s.dm_home || s.active_dm != 0) {
-        return dm_main(s, cx, p);
-    }
-    row()
-        .key("shell")
-        .w_full()
-        .h_full()
-        .fill(p.chat)
-        .child(rail(s, p))
-        .child(dm_sidebar(s, p).w_full().grow(1.0).min_w(0.0))
-}
-
-/// The member list as a drawer over the chat, dimmed behind it.
-fn member_drawer(s: &App, p: Palette) -> El {
-    el().key("member-drawer")
-        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-        .child(
-            el().key("member-drawer-scrim")
-                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-                .fill(Color::BLACK.alpha(0.45))
-                .on_press(|s: &mut App| s.members_drawer = false),
-        )
+        .child(sidebar(s, p))
+        .child(body)
         .child(
             row()
-                .key("member-drawer-panel")
-                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-                .justify_end()
-                .child(member_list(s, p, 0.0).w(300.0).max_w(320.0)),
+                .key("status-rail")
+                .w_full()
+                .h(56.0)
+                .px(12.0)
+                .gap(8.0)
+                .center_y()
+                .fill(p.rail)
+                .border_sides([1.0, 0.0, 0.0, 0.0], theme::gloss_edge(p))
+                .children(voice_connected_panel(s, p))
+                .child(el().grow(1.0))
+                .child(user_panel(s, p)),
         )
 }
 
@@ -647,18 +590,24 @@ fn resize_handle(
 }
 
 fn dm_shell(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    row()
+    // Mirrors the guild shell: the dock runs along the top, conversations keep
+    // their own column and the friends page fills what is left.
+    let mut body = row().w_full().grow(1.0).min_h(0.0).fill(p.chat);
+    if s.dm_home || s.active_dm == 0 {
+        body = body.child(dm_sidebar(s, p));
+    }
+    body = body.child(dm_main(s, cx, p));
+    col()
         .key("shell")
         .w_full()
         .h_full()
         .fill(p.chat)
         .child(rail(s, p))
-        .child(dm_sidebar(s, p))
-        .child(dm_main(s, cx, p))
+        .child(body)
 }
 
 // ---------------------------------------------------------------------------
-// Server rail
+// Surfaces
 // ---------------------------------------------------------------------------
 
 mod chat;

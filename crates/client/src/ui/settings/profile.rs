@@ -51,12 +51,7 @@ pub(crate) fn profile_tab(s: &App, p: Palette) -> El {
                 .child(el().w_full().h(1.0).fill(p.divider))
                 .child(
                     {
-                        let mut assets = row().w_full().gap(18.0);
-                        if mobile() {
-                            // Avatar and banner stack on a phone instead of
-                            // running past the card's right edge.
-                            assets = assets.flex_wrap();
-                        }
+                        let assets = row().w_full().gap(18.0);
                         assets
                         .child(
                             col()
@@ -875,17 +870,13 @@ pub(crate) fn profile_save_bar(s: &App, p: Palette) -> El {
         .key("profile-save-bar")
         .w_full()
         .h(56.0)
-        .px(if mobile() { 16.0 } else { 40.0 })
+        .px(40.0)
         .gap(8.0)
         .center_y()
         .fill(p.modal)
         .border_sides([1.0, 0.0, 0.0, 0.0], p.divider)
         .shadow(0.0, -8.0, p.shadow)
-        .children(dirty.then(|| {
-            text("Unsaved changes")
-                .font(theme::TINY)
-                .color(p.yellow)
-        }))
+        .children(dirty.then(|| text("Unsaved changes").font(theme::TINY).color(p.yellow)))
         .child(el().grow(1.0))
         .child(
             el().key("profile-reset")
@@ -915,12 +906,10 @@ pub(crate) fn profile_save_bar(s: &App, p: Palette) -> El {
                         s.save_profile();
                     }
                 })
-                .child(
-                    text("Save Changes").font(theme::SMALL_MED).color(if dirty {
-                        Color::WHITE
-                    } else {
-                        p.text_faint
-                    }),
-                ),
+                .child(text("Save Changes").font(theme::SMALL_MED).color(if dirty {
+                    Color::WHITE
+                } else {
+                    p.text_faint
+                })),
         )
 }

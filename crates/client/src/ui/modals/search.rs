@@ -104,8 +104,8 @@ pub(crate) fn search_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("search-sheet")
-        .w(sheet_w(720.0))
-        .h(sheet_h(520.0))
+        .w(720.0)
+        .h(520.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -326,8 +326,8 @@ pub(crate) fn quick_switcher(s: &App, p: Palette) -> El {
 
     col()
         .key("quick-switcher")
-        .w(sheet_w(640.0))
-        .h(sheet_h(560.0))
+        .w(640.0)
+        .h(560.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

@@ -1,13 +1,33 @@
-# Rust build output
+# Rust build output: the root target directory and any per-crate copies made by
+# building with `--manifest-path` from inside a crate.
 /target/
 **/target/
+*.rs.bk
 
-# Local runtime data and generated screenshot evidence
-/data/
-/shots/
+# Profiling and coverage output
+*.profraw
+*.profdata
+perf.data
+perf.data.*
+
+# Release output: installer, signed binaries, tarballs and the download page copy
 /dist/
 
-# .NET helper build output
+# Local runtime data for the embedded server (database, uploads, logs)
+/data/
+
+# Screenshot and accessibility evidence captured by the scripts in scripts/
+/shots/
+
+# Local database files, in case the embedded server is pointed inside the tree
+*.db
+*.db-shm
+*.db-wal
+*.db.enc
+*.sqlite
+*.sqlite3
+
+# .NET helper build output (packaging tools)
 **/bin/
 **/obj/
 
@@ -15,19 +35,50 @@
 *.log
 .env
 .env.*
+!.env.example
 
-# Crash dumps
+# Crash dumps and symbols
 *.pdb
 *.dSYM/
+*.dmp
+*.core
+
+# Node tooling used by the docs and screenshot scripts
+node_modules/
 
 # OS and editor noise
 .DS_Store
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
 .idea/
 .vscode/
+*.iml
 *.swp
+*.swo
+*~
 
-# Linux cross-link helper copied next to the workspace
+# Linux cross-link helper copied next to the workspace (build-linux.ps1)
 /libxkbcommon.so.0.0.0
 /crates/client/libxkbcommon.so.0.0.0
+
+# AI UI editor. The edits themselves are ordinary source in crates/client/src/ui
+# and crates/ui/src and must stay tracked; this covers the machinery around them:
+# per-edit backups, staged builds and the machine's data dir when it is pointed
+# inside the tree (RUNECORD_DATA=./aiedit), plus its sealed key file.
+/aiedit/
+/runecord-data/
+/.runecord/
+/.env
+/.env.*
+!.env.example
+*.orig
+*.rej
+
+# Code-signing material and local installers
+*.pfx
+*.cer
+*.snk
+
+# Agent scratch directories
+/.opencode/

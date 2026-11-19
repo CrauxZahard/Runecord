@@ -89,6 +89,7 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         Modal::Reaction(id) => emoji_sheet(s, p, Some(*id)),
         Modal::Threads => threads_sheet(s, p),
         Modal::ThreadCreate { parent, message } => thread_create_sheet(s, p, *parent, *message),
+        Modal::ThreadTags(id) => thread_tags_sheet(s, p, *id),
         Modal::EditMessage(id) => edit_sheet(s, p, *id),
         Modal::ForwardMessage(id) => forward_sheet(s, p, *id),
         Modal::CreatePoll => create_poll_sheet(s, p),
@@ -98,13 +99,6 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         Modal::Activities(channel) => activities_sheet(s, p, *channel),
         Modal::GifPicker => gif_sheet(s, p),
         Modal::ScheduledMessages => scheduled_sheet(s, p),
-        Modal::MessageMenu(id) => message_menu(s, p, *id),
-        Modal::ConfirmDelete(id) => simple_sheet(
-            s,
-            p,
-            "Delete Message",
-            &format!("Are you sure you want to delete message {id}?"),
-        ),
         Modal::InviteJoin => invite_join_sheet(s, p),
         Modal::BanAppeal => ban_appeal_sheet(s, p),
         Modal::OnboardingRules(guild) => onboarding_rules_sheet(s, p, *guild),
@@ -124,7 +118,7 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
         .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
         .fill(p.scrim)
         .backdrop_blur(6.0);
-    let overlay = if matches!(s.modal, Modal::Inbox) && !mobile() {
+    let overlay = if matches!(s.modal, Modal::Inbox) {
         overlay
             .justify_end()
             .items_start()
@@ -133,34 +127,21 @@ pub(crate) fn modal(s: &App, p: Palette) -> El {
             .fill(Color::TRANSPARENT)
             .backdrop_blur(0.0)
     } else if matches!(s.modal, Modal::Profile(_)) {
-        // A member's profile appears as a card beside the member list,
-        // not as a centred dialog. A phone has no member column to sit beside.
-        if mobile() {
-            overlay
-                .center()
-                .px(16.0)
-                .fill(Color::TRANSPARENT)
-                .backdrop_blur(0.0)
-        } else {
-            overlay
-                .justify_end()
-                .items_end()
-                .pb(76.0)
-                .pr(if s.show_members {
-                    s.members_width + 14.0
-                } else {
-                    14.0
-                })
-                .fill(Color::TRANSPARENT)
-                .backdrop_blur(0.0)
-        }
-    } else {
-        // A phone has no room for the desktop margins; every sheet is capped
-        // by its own max width and the overlay keeps it off the edges.
+        // A member's profile appears as a card beside the member list, not as
+        // a centred dialog.
         overlay
-            .center()
-            .px(if mobile() { 12.0 } else { 0.0 })
-            .py(if mobile() { 12.0 } else { 0.0 })
+            .justify_end()
+            .items_end()
+            .pb(76.0)
+            .pr(if s.show_members {
+                s.members_width + 14.0
+            } else {
+                14.0
+            })
+            .fill(Color::TRANSPARENT)
+            .backdrop_blur(0.0)
+    } else {
+        overlay.center()
     };
     overlay
         .role("dialog")
@@ -211,6 +192,7 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::Reaction(_) => "Add reaction",
         Modal::Threads => "Threads",
         Modal::ThreadCreate { .. } => "Create thread",
+        Modal::ThreadTags(_) => "Edit tags",
         Modal::EditMessage(_) => "Edit message",
         Modal::ForwardMessage(_) => "Forward message",
         Modal::CreatePoll => "Create poll",
@@ -220,8 +202,6 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::Activities(_) => "Activities",
         Modal::GifPicker => "GIFs",
         Modal::ScheduledMessages => "Scheduled messages",
-        Modal::MessageMenu(_) => "Message actions",
-        Modal::ConfirmDelete(_) => "Delete message",
         Modal::InviteJoin => "Join server",
         Modal::BanAppeal => "Ban appeal",
         Modal::OnboardingRules(_) => "Server rules",
@@ -229,52 +209,4 @@ fn modal_title(modal: &Modal) -> &'static str {
         Modal::ChannelPermissions(_) => "Channel permissions",
         Modal::None => "Dialog",
     }
-}
-
-pub(super) fn simple_sheet(s: &App, p: Palette, title: &str, body: &str) -> El {
-    let _ = s;
-    col()
-        .key("simple-sheet")
-        .w(sheet_w(440.0))
-        .radius(8.0)
-        .clip_rounded(8.0)
-        .fill(p.modal)
-        .shadow(12.0, 32.0, p.shadow)
-        .modal(true, |s: &mut App| s.modal = Modal::None)
-        .child(
-            row()
-                .w_full()
-                .h(56.0)
-                .px(20.0)
-                .items_center()
-                .child(
-                    text(title.to_string())
-                        .font(theme::TITLE)
-                        .color(p.text_bright)
-                        .grow(1.0),
-                )
-                .child(close_button(p)),
-        )
-        .child(
-            col()
-                .w_full()
-                .px(20.0)
-                .pb(20.0)
-                .gap(12.0)
-                .child(
-                    text(body.to_string())
-                        .font(theme::SMALL)
-                        .color(p.text_muted),
-                )
-                .child(
-                    el().h(38.0)
-                        .px(16.0)
-                        .radius(4.0)
-                        .fill(p.accent)
-                        .hover(p.accent_hover)
-                        .center()
-                        .on_press(|s: &mut App| s.modal = Modal::None)
-                        .child(text("Done").font(theme::SMALL_MED).color(Color::WHITE)),
-                ),
-        )
 }

@@ -199,8 +199,8 @@ pub(crate) fn inbox_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("inbox-panel")
-        .w(sheet_w(420.0))
-        .h(sheet_h(760.0))
+        .w(420.0)
+        .h(760.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

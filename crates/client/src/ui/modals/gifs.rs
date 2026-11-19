@@ -37,8 +37,8 @@ pub(crate) fn gif_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("gif-sheet")
-        .w(sheet_w(560.0))
-        .h(sheet_h(480.0))
+        .w(560.0)
+        .h(480.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -56,13 +56,7 @@ pub(crate) fn gif_sheet(s: &App, p: Palette) -> El {
                         .color(p.text_bright)
                         .grow(1.0),
                 )
-                .child(if mobile() {
-                    // Focus a button, not the search field, so the keyboard
-                    // does not open over the picker before a search is asked.
-                    close_button(p).autofocus()
-                } else {
-                    close_button(p)
-                }),
+                .child(close_button(p)),
         )
         .child(
             text_input(&s.gif_query, theme::SMALL)

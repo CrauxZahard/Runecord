@@ -783,39 +783,19 @@ impl Net {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-const NOT_PORTED: &str = "That action is not available in the web client yet.";
-
 pub(crate) struct Shared {
     base: String,
     wake: Arc<Mutex<Option<rune::Waker>>>,
     token: Mutex<Option<String>>,
     profile: String,
-    #[cfg(not(target_arch = "wasm32"))]
     client: reqwest::blocking::Client,
     bootstrap_seen: AtomicBool,
 }
 
-#[cfg(target_arch = "wasm32")]
-fn session_path(_profile: &str) -> Option<std::path::PathBuf> {
-    None
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn session_path(profile: &str) -> Option<std::path::PathBuf> {
     Some(crate::paths::data_dir()?.join(format!("session-{profile}.txt")))
 }
 
-#[cfg(target_arch = "wasm32")]
-fn read_token(_profile: &str) -> Option<String> {
-    web_sys::window()
-        .and_then(|window| window.local_storage().ok().flatten())
-        .and_then(|storage| storage.get_item("runecord-token").ok().flatten())
-        .map(|token| token.trim().to_string())
-        .filter(|token| !token.is_empty())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn read_token(profile: &str) -> Option<String> {
     let path = session_path(profile)?;
     std::fs::read_to_string(path)
@@ -829,23 +809,6 @@ pub fn has_token(profile: &str) -> bool {
     read_token(profile).is_some()
 }
 
-#[cfg(target_arch = "wasm32")]
-fn write_token(_profile: &str, token: Option<&str>) {
-    let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten())
-    else {
-        return;
-    };
-    match token {
-        Some(token) => {
-            let _ = storage.set_item("runecord-token", token);
-        }
-        None => {
-            let _ = storage.remove_item("runecord-token");
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn write_token(profile: &str, token: Option<&str>) {
     let Some(path) = session_path(profile) else {
         return;
@@ -863,7 +826,6 @@ fn write_token(profile: &str, token: Option<&str>) {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn error_text(response: reqwest::blocking::Response) -> String {
     let status = response.status();
     let text = response.text().unwrap_or_default();
@@ -880,7 +842,6 @@ fn error_text(response: reqwest::blocking::Response) -> String {
 }
 
 impl Shared {
-    #[cfg(not(target_arch = "wasm32"))]
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self.client.get(format!("{}{}", self.base, path));
@@ -896,7 +857,6 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn post<B: serde::Serialize>(&self, path: &str, body: &B) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self
@@ -918,7 +878,6 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn put<B: serde::Serialize>(&self, path: &str, body: &B) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self.client.put(format!("{}{}", self.base, path)).json(body);
@@ -937,7 +896,6 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn patch<B: serde::Serialize>(
         &self,
         path: &str,
@@ -960,7 +918,6 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn delete_json(&self, path: &str) -> Result<serde_json::Value, String> {
         let token = self.token.lock().map_err(|_| "lock")?.clone();
         let mut req = self.client.delete(format!("{}{}", self.base, path));
@@ -977,7 +934,6 @@ impl Shared {
     }
 
     /// One call for every verb, used by the transport-neutral helpers.
-    #[cfg(not(target_arch = "wasm32"))]
     fn send(
         &self,
         method: HttpMethod,
@@ -994,7 +950,6 @@ impl Shared {
     }
 
     /// POST a raw byte body, used by uploads.
-    #[cfg(not(target_arch = "wasm32"))]
     fn post_bytes(
         &self,
         path: &str,
@@ -1022,51 +977,6 @@ impl Shared {
         res.json::<serde_json::Value>().map_err(|e| e.to_string())
     }
 
-    // Browser builds keep the same call sites for handlers that have not been
-    // ported to the callback form yet; they report a clear error instead of
-    // blocking the single UI thread.
-    #[cfg(target_arch = "wasm32")]
-    fn get(&self, _path: &str) -> Result<serde_json::Value, String> {
-        Err(NOT_PORTED.to_string())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn post<B: serde::Serialize>(
-        &self,
-        _path: &str,
-        _body: &B,
-    ) -> Result<serde_json::Value, String> {
-        Err(NOT_PORTED.to_string())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn put<B: serde::Serialize>(
-        &self,
-        _path: &str,
-        _body: &B,
-    ) -> Result<serde_json::Value, String> {
-        Err(NOT_PORTED.to_string())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn patch<B: serde::Serialize>(
-        &self,
-        _path: &str,
-        _body: &B,
-    ) -> Result<serde_json::Value, String> {
-        Err(NOT_PORTED.to_string())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn delete_json(&self, _path: &str) -> Result<serde_json::Value, String> {
-        Err(NOT_PORTED.to_string())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn delete(&self, _path: &str) -> Result<(), String> {
-        Err(NOT_PORTED.to_string())
-    }
-
     fn emit(&self, ev: NetEvent) {
         if let Ok(mut q) = EVENTS.lock() {
             q.push(ev);
@@ -1082,11 +992,7 @@ impl Shared {
 pub static EVENTS: Mutex<Vec<NetEvent>> = Mutex::new(Vec::new());
 
 // ---------------------------------------------------------------------------
-// Transport-neutral request helpers
-//
-// Desktop runs each request on the worker thread and calls back at once; the
-// browser spawns a fetch and calls back when it resolves. Handler code is the
-// same either way, so `net/http` compiles for both targets.
+// Request helpers
 // ---------------------------------------------------------------------------
 
 /// GET a path and decode it, handing the outcome to `then`.
@@ -1095,16 +1001,11 @@ where
     T: serde::de::DeserializeOwned + 'static,
     F: FnOnce(Result<T, String>) + 'static,
 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        then(
-            shared
-                .get(&path)
-                .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string())),
-        );
-    }
-    #[cfg(target_arch = "wasm32")]
-    web::get_result(shared, path, then);
+    then(
+        shared
+            .get(&path)
+            .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string())),
+    );
 }
 
 /// Any method with a JSON body, handing the raw response to `then`.
@@ -1119,12 +1020,7 @@ pub(crate) fn send_then<B, F>(
     F: FnOnce(Result<serde_json::Value, String>) + 'static,
 {
     let body = serde_json::to_value(&body).unwrap_or(serde_json::Value::Null);
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        then(shared.send(method, &path, &body));
-    }
-    #[cfg(target_arch = "wasm32")]
-    web::send_json(shared, method, path, body, then);
+    then(shared.send(method, &path, &body));
 }
 
 /// A request with no response body, reporting only success or failure.
@@ -1155,9 +1051,8 @@ pub(crate) enum HttpMethod {
 
 /// Where an uploaded file's bytes come from.
 ///
-/// Desktop reads a path returned by the native file dialog; the browser holds
-/// the bytes from an `<input type="file">` instead. Handlers only see the
-/// resolved `(name, bytes)`, so an upload is written once for both targets.
+/// Handlers only see the resolved `(name, bytes)`, so the upload path is
+/// written once regardless of where the file came from.
 #[derive(Clone, Debug)]
 pub enum UploadSource {
     Path(std::path::PathBuf),
@@ -1210,38 +1105,20 @@ pub(crate) fn upload_then<T, F>(
     T: serde::de::DeserializeOwned + 'static,
     F: FnOnce(Result<T, String>) + 'static,
 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let result = source
-            .read()
-            .and_then(|(_, bytes)| shared.post_bytes(&path, &bytes, &content_type))
-            .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string()));
-        then(result);
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        match source.read() {
-            Ok((_, bytes)) => web::upload_json(shared, path, bytes, content_type, then),
-            Err(e) => {
-                let _ = then;
-                web::report_error(shared, e);
-            }
-        }
-    }
+    let result = source
+        .read()
+        .and_then(|(_, bytes)| shared.post_bytes(&path, &bytes, &content_type))
+        .and_then(|value| serde_json::from_value::<T>(value).map_err(|e| e.to_string()));
+    then(result);
 }
 
 /// GET an image and decode it into the client's image event.
 pub(crate) fn fetch_image_then(shared: &Arc<Shared>, url: String) {
-    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send()
+        && let Ok(bytes) = res.bytes()
     {
-        if let Ok(res) = shared.client.get(format!("{}{}", shared.base, url)).send()
-            && let Ok(bytes) = res.bytes()
-        {
-            emit_image(shared, url, &bytes);
-        }
+        emit_image(shared, url, &bytes);
     }
-    #[cfg(target_arch = "wasm32")]
-    web::fetch_bytes(shared, url);
 }
 
 /// Decodes image bytes into a `NetEvent::Image`, honouring animation.
@@ -1281,54 +1158,6 @@ pub fn drain_events() -> Vec<NetEvent> {
     out
 }
 
-#[cfg(target_arch = "wasm32")]
-pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
-    let (cmd_tx, cmd_rx) = mpsc::channel::<Command>();
-    let base = crate::config::effective_server_url();
-    let profile = fast_profile
-        .or_else(|| std::env::var("RUNECORD_PROFILE").ok())
-        .unwrap_or_else(|| "1".to_string());
-    let wake = Arc::new(Mutex::new(None));
-    let shared = Arc::new(Shared {
-        base,
-        wake: wake.clone(),
-        token: Mutex::new(read_token(&profile)),
-        profile,
-        bootstrap_seen: AtomicBool::new(false),
-    });
-
-    if shared.token.lock().map(|t| t.is_some()).unwrap_or(false) {
-        let fetch_shared = shared.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            crate::net::web::wait(500).await;
-            if !fetch_shared.bootstrap_seen.load(Ordering::SeqCst) {
-                web::fetch_bootstrap(&fetch_shared);
-            }
-        });
-    }
-
-    {
-        let shared = shared.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            loop {
-                while let Ok(cmd) = cmd_rx.try_recv() {
-                    http::dispatch(&shared, cmd);
-                }
-                crate::net::web::wait(16).await;
-            }
-        });
-    }
-    {
-        let shared = shared.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            ws_worker(shared);
-        });
-    }
-
-    Net { tx: cmd_tx, wake }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn start(fast_profile: Option<String>, _hydrated: bool) -> Net {
     let (cmd_tx, cmd_rx) = mpsc::channel::<Command>();
     let base = crate::config::effective_server_url();

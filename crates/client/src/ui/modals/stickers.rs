@@ -42,8 +42,8 @@ pub(crate) fn sticker_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("sticker-sheet")
-        .w(sheet_w(520.0))
-        .h(sheet_h(420.0))
+        .w(520.0)
+        .h(420.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

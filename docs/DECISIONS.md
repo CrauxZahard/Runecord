@@ -316,3 +316,39 @@ through `/api/channels/{id}/components`.
 
 **Consequences.** The client has no component editor; bots own the component
 payload. Component rows are removed with their message or channel.
+
+## 22. The AI UI editor writes through an allowlist and stages binaries
+
+**Context.** "Edit your own UI" lets a model rewrite the view layer and rebuild
+the app. A prompt asking it not to touch logic is not a boundary, and a failed
+build must not leave an install that cannot start.
+
+**Decision.** Generated patches go through `crates/client/src/aiedit/patch.rs`,
+which rejects the whole reply unless every path is under
+`crates/client/src/ui/` or `crates/ui/src/`. Files are backed up per edit.
+Builds run as a child process into the release profile, and the result is copied
+to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>`; the running binary is never
+overwritten. A restart starts the staged build through a supervisor copy of the
+executable, which waits for that build's ready marker (`App::poll` writes it)
+and reopens the previous binary if it never appears.
+
+**Consequences.** "UI only" is enforced by the writer rather than by the system
+prompt, and no edit can reach `net/`, `config.rs` or the session tokens. A failed
+build restores the previous files automatically, so the tree still compiles. The
+cost is that an edit rebuilds the whole `runecord` crate (1-3 minutes warm): the
+`crates/ui` crate exists for tokens today, and moving screens into it is what
+will shorten that build, not the allowlist. The key lives in `aiedit\.env` as a
+DPAPI-sealed blob, so it is bound to the signed-in account and never written in
+the clear; saving verifies the file reads back before the card reports success.
+
+The model runs as an orchestrator rather than one prompt: it plans, requests the
+files it needs, patches, and gets compiler errors fed back for up to two repairs.
+The caps live in `aiedit/mod.rs` (`MAX_STEPS`, `MAX_FILE_ROUNDS`, `MAX_REPAIRS`,
+`MAX_IDLE`) so a looping model cannot spin forever or exhaust the user's budget.
+
+Each staged build records the goal, its files and the backup it came from, so
+the card can list versions and switch between them; switching restores that
+build's source first, keeping the tree and the running UI in step. Five builds
+are kept — each is a full 88 MB executable — and the ones a restart can fall
+back to (`current`, `last_good`, `base`, `pending`) are never pruned.
+

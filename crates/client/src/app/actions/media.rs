@@ -329,7 +329,7 @@ impl App {
 }
 
 /// Encodes RGBA pixels as PNG in memory, so a cropped image never needs a
-/// temporary file (and works in the browser, which has no filesystem).
+/// temporary file.
 fn encode_png(rgba: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     let image = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;

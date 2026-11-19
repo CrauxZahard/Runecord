@@ -621,7 +621,6 @@ pub(crate) fn load_audit(
     );
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn set_overwrite(
     shared: &Arc<Shared>,
     channel: Id,
@@ -645,7 +644,6 @@ pub(crate) fn set_overwrite(
     shared.emit(NetEvent::GuildChanged);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_overwrite(shared: &Arc<Shared>, channel: Id, target: Id, kind: String) {
     let token = shared
         .token
@@ -802,36 +800,4 @@ pub(crate) fn voice(shared: &Arc<Shared>, guild: Id, channel: Option<Id>, mute: 
             Err(e) => done.emit(NetEvent::Error(e)),
         },
     );
-}
-
-// Browser stub: this path reads or writes local files through the native client.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn check_server(shared: &Arc<Shared>, _url: String) {
-    let _ = (_url);
-    shared.emit(NetEvent::Error(
-        "That action is not available in the web client yet.".to_string(),
-    ));
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn set_overwrite(
-    shared: &Arc<Shared>,
-    _channel: Id,
-    _target: Id,
-    _kind: String,
-    _allow: u64,
-    _deny: u64,
-) {
-    let _ = (_channel, _target, _kind, _allow, _deny);
-    shared.emit(NetEvent::Error(
-        "That action is not available in the web client yet.".to_string(),
-    ));
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn clear_overwrite(shared: &Arc<Shared>, _channel: Id, _target: Id, _kind: String) {
-    let _ = (_channel, _target, _kind);
-    shared.emit(NetEvent::Error(
-        "That action is not available in the web client yet.".to_string(),
-    ));
 }

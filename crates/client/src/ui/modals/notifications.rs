@@ -57,7 +57,7 @@ pub(crate) fn notify_channel_picker_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("notify-channel-picker")
-        .w(sheet_w(420.0))
+        .w(420.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -244,7 +244,7 @@ pub(crate) fn server_notifications_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("server-notifications")
-        .w(sheet_w(480.0))
+        .w(480.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(16.0)
@@ -331,14 +331,6 @@ pub(crate) fn server_notifications_sheet(s: &App, p: Palette) -> El {
             settings.mute_new_events,
             "guild-notify-mute-events",
             App::toggle_guild_mute_new_events,
-            p,
-        ))
-        .child(switch_row(
-            "Mobile Push Notifications",
-            None,
-            settings.mobile_push,
-            "guild-notify-mobile-push",
-            App::toggle_guild_mobile_push,
             p,
         ))
         .child(el().w_full().h(1.0).fill(p.divider))
@@ -483,7 +475,7 @@ pub(crate) fn channel_notifications_sheet(s: &App, p: Palette, channel: Id) -> E
     }
     col()
         .key("channel-notifications")
-        .w(sheet_w(400.0))
+        .w(400.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)

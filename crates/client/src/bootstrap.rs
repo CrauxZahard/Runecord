@@ -147,7 +147,6 @@ pub fn run() {
     if let Some(bytes) = icon_bytes.as_deref() {
         let _ = rune::set_app_icon(bytes.to_vec());
     }
-    #[cfg(not(target_arch = "wasm32"))]
     let _ = rune_notify::register(
         &rune_notify::Identity::new("com.runecord.local", "Runecord").icon(icon_path),
     );
@@ -262,9 +261,41 @@ pub fn run() {
                 }
             }),
             ("message-menu", |s: &mut App| {
+                s.logged_in = true;
                 s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 211;
+                s.context_menu = Some(crate::app::ContextMenu {
+                    kind: crate::app::ContextMenuKind::Message(1011),
+                    anchor: crate::app::ContextMenuAnchor::Element("msg-actions-1011".into()),
+                });
+            }),
+            ("everyone-message", |s: &mut App| {
+                s.logged_in = true;
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
                 s.active_channel = 201;
-                s.modal = Modal::MessageMenu(1011)
+                if let Some(messages) = s.messages.get_mut(&201) {
+                    for message in messages.iter_mut() {
+                        message.content = format!("@everyone {}", message.content);
+                        message.mention_everyone = true;
+                    }
+                }
+            }),
+            ("everyone-mention", |s: &mut App| {
+                s.logged_in = true;
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 201;
+                s.composer = rune::TextEdit::new("@every");
+            }),
+            ("role-everyone", |s: &mut App| {
+                s.logged_in = true;
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.open_server_settings();
+                s.server_tab = ServerTab::Roles;
+                s.select_role(900);
             }),
             ("forward-message", |s: &mut App| {
                 s.screen = Screen::Guild;
@@ -431,6 +462,69 @@ pub fn run() {
                 s.screen = Screen::Guild;
                 s.active_guild = 100;
                 s.active_channel = 215;
+            }),
+            ("forum-list", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 215;
+                s.forum_list_layout = true;
+            }),
+            ("thread-tags", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.thread_parent = Some(215);
+                s.active_channel = 216;
+                s.open_thread_tags(216);
+            }),
+            ("thread-view", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.thread_parent = Some(215);
+                s.active_channel = 216;
+                s.channel_seen.insert(216, runecord_protocol::now_ms());
+            }),
+            ("thread-archived", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.thread_parent = Some(201);
+                s.active_channel = 219;
+                s.channel_seen.insert(219, runecord_protocol::now_ms());
+            }),
+            ("forum-post", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.thread_parent = Some(215);
+                s.active_channel = 217;
+                s.channel_seen.insert(217, runecord_protocol::now_ms());
+            }),
+            ("thread-create", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 201;
+                s.profile_edit = rune::TextEdit::new("Ideas for the welcome channel");
+                s.thread_body = rune::TextEdit::new(
+                    "The intro could point at the events calendar and the roles picker.",
+                );
+                s.forum_guidelines_ok = false;
+                s.modal = Modal::ThreadCreate {
+                    parent: 201,
+                    message: None,
+                };
+            }),
+            ("forum-new-post", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 215;
+                s.profile_edit = rune::TextEdit::new("Feedback on the new sidebar");
+                s.thread_body = rune::TextEdit::new(
+                    "The grouping reads much better at 1440p. A few notes on spacing below.",
+                );
+                s.thread_tag_ids = vec![2302];
+                s.forum_guidelines_ok = false;
+                s.modal = Modal::ThreadCreate {
+                    parent: 215,
+                    message: None,
+                };
             }),
             ("audit", |s: &mut App| {
                 s.screen = Screen::Guild;
@@ -701,7 +795,12 @@ pub fn run() {
             }),
             ("invite", |s: &mut App| s.modal = Modal::Invite),
             ("add-friend", |s: &mut App| s.modal = Modal::AddFriend),
-            ("threads", |s: &mut App| s.modal = Modal::Threads),
+            ("threads", |s: &mut App| {
+                s.screen = Screen::Guild;
+                s.active_guild = 100;
+                s.active_channel = 201;
+                s.modal = Modal::Threads;
+            }),
             ("leave", |s: &mut App| s.modal = Modal::ConfirmLeave(100)),
             ("notify", |s: &mut App| {
                 s.modal = Modal::ChannelNotifications(211)
@@ -865,8 +964,6 @@ pub fn run() {
         .maximized(true);
     crate::overlay::install(&mut app);
 
-    // The browser has no tray and no OS notification centre.
-    #[cfg(not(target_arch = "wasm32"))]
     {
         let tray_icon = icon_bytes
             .as_deref()

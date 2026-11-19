@@ -214,7 +214,7 @@ impl App {
                 thread: Some(runecord_protocol::ThreadInfo {
                     parent_id: 215,
                     name: "Keyboard shortcuts cheat sheet".into(),
-                    message_count: 4,
+                    message_count: 2,
                     archived: false,
                     preview: "Every shortcut I use daily, in one place.".into(),
                     tags: vec![2301],
@@ -234,10 +234,90 @@ impl App {
                 thread: Some(runecord_protocol::ThreadInfo {
                     parent_id: 215,
                     name: "Sidebar spacing feels off on 1440p".into(),
-                    message_count: 2,
-                    archived: false,
+                    message_count: 1,
+                    archived: true,
                     preview: "The 12px gap looks bigger than the 8px one at that scale.".into(),
                     tags: vec![2302, 2303],
+                }),
+                ..Channel::default()
+            },
+            Channel {
+                id: 218,
+                guild_id: Some(100),
+                name: "Welcome copy tweaks".into(),
+                kind: ChannelKind::Thread,
+                position: 15,
+                parent_id: Some(201),
+                owner_id: Some(3),
+                last_message_id: Some(3201),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 201,
+                    name: "Welcome copy tweaks".into(),
+                    message_count: 2,
+                    archived: false,
+                    preview: "Could the intro mention the events calendar?".into(),
+                    tags: Vec::new(),
+                }),
+                ..Channel::default()
+            },
+            Channel {
+                id: 219,
+                guild_id: Some(100),
+                name: "Old onboarding banner thread".into(),
+                kind: ChannelKind::Thread,
+                position: 16,
+                parent_id: Some(201),
+                owner_id: Some(2),
+                last_message_id: Some(3301),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 201,
+                    name: "Old onboarding banner thread".into(),
+                    message_count: 1,
+                    archived: true,
+                    preview: "That banner art is out of date now.".into(),
+                    tags: Vec::new(),
+                }),
+                ..Channel::default()
+            },
+            Channel {
+                id: 220,
+                guild_id: Some(100),
+                name: "Voice channel status ideas".into(),
+                kind: ChannelKind::Thread,
+                position: 17,
+                parent_id: Some(215),
+                owner_id: Some(3),
+                last_message_id: Some(3401),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 215,
+                    name: "Voice channel status ideas".into(),
+                    message_count: 2,
+                    archived: false,
+                    preview: "A short status line under each voice channel would help.".into(),
+                    tags: vec![2301, 2303],
+                }),
+                ..Channel::default()
+            },
+            Channel {
+                id: 221,
+                guild_id: Some(100),
+                name: "Theme contrast pass".into(),
+                kind: ChannelKind::Thread,
+                position: 18,
+                parent_id: Some(215),
+                owner_id: Some(5),
+                last_message_id: Some(3500),
+                my_permissions: u64::MAX / 2,
+                thread: Some(runecord_protocol::ThreadInfo {
+                    parent_id: 215,
+                    name: "Theme contrast pass".into(),
+                    message_count: 3,
+                    archived: false,
+                    preview: "The muted text is a little too dim on the light theme.".into(),
+                    tags: vec![2303],
                 }),
                 ..Channel::default()
             },
@@ -557,6 +637,88 @@ impl App {
             }],
         );
         self.messages.insert(
+            218,
+            vec![
+                Message {
+                    id: 3200,
+                    channel_id: 218,
+                    author_id: 3,
+                    content: "Could the intro mention the events calendar?".into(),
+                    timestamp: t - 9_000_000,
+                    ..Message::default()
+                },
+                Message {
+                    id: 3201,
+                    channel_id: 218,
+                    author_id: 1,
+                    content: "Good idea. I will fold that into the next copy pass.".into(),
+                    timestamp: t - 8_400_000,
+                    ..Message::default()
+                },
+            ],
+        );
+        self.messages.insert(
+            219,
+            vec![Message {
+                id: 3300,
+                channel_id: 219,
+                author_id: 2,
+                content: "That banner art is out of date now.".into(),
+                timestamp: t - 604_800_000,
+                ..Message::default()
+            }],
+        );
+        self.messages.insert(
+            220,
+            vec![
+                Message {
+                    id: 3400,
+                    channel_id: 220,
+                    author_id: 3,
+                    content: "A short status line under each voice channel would help.".into(),
+                    timestamp: t - 4_800_000,
+                    ..Message::default()
+                },
+                Message {
+                    id: 3401,
+                    channel_id: 220,
+                    author_id: 2,
+                    content: "Focus Room already has one and it reads well.".into(),
+                    timestamp: t - 4_200_000,
+                    ..Message::default()
+                },
+            ],
+        );
+        self.messages.insert(
+            221,
+            vec![
+                Message {
+                    id: 3500,
+                    channel_id: 221,
+                    author_id: 5,
+                    content: "The muted text is a little too dim on the light theme.".into(),
+                    timestamp: t - 3_000_000,
+                    ..Message::default()
+                },
+                Message {
+                    id: 3501,
+                    channel_id: 221,
+                    author_id: 1,
+                    content: "I can raise the contrast on timestamps and handles.".into(),
+                    timestamp: t - 2_400_000,
+                    ..Message::default()
+                },
+                Message {
+                    id: 3502,
+                    channel_id: 221,
+                    author_id: 5,
+                    content: "That would cover everything I noticed.".into(),
+                    timestamp: t - 1_800_000,
+                    ..Message::default()
+                },
+            ],
+        );
+        self.messages.insert(
             201,
             vec![Message {
                 id: 1100,
@@ -598,6 +760,9 @@ impl App {
                 guild_id: None,
                 name: name.into(),
                 kind: ChannelKind::Dm,
+                // Direct messages carry the base permission set on the wire, so
+                // the composer and the message menu work without a guild.
+                my_permissions: perm::EVERYONE,
                 ..Channel::default()
             },
             recipients: vec![self.users[&user].clone()],

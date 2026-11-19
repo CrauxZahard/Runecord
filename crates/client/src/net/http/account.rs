@@ -155,7 +155,6 @@ pub(crate) fn remove_activity_artwork(shared: &Arc<Shared>) {
     );
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn check_server(shared: &Arc<Shared>, url: String) {
     let target = format!("{}/api/version", url.trim_end_matches('/'));
     let result = shared
@@ -273,12 +272,4 @@ pub(crate) fn change_password(shared: &Arc<Shared>, current: String, new: String
             Err(e) => done.emit(NetEvent::Error(e)),
         },
     );
-}
-
-// Browser stub: probing another server uses the native client.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn check_server(shared: &Arc<Shared>, _url: String) {
-    shared.emit(NetEvent::Error(
-        "Checking a server address is not available in the web client yet.".to_string(),
-    ));
 }

@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 runecord-protocol = { path = "../../../Runecord-backend/crates/protocol" }
+runecord-ui = { path = "../ui" }
 rune-kit = { path = "../../../rune/crates/rune-kit", default-features = false, features = ["markdown"] }
 rune-motion = { path = "../../../rune/crates/rune-motion" }
 serde = { version = "1", features = ["derive"] }
@@ -21,20 +22,6 @@ serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 image-webp = "0.2"
-
-[features]
-# Packaging feature: bundles the backend into the client process so a single
-# executable is enough. The default build still expects a separate server.
-embedded-server = [
-    "dep:runecord-server",
-    "dep:tokio",
-    "dep:tracing",
-    "dep:tracing-subscriber",
-]
-# ---------------------------------------------------------------------------
-# Native (desktop) dependencies
-# ---------------------------------------------------------------------------
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 runecord-server = { path = "../../../Runecord-backend/crates/server", optional = true }
 rune = { path = "../../../rune/crates/rune", features = ["native-file-dialog"] }
 rune-notify = { path = "../../../rune/crates/rune-notify" }
@@ -52,11 +39,22 @@ tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
 
+[features]
+# Packaging feature: bundles the backend into the client process so a single
+# executable is enough. The default build still expects a separate server.
+embedded-server = [
+    "dep:runecord-server",
+    "dep:tokio",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+]
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
     "Win32_Media_Audio",
+    "Win32_Security_Cryptography",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_ProcessStatus",

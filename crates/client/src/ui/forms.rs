@@ -43,7 +43,7 @@ pub(crate) fn menu_item(
         .w_full()
         .h(32.0)
         .px(8.0)
-        .radius(4.0)
+        .radius(10.0)
         .center_y()
         .role("menuitem")
         .label(label)
@@ -65,14 +65,15 @@ pub(crate) fn modal_input(
     text_input(edit, theme::BODY)
         .key(key)
         .w_full()
-        .h(40.0)
-        .radius(4.0)
+        .h(42.0)
+        .radius(12.0)
         .fill(p.rail)
+        .border(1.0, theme::gloss_edge(p))
         .color(p.text)
         .role("textbox")
         .label(placeholder)
         .placeholder(placeholder, p.text_faint)
-        .padding(10.0)
+        .padding(11.0)
         .on_edit(|s: &mut App| &mut s.profile_edit)
         .on_submit(|s: &mut App, _: &mut rune::Tx| {
             if s.modal == Modal::CreateServer {
@@ -131,26 +132,31 @@ fn modal_frame_inner(
                 .on_press(|s: &mut App| s.modal = Modal::None),
         );
     }
+    // Primary actions are pills cut from the sunset.
     footer = footer.child(
         el().h(38.0)
-            .px(18.0)
-            .radius(4.0)
+            .px(20.0)
+            .radius(19.0)
             .key("modal-action")
             .fill(p.accent)
+            .gradient(theme::sunset_magenta(p.dark), theme::sunset_violet(p.dark))
+            .border(1.0, theme::sunset_amber(p.dark).alpha(0.7))
             .hover(p.accent_hover)
+            .motion(motion::SNAPPY)
             .center()
             .on_press(run)
             .child(text(label).font(theme::SMALL_MED).color(Color::WHITE)),
     );
     col()
         .key(key)
-        .w(sheet_w(440.0))
-        .radius(8.0)
-        .clip_rounded(8.0)
+        .w(440.0)
+        .radius(18.0)
+        .clip_rounded(18.0)
         .fill(p.modal)
-        .backdrop_blur(4.0)
+        .border(1.0, theme::gloss_edge(p))
+        .backdrop_blur(8.0)
         .motion(motion::SNAPPY)
-        .shadow(12.0, 32.0, p.shadow)
+        .shadow(14.0, 36.0, p.shadow)
         .modal(true, |s: &mut App| s.modal = Modal::None)
         .child(
             col()

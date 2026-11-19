@@ -58,7 +58,6 @@ impl App {
 
     pub fn open_settings(&mut self, tab: SettingsTab) {
         self.settings_tab = tab;
-        self.mobile_settings = false;
         self.sync_profile_edits();
         self.password_current.clear();
         self.password_new.clear();
@@ -185,12 +184,11 @@ impl App {
     }
 
     fn nameplate_parts(&self) -> (u32, u32, bool) {
-        crate::theme::nameplate_values(&self.profile_nameplate)
-            .unwrap_or((
-                crate::theme::avatar_color_value(0),
-                crate::theme::avatar_color_value(4),
-                true,
-            ))
+        crate::theme::nameplate_values(&self.profile_nameplate).unwrap_or((
+            crate::theme::avatar_color_value(0),
+            crate::theme::avatar_color_value(4),
+            true,
+        ))
     }
 
     pub fn set_nameplate_gradient(&mut self, gradient: bool) {

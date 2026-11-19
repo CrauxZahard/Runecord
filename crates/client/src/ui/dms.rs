@@ -196,7 +196,6 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
                         .on_press(|s: &mut App| {
                             s.dm_home = true;
                             s.add_friend_open = false;
-                            s.mobile_chat = true;
                         })
                         .child(icon(&icons::HOME, 20.0).color(p.interactive))
                         .child(
@@ -248,13 +247,6 @@ pub(crate) fn dm_sidebar(s: &App, p: Palette) -> El {
 
 pub(crate) fn dm_main(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     if s.dm_home {
-        if mobile() {
-            return col().key("dm-main").w_full().h_full().child(friends_page(
-                s,
-                p,
-                cx.chrome_insets().trailing,
-            ));
-        }
         row()
             .grow(1.0)
             .min_w(0.0)
@@ -416,25 +408,24 @@ pub(crate) fn friends_page(s: &App, p: Palette, insets_trailing: f32) -> El {
         .on_press(|s: &mut App| s.toast("Runecord help is local"))
         .child(icon(&icons::HELP, 20.0).color(p.text_muted));
 
-    let desktop_tabs = if mobile() { None } else { Some(make_tabs()) };
     let header = row()
         .key("friends-header")
         .w_full()
         .h(48.0)
         .pl(16.0)
         .pr(8.0 + insets_trailing)
-        .gap(if mobile() { 8.0 } else { 16.0 })
+        .gap(16.0)
         .center_y()
         .window_drag()
         .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
         .child(title_row)
-        .children((!mobile()).then(|| el().w(1.0).h(24.0).fill(p.divider)))
-        .children(desktop_tabs)
+        .child(el().w(1.0).h(24.0).fill(p.divider))
+        .child(make_tabs())
         .child(add_friend)
         .child(el().grow(1.0))
         .child(group_dm)
         .child(inbox)
-        .children((!mobile()).then_some(help));
+        .child(help);
 
     let body = if s.add_friend_open {
         add_friend_panel(s, p)
@@ -442,64 +433,51 @@ pub(crate) fn friends_page(s: &App, p: Palette, insets_trailing: f32) -> El {
         friend_list_panel(s, p, s.friend_tab)
     };
 
-    let mut page = col()
+    col()
         .key("friends")
         .grow(1.0)
         .min_w(0.0)
         .h_full()
         .fill(p.chat)
-        .child(header);
-    if mobile() {
-        // The four tabs move to their own strip so the header's actions fit.
-        page = page.child(
+        .child(header)
+        .child(
             row()
-                .key("friends-tabs")
+                .key("friends-search")
                 .w_full()
-                .h(44.0)
-                .px(12.0)
-                .center_y()
-                .child(make_tabs()),
-        );
-    }
-    page.child(
-        row()
-            .key("friends-search")
-            .w_full()
-            .px(20.0)
-            .pt(12.0)
-            .child(
-                text_input(&s.friend_filter, theme::SMALL)
-                    .key("friend-search-input")
-                    .w_full()
-                    .h(34.0)
-                    .radius(4.0)
-                    .fill(p.rail)
-                    .color(p.text)
-                    .role("textbox")
-                    .label("Search friends")
-                    .placeholder("Search", p.text_faint)
-                    .padding(10.0)
-                    .on_edit(|s: &mut App| &mut s.friend_filter),
-            ),
-    )
-    .child(
-        col()
-            .key("friends-scroll")
-            .grow(1.0)
-            .min_h(0.0)
-            .scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .child(body),
-    )
+                .px(20.0)
+                .pt(12.0)
+                .child(
+                    text_input(&s.friend_filter, theme::SMALL)
+                        .key("friend-search-input")
+                        .w_full()
+                        .h(34.0)
+                        .radius(4.0)
+                        .fill(p.rail)
+                        .color(p.text)
+                        .role("textbox")
+                        .label("Search friends")
+                        .placeholder("Search", p.text_faint)
+                        .padding(10.0)
+                        .on_edit(|s: &mut App| &mut s.friend_filter),
+                ),
+        )
+        .child(
+            col()
+                .key("friends-scroll")
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(body),
+        )
 }
 
 pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
-    let compact = mobile();
     col()
         .key("add-friend")
         .w_full()
-        .px(if compact { 16.0 } else { 32.0 })
+        .px(32.0)
         .pt(24.0)
         .gap(12.0)
         .child(text("ADD FRIEND").font(theme::TITLE).color(p.text_bright))
@@ -527,14 +505,7 @@ pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
                         .min_w(0.0)
                         .h_full()
                         .color(p.text)
-                        .placeholder(
-                            if compact {
-                                "Username"
-                            } else {
-                                "You can add friends with their username."
-                            },
-                            p.text_faint,
-                        )
+                        .placeholder("You can add friends with their username.", p.text_faint)
                         .padding(0.0)
                         .pt(13.0)
                         .on_edit(|s: &mut App| &mut s.search)
@@ -550,13 +521,9 @@ pub(crate) fn add_friend_panel(s: &App, p: Palette) -> El {
                         .center()
                         .on_press(|s: &mut App| s.add_friend())
                         .child(
-                            text(if compact {
-                                "Send"
-                            } else {
-                                "Send Friend Request"
-                            })
-                            .font(theme::SMALL_MED)
-                            .color(Color::WHITE),
+                            text("Send Friend Request")
+                                .font(theme::SMALL_MED)
+                                .color(Color::WHITE),
                         ),
                 ),
         )

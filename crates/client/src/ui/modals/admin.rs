@@ -33,6 +33,7 @@ const PERMISSION_GROUPS: &[(&str, &[(&str, u64)])] = &[
             ("Add Reactions", perm::ADD_REACTIONS),
             ("External Emoji", perm::USE_EXTERNAL_EMOJIS),
             ("Create Threads", perm::CREATE_THREADS),
+            ("Send Messages in Threads", perm::SEND_MESSAGES_IN_THREADS),
             ("Manage Threads", perm::MANAGE_THREADS),
         ],
     ),
@@ -250,8 +251,8 @@ pub(crate) fn channel_permissions_sheet(s: &App, p: Palette, channel: Id) -> El 
 
     col()
         .key("channel-perms")
-        .w(sheet_w(760.0))
-        .h(sheet_h(620.0))
+        .w(760.0)
+        .h(620.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

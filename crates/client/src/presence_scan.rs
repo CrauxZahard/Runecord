@@ -85,7 +85,7 @@ pub(crate) fn running_processes() -> Vec<String> {
     names
 }
 
-#[cfg(all(not(windows), not(target_arch = "wasm32")))]
+#[cfg(not(windows))]
 pub(crate) fn running_processes() -> Vec<String> {
     let output = std::process::Command::new("ps")
         .args(["-A", "-o", "comm="])
@@ -98,12 +98,6 @@ pub(crate) fn running_processes() -> Vec<String> {
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .collect()
-}
-
-/// The browser cannot enumerate processes, so automatic presence is desktop-only.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn running_processes() -> Vec<String> {
-    Vec::new()
 }
 
 /// The first catalog entry that is running, if any.

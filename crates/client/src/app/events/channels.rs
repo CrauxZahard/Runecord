@@ -47,6 +47,9 @@ impl App {
     }
     pub(crate) fn apply_thread_created(&mut self, thread: Box<Channel>) {
         let id = thread.id;
+        if thread.owner_id == Some(self.me.id) {
+            self.joined_threads.insert(id);
+        }
         if let Some(guild) = thread.guild_id {
             self.channels
                 .entry(guild)
@@ -79,6 +82,8 @@ impl App {
         }
         self.messages.remove(&id);
         self.channel_seen.remove(&id);
+        self.joined_threads.remove(&id);
+        self.left_threads.remove(&id);
         if self.active_channel == id {
             self.thread_parent = None;
             let fallback = self.channels.get(&self.active_guild).and_then(|list| {

@@ -1,4 +1,5 @@
-//! Channel sidebar surface.
+//! Channel strip surface: the server, its channels and your account run as one
+//! horizontal band directly under the navigation dock.
 
 use super::*;
 use runecord_protocol::NotificationLevel;
@@ -9,43 +10,51 @@ pub(crate) enum ChannelListRow {
     VoiceUser(Id),
 }
 
+/// The signature detail: a vertical sunset edge, three thin strips of amber,
+/// magenta and violet stacked into one glowing seam on the active channel.
+fn sunset_edge(height: f32, p: Palette) -> El {
+    col()
+        .key("sunset-edge")
+        .w(3.0)
+        .h(height)
+        .radius(2.0)
+        .clip_rounded(2.0)
+        .child(el().w_full().grow(1.0).fill(theme::sunset_amber(p.dark)))
+        .child(el().w_full().grow(1.0).fill(theme::sunset_magenta(p.dark)))
+        .child(el().w_full().grow(1.0).fill(theme::sunset_violet(p.dark)))
+}
+
 pub(crate) fn sidebar(s: &App, p: Palette) -> El {
     let guild = s.active_guild().cloned().unwrap_or_default();
     let header = row()
         .key("guild-header")
-        .w_full()
-        .h(48.0)
-        .px(16.0)
+        .w(s.sidebar_width.clamp(140.0, 300.0))
+        .h(36.0)
+        .px(10.0)
+        .radius(16.0)
+        .gap(6.0)
         .center_y()
-        .gap(4.0)
-        .fill(p.sidebar)
+        .fill(p.sidebar_active)
+        .gradient(p.sidebar_active, p.sidebar_hover)
+        .border(1.0, theme::gloss_edge(p))
         .hover(p.sidebar_hover)
         .window_drag()
         .role("button")
         .label(format!("{} server menu", guild.name))
         .motion(motion::SNAPPY)
         .on_press(|s: &mut App| s.modal = Modal::ServerMenu)
+        .child(guild_icon(s, &guild, 22.0, 8.0, p))
         .child(
             text(guild.name.clone())
-                .font(theme::NAME)
+                .font(theme::SMALL_MED)
                 .color(p.text_bright)
                 .grow(1.0)
                 .min_w(0.0)
                 .truncate(),
         )
-        .child(icon(&icons::CHEVRON_DOWN, 16.0).color(p.text_muted));
+        .child(icon(&icons::CHEVRON_DOWN, 14.0).color(p.accent));
 
-    let mut list = col()
-        .key("channel-list")
-        .w_full()
-        .px(10.0)
-        .pt(6.0)
-        .pb(10.0)
-        .gap(1.0);
     let channels = s.guild_channels(s.active_guild);
-    if channels.is_empty() && s.guild_detail(s.active_guild).is_none() {
-        list = list.child(skeleton_channel_rows(6, p, s.clock));
-    }
     let mut ordered: Vec<&Channel> = channels.iter().collect();
     ordered.sort_by_key(|c| c.position);
     let mut rows: Vec<ChannelListRow> = Vec::new();
@@ -65,122 +74,120 @@ pub(crate) fn sidebar(s: &App, p: Palette) -> El {
         rows.push(ChannelListRow::Channel((*channel).clone()));
         push_voice_users(&mut rows, channel, s);
     }
-    let mut row_list = col()
-        .key("channel-rows")
-        .w_full()
-        .growth(GrowthSpec::default());
+
+    let mut row_list = row().key("channel-rows").gap(4.0).center_y().min_w(0.0);
+    if channels.is_empty() && s.guild_detail(s.active_guild).is_none() {
+        row_list = row_list.child(skeleton_channel_rows(2, p, s.clock));
+    }
     for item in &rows {
         row_list = row_list.child(match item {
             ChannelListRow::Category(category) => el()
                 .key(format!("cat-{}", category.id))
-                .w_full()
                 .child(category_row(category, s, p)),
             ChannelListRow::Channel(channel) => el()
                 .key(format!("ch-{}", channel.id))
-                .w_full()
                 .child(channel_row(channel, s, p)),
             ChannelListRow::VoiceUser(user) => el()
                 .key(format!("sidebar-voice-{user}"))
-                .w_full()
                 .child(voice_user_row(*user, s, p)),
         });
     }
-    list = list.child(row_list);
+    let list = row().key("channel-list").gap(4.0).center_y().min_w(0.0);
 
-    col()
+    row()
         .key("sidebar")
-        .w(s.sidebar_width)
-        .h_full()
+        .w_full()
+        .h(54.0)
+        .px(10.0)
+        .gap(8.0)
+        .center_y()
         .fill(p.sidebar)
-        .children((!guild.banner_url.is_empty()).then(|| guild_banner_el(s, &guild, 104.0, p)))
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
         .child(header)
+        .child(strip_grip(p))
+        .child(shortcuts(p))
         .child(
-            col()
-                .key("server-shortcuts")
-                .w_full()
-                .px(10.0)
-                .pt(2.0)
-                .pb(4.0)
-                .gap(1.0)
-                .child(
-                    row()
-                        .key("sidebar-events")
-                        .w_full()
-                        .h(30.0)
-                        .px(8.0)
-                        .radius(4.0)
-                        .gap(8.0)
-                        .center_y()
-                        .role("button")
-                        .label(crate::i18n::t("Events"))
-                        .hover(p.sidebar_hover)
-                        .on_press(|s: &mut App| s.open_events())
-                        .child(icon(&icons::CLOCK, 16.0).color(p.text_muted))
-                        .child(
-                            text(crate::i18n::t("Events"))
-                                .font(theme::SMALL_MED)
-                                .color(p.text),
-                        ),
-                )
-                .child(
-                    row()
-                        .key("sidebar-members")
-                        .w_full()
-                        .h(30.0)
-                        .px(8.0)
-                        .radius(4.0)
-                        .gap(8.0)
-                        .center_y()
-                        .role("button")
-                        .label(crate::i18n::t("Members"))
-                        .hover(p.sidebar_hover)
-                        .on_press(|s: &mut App| {
-                            s.open_server_settings();
-                            s.server_tab = crate::app::ServerTab::Members;
-                        })
-                        .child(icon(&icons::USERS, 16.0).color(p.text_muted))
-                        .child(
-                            text(crate::i18n::t("Members"))
-                                .font(theme::SMALL_MED)
-                                .color(p.text),
-                        ),
-                )
-                .child(
-                    row()
-                        .key("sidebar-channels-roles")
-                        .w_full()
-                        .h(30.0)
-                        .px(8.0)
-                        .radius(4.0)
-                        .gap(8.0)
-                        .center_y()
-                        .role("button")
-                        .label("Channels and Roles")
-                        .hover(p.sidebar_hover)
-                        .on_press(|s: &mut App| {
-                            s.open_server_settings();
-                            s.server_tab = crate::app::ServerTab::Roles;
-                        })
-                        .child(icon(&icons::SETTINGS, 16.0).color(p.text_muted))
-                        .child(
-                            text(crate::i18n::t("Channels & Roles"))
-                                .font(theme::SMALL_MED)
-                                .color(p.text),
-                        ),
-                ),
-        )
-        .child(
-            col()
+            row()
                 .key("channels-scroll")
                 .grow(1.0)
-                .min_h(0.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .center_y()
                 .scroll(ScrollSpec {
                     stick_bottom: false,
                 })
-                .child(list),
+                .child(list.child(row_list)),
         )
-        .children(voice_connected_panel(s, p))
-        .child(user_panel(s, p))
+}
+
+/// A short drag edge between the server plate and the channel pills; it sizes
+/// the plate, which is the one part of the strip with a width to give away.
+fn strip_grip(p: Palette) -> El {
+    el().key("sidebar-resize")
+        .w(5.0)
+        .h(28.0)
+        .radius(3.0)
+        .fill(Color::TRANSPARENT)
+        .hover(p.accent.alpha(0.45))
+        .cursor(rune::Cursor::ResizeColumn)
+        .role("separator")
+        .label("Resize the channel list")
+        .help("Drag to resize; double-click to reset")
+        .on_drag(
+            |s: &mut App, drag: &mut rune::Drag, _: &mut rune::Tx| match drag.phase {
+                rune::Phase::Down => drag.data = s.sidebar_width,
+                rune::Phase::Move => {
+                    s.sidebar_width = (drag.data + drag.dx).clamp(140.0, 300.0).round();
+                }
+                rune::Phase::Up => {}
+            },
+        )
+        .on_double_press_tx(|s: &mut App, _: &mut rune::Tx| {
+            s.sidebar_width = 240.0;
+        })
+}
+
+fn shortcuts(p: Palette) -> El {
+    let short = |key: &'static str, ic: &'static Icon, label: String, run: fn(&mut App)| {
+        el().key(key)
+            .size(30.0, 30.0)
+            .radius(15.0)
+            .center()
+            .role("button")
+            .label(label.clone())
+            .help(label)
+            .hover(p.sidebar_hover)
+            .on_press(run)
+            .child(icon(ic, 16.0).color(p.text_muted))
+    };
+    row()
+        .key("server-shortcuts")
+        .gap(2.0)
+        .center_y()
+        .child(short(
+            "sidebar-events",
+            &icons::CLOCK,
+            crate::i18n::t("Events"),
+            |s: &mut App| s.open_events(),
+        ))
+        .child(short(
+            "sidebar-members",
+            &icons::USERS,
+            crate::i18n::t("Members"),
+            |s: &mut App| {
+                s.open_server_settings();
+                s.server_tab = crate::app::ServerTab::Members;
+            },
+        ))
+        .child(short(
+            "sidebar-channels-roles",
+            &icons::SETTINGS,
+            "Channels and Roles".to_string(),
+            |s: &mut App| {
+                s.open_server_settings();
+                s.server_tab = crate::app::ServerTab::Roles;
+            },
+        ))
 }
 
 pub(crate) fn voice_connected_panel(s: &App, p: Palette) -> Option<El> {
@@ -194,8 +201,8 @@ pub(crate) fn voice_connected_panel(s: &App, p: Palette) -> Option<El> {
                   p: Palette,
                   run: fn(&mut App)| {
         el().key(key)
-            .size(28.0, 28.0)
-            .radius(4.0)
+            .size(26.0, 26.0)
+            .radius(13.0)
             .center()
             .role("button")
             .label(label)
@@ -207,95 +214,79 @@ pub(crate) fn voice_connected_panel(s: &App, p: Palette) -> Option<El> {
             })
             .hover(p.rail_hover)
             .on_press(run)
-            .child(icon(icon_id, 16.0).color(if active { p.green } else { p.text_bright }))
+            .child(icon(icon_id, 15.0).color(if active { p.green } else { p.text_bright }))
     };
     Some(
-        col()
+        row()
             .key("voice-connected")
-            .w_full()
+            .w(258.0)
+            .h(40.0)
+            .px(8.0)
+            .gap(4.0)
+            .center_y()
+            .radius(20.0)
             .fill(p.user_panel)
-            .border_sides([1.0, 0.0, 0.0, 0.0], p.divider)
+            .border(1.0, p.green.alpha(0.45))
+            .child(icon(&icons::VOICE, 16.0).color(p.green))
             .child(
-                row()
-                    .w_full()
-                    .h(46.0)
-                    .px(10.0)
-                    .gap(8.0)
-                    .center_y()
-                    .child(icon(&icons::VOICE, 18.0).color(p.green))
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .justify_center()
+                    .child(text("Voice Connected").font(theme::TINY).color(p.green))
                     .child(
-                        col()
-                            .grow(1.0)
-                            .min_w(0.0)
-                            .child(
-                                text("Voice Connected")
-                                    .font(theme::SMALL_MED)
-                                    .color(p.green),
-                            )
-                            .child(
-                                text(match guild {
-                                    Some(guild) => format!("{} / {}", channel.name, guild.name),
-                                    None => channel.name.clone(),
-                                })
-                                .font(theme::TINY)
-                                .color(p.text_muted)
-                                .truncate(),
-                            ),
-                    )
-                    .child(
-                        el().key("voice-disconnect")
-                            .size(28.0, 28.0)
-                            .radius(4.0)
-                            .center()
-                            .role("button")
-                            .label("Disconnect from voice")
-                            .help("Disconnect")
-                            .hover(p.rail_hover)
-                            .on_press(|s: &mut App| s.set_voice(None))
-                            .child(icon(&icons::PHONE, 17.0).color(p.text_bright)),
+                        text(match guild {
+                            Some(guild) => format!("{} / {}", channel.name, guild.name),
+                            None => channel.name.clone(),
+                        })
+                        .font(theme::TINY)
+                        .color(p.text_muted)
+                        .truncate(),
                     ),
             )
+            .child(action(
+                "voice-camera",
+                &icons::VIDEO,
+                "Turn on camera",
+                s.voice_camera,
+                p,
+                App::toggle_voice_camera,
+            ))
+            .child(action(
+                "voice-screen",
+                &icons::MONITOR,
+                "Share your screen",
+                s.voice_screen,
+                p,
+                App::toggle_voice_screen,
+            ))
+            .child(action(
+                "voice-chat",
+                &icons::CHAT,
+                "Voice chat",
+                s.voice_chat,
+                p,
+                |s: &mut App| s.voice_chat = !s.voice_chat,
+            ))
+            .child(action(
+                "voice-soundboard",
+                &icons::MEGAPHONE,
+                "Soundboard",
+                false,
+                p,
+                |s: &mut App| s.modal = Modal::Soundboard,
+            ))
             .child(
-                row()
-                    .w_full()
-                    .h(34.0)
-                    .px(8.0)
-                    .pb(4.0)
-                    .gap(4.0)
-                    .center_y()
-                    .child(action(
-                        "voice-camera",
-                        &icons::VIDEO,
-                        "Turn on camera",
-                        s.voice_camera,
-                        p,
-                        App::toggle_voice_camera,
-                    ))
-                    .child(action(
-                        "voice-screen",
-                        &icons::MONITOR,
-                        "Share your screen",
-                        s.voice_screen,
-                        p,
-                        App::toggle_voice_screen,
-                    ))
-                    .child(action(
-                        "voice-chat",
-                        &icons::CHAT,
-                        "Voice chat",
-                        s.voice_chat,
-                        p,
-                        |s: &mut App| s.voice_chat = !s.voice_chat,
-                    ))
-                    .child(action(
-                        "voice-soundboard",
-                        &icons::MEGAPHONE,
-                        "Soundboard",
-                        false,
-                        p,
-                        |s: &mut App| s.modal = Modal::Soundboard,
-                    ))
-                    .child(el().grow(1.0)),
+                el().key("voice-disconnect")
+                    .size(26.0, 26.0)
+                    .radius(13.0)
+                    .center()
+                    .role("button")
+                    .label("Disconnect from voice")
+                    .help("Disconnect")
+                    .hover(p.rail_hover)
+                    .on_press(|s: &mut App| s.set_voice(None))
+                    .child(icon(&icons::PHONE, 15.0).color(p.text_bright)),
             ),
     )
 }
@@ -306,10 +297,10 @@ pub(crate) fn category_row(cat: &Channel, s: &App, p: Palette) -> El {
     let manage = s.guild_can(perm::MANAGE_CHANNELS);
     row()
         .key(format!("category-{}", cat.id))
-        .w_full()
-        .h(34.0)
-        .px(10.0)
-        .gap(6.0)
+        .h(30.0)
+        .px(6.0)
+        .radius(10.0)
+        .gap(4.0)
         .center_y()
         .role("button")
         .label(format!(
@@ -327,9 +318,8 @@ pub(crate) fn category_row(cat: &Channel, s: &App, p: Palette) -> El {
             }
         })
         .child(
-            icon(&icons::CHEVRON_DOWN, 12.0)
-                .color(p.text_muted)
-                .group_opacity(if collapsed { 1.0 } else { 0.0 }, 1.0)
+            icon(&icons::CHEVRON_DOWN, 11.0)
+                .color(p.text_faint)
                 .icon_rotation(if collapsed {
                     -std::f32::consts::FRAC_PI_2
                 } else {
@@ -339,20 +329,21 @@ pub(crate) fn category_row(cat: &Channel, s: &App, p: Palette) -> El {
         .child(
             text(cat.name.to_uppercase())
                 .font(theme::SECTION)
-                .color(p.text_muted)
-                .grow(1.0),
+                .color(p.text_link)
+                .max_w(150.0)
+                .truncate(),
         )
         .children(manage.then(|| {
             el().key(format!("category-plus-{}", cat.id))
-                .size(18.0, 18.0)
-                .radius(4.0)
+                .size(16.0, 16.0)
+                .radius(8.0)
                 .center()
                 .role("button")
                 .label(format!("Create channel in {}", cat.name))
                 .help("Create Channel")
                 .hover(p.sidebar_hover)
                 .on_press(move |s: &mut App| s.open_create_channel(Some(id)))
-                .child(icon(&icons::PLUS, 14.0).color(p.text_muted))
+                .child(icon(&icons::PLUS, 12.0).color(p.text_muted))
         }))
 }
 
@@ -381,12 +372,10 @@ fn voice_user_row(user_id: Id, s: &App, p: Palette) -> El {
     let muted = s.voice.get(&user_id).is_some_and(|state| state.self_mute);
     row()
         .key(format!("sidebar-voice-{user_id}"))
-        .w_full()
         .h(30.0)
-        .pl(36.0)
-        .pr(10.0)
-        .radius(4.0)
-        .gap(6.0)
+        .px(4.0)
+        .radius(10.0)
+        .gap(4.0)
         .center_y()
         .role("button")
         .label(format!("{} connected to voice", user.display_name))
@@ -396,19 +385,12 @@ fn voice_user_row(user_id: Id, s: &App, p: Palette) -> El {
             let speaking = crate::voice::user_speaking(user_id);
             let avatar = avatar_status(&user, 20.0, p, p.sidebar, true);
             [if speaking {
-                avatar.border(2.0, p.green)
+                avatar.border(2.0, theme::sunset_magenta(p.dark))
             } else {
                 avatar
             }]
         })
-        .child(
-            text(user.display_name.clone())
-                .font(theme::TINY)
-                .color(p.text_muted)
-                .grow(1.0)
-                .truncate(),
-        )
-        .child(icon(&icons::MIC, 12.0).color(if muted { p.danger } else { p.text_faint }))
+        .child(icon(&icons::MIC, 11.0).color(if muted { p.danger } else { p.text_faint }))
 }
 
 pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
@@ -431,39 +413,43 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
         ChannelKind::Category => "Category",
         _ => "Text channel",
     };
-    let manage =
-        has(ch.my_permissions, perm::MANAGE_CHANNELS) || s.guild_can(perm::MANAGE_CHANNELS);
-    let subtitle = if ch.kind.is_voice_like() {
-        if !ch.status.is_empty() {
-            Some(ch.status.clone())
-        } else if manage {
-            Some("Set a channel status".to_string())
-        } else {
-            None
-        }
+    let mut label = if unread > 0 {
+        format!("{kind_label} {}, {unread} unread", ch.name)
     } else {
-        None
+        format!("{kind_label} {}", ch.name)
     };
+    if ch.kind.is_voice_like() && !ch.status.is_empty() {
+        label = format!("{label}, {}", ch.status);
+    }
     let mut row = row()
         .key(format!("channel-{}", ch.id))
-        .w_full()
-        .h(if subtitle.is_some() { 46.0 } else { 34.0 })
+        .h(32.0)
         .px(10.0)
-        .radius(5.0)
+        .radius(16.0)
         .gap(6.0)
         .center_y()
         .role("button")
-        .label(if unread > 0 {
-            format!("{kind_label} {}, {unread} unread", ch.name)
-        } else {
-            format!("{kind_label} {}", ch.name)
-        })
+        .label(label)
         .motion(motion::SNAPPY)
-        .fill(if selected {
-            p.selected
-        } else {
-            Color::TRANSPARENT
-        })
+        // The selected pill keeps the sunset: magenta washing down into the
+        // aubergine, ringed by the thin bright edge every card carries.
+        .fill(if selected { p.selected } else { p.input })
+        .gradient(
+            if selected {
+                theme::sunset_magenta(p.dark).alpha(0.55)
+            } else {
+                p.input
+            },
+            if selected { p.selected } else { p.input },
+        )
+        .border(
+            1.0,
+            if selected {
+                theme::gloss_edge(p)
+            } else {
+                Color::TRANSPARENT
+            },
+        )
         .hover(if selected {
             p.selected
         } else {
@@ -472,43 +458,35 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
         .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
             s.context_menu = Some(crate::app::ContextMenu {
                 kind: crate::app::ContextMenuKind::Channel(id),
-                x: press.x,
-                y: press.y,
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
+                },
             });
         })
         .on_press(move |s: &mut App| {
             s.screen = Screen::Guild;
             s.switch_channel(id);
         })
-        .child(icon(ic, 20.0).color(if selected {
-            p.interactive
+        .children(selected.then(|| sunset_edge(18.0, p)))
+        .child(icon(ic, 16.0).color(if selected {
+            theme::sunset_amber(p.dark)
         } else {
             p.text_faint
         }))
         .child(
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .gap(0.0)
-                .child(
-                    text(ch.name.clone())
-                        .font(theme::BODY_MED)
-                        .color(if selected || unread > 0 {
-                            p.text_bright
-                        } else {
-                            p.text_muted
-                        })
-                        .truncate(),
-                )
-                .children(subtitle.map(|subtitle| {
-                    text(subtitle)
-                        .font(theme::TINY)
-                        .color(p.text_faint)
-                        .truncate()
-                })),
+            text(ch.name.clone())
+                .font(theme::SMALL_MED)
+                .color(if selected || unread > 0 {
+                    p.text_bright
+                } else {
+                    p.text_muted
+                })
+                .max_w(170.0)
+                .truncate(),
         );
     if s.channel_notify.get(&ch.id).copied().unwrap_or_default() == NotificationLevel::None {
-        row = row.child(icon(&icons::BELL_OFF, 14.0).color(p.text_faint));
+        row = row.child(icon(&icons::BELL_OFF, 12.0).color(p.text_faint));
     }
     if unread > 0 {
         row = row.child(
@@ -533,29 +511,32 @@ pub(crate) fn user_panel(s: &App, p: Palette) -> El {
     let status = s.me.custom_status.clone();
     row()
         .key("user-panel")
-        .w_full()
-        .h(56.0)
-        .px(10.0)
+        .w(206.0)
+        .h(40.0)
+        .px(6.0)
         .gap(2.0)
         .center_y()
+        .radius(20.0)
         .fill(p.user_panel)
+        .border(1.0, theme::gloss_edge(p))
         .role("group")
         .label("Your account controls")
         .child(
             el().key("my-status")
-                .size(32.0, 32.0)
-                .radius(16.0)
+                .size(30.0, 30.0)
+                .radius(15.0)
                 .center()
                 .role("button")
                 .label("Set your status")
                 .help("Set your status")
                 .on_press(|s: &mut App| s.modal = Modal::StatusPicker)
-                .child(avatar_status(&s.me, 32.0, p, p.user_panel, true)),
+                .child(avatar_status(&s.me, 30.0, p, p.user_panel, true)),
         )
         .child(
             col()
                 .grow(1.0)
                 .min_w(0.0)
+                .justify_center()
                 .pl(4.0)
                 .child(
                     text(s.me.display_name.clone())

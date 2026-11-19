@@ -118,6 +118,8 @@ impl App {
     pub fn toggle_thread_tag(&mut self, tag: Id) {
         if let Some(index) = self.thread_tag_ids.iter().position(|id| *id == tag) {
             self.thread_tag_ids.remove(index);
+        } else if self.thread_tag_ids.len() >= 5 {
+            self.toast("A post can have up to five tags");
         } else {
             self.thread_tag_ids.push(tag);
         }

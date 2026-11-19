@@ -14,7 +14,7 @@ Both sibling checkouts must exist. The manifests use relative paths only.
 ## Layout
 
 ```
-Runecord\             Client repo. Holds crates\client, assets\, packaging\, and download\.
+Runecord\             Client repo. Holds crates\client, assets\, packaging\, and docs\.
 ..\Runecord-backend\  Backend repo. Holds crates\protocol and crates\server.
 ..\rune\              UI framework.
 ```
@@ -29,7 +29,9 @@ Run `run.bat 1`, `run.bat 2`, and so on. Each window then holds one account.
 
 ## Downloads
 
-Run `build.bat`. It writes these files to `dist\`:
+Prebuilt files are on [GitHub Releases](https://github.com/CrauxZahard/Runecord/releases).
+
+To build locally, run `build.bat`. It writes these files to `dist\`:
 
 | File | Use |
 |---|---|
@@ -52,7 +54,7 @@ The Windows files use a self-signed certificate. SmartScreen may warn.
 
 ## Limits
 
-- No billing, Nitro, browser client, or mobile client.
+- No billing or Nitro.
 - Video uses two layers. It does not use an SFU.
 - Activities and connections are typed profile data. No OAuth.
 - The Linux build is cross-compiled. It has not run on a Linux host here.
