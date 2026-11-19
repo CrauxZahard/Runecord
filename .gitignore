@@ -80,5 +80,6 @@ $RECYCLE.BIN/
 *.cer
 *.snk
 
-# Agent scratch directories
+# Agent scratch directories and local-only agent instructions
 /.opencode/
+/AGENTS.md
