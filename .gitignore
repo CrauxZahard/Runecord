@@ -83,3 +83,8 @@ $RECYCLE.BIN/
 # Agent scratch directories and local-only agent instructions
 /.opencode/
 /AGENTS.md
+
+# Local-only UI customization. `scripts/local-ui.ps1` keeps these files here
+# and marks their copies in the source tree with skip-worktree so they cannot
+# be committed or pushed.
+/local-ui/
