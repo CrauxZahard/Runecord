@@ -17,6 +17,7 @@ pub mod install;
 mod patch;
 mod provider;
 mod secret;
+mod source;
 #[cfg(test)]
 mod tests;
 
@@ -411,6 +412,67 @@ fn run(
     run_with(&goal, config, &ask)
 }
 
+/// Rebuilds a source-only version without calling a model.
+pub fn rebuild(name: &str) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Pick a version to rebuild first.".into());
+    }
+    if !install::has_source(&name) {
+        return Err(format!(
+            "{name} has no source snapshot, so it cannot be rebuilt. Use Reset to default UI."
+        ));
+    }
+    if BUSY.swap(true, Ordering::SeqCst) {
+        return Err("An edit is already running.".into());
+    }
+    set_stage(Stage::Running(format!("Restoring the source for {name}")));
+    std::thread::Builder::new()
+        .name("runecord-ui-rebuild".into())
+        .spawn(move || {
+            let result = rebuild_run(&name);
+            BUSY.store(false, Ordering::SeqCst);
+            match result {
+                Ok(version) => set_stage(Stage::Staged(version)),
+                Err(error) => set_stage(Stage::Failed(error)),
+            }
+        })
+        .map_err(|error| {
+            BUSY.store(false, Ordering::SeqCst);
+            format!("Could not start the rebuild: {error}")
+        })?;
+    Ok(())
+}
+
+fn rebuild_run(name: &str) -> Result<String, String> {
+    let previous = install::state().current;
+    install::restore_source(name)?;
+    set_stage(Stage::Running(format!("Building {name}")));
+    let root = patch::source_root()?;
+    let target = install::target_dir()?;
+    match build::release(&root, &target) {
+        Ok(exe) => {
+            set_stage(Stage::Running(format!("Staging {name}")));
+            install::adopt_build(name, &exe)?;
+            // The running UI is still the old one until Restart. Keep the tree
+            // on its source so an edit started now changes what is on screen.
+            if !previous.is_empty() && previous != name && install::has_source(&previous) {
+                let _ = install::restore_source(&previous);
+            }
+            log(&format!(
+                "{name} was rebuilt from its source snapshot. Restart to use it."
+            ));
+            Ok(name.to_string())
+        }
+        Err(error) => {
+            if !previous.is_empty() && previous != name && install::has_source(&previous) {
+                let _ = install::restore_source(&previous);
+            }
+            Err(format!("{error}\n\nThe previous UI source was restored."))
+        }
+    }
+}
+
 /// The orchestrator, with the model call passed in so a test can drive the whole
 /// loop — planning, file requests, patch, build, staging — without a network.
 fn run_with(goal: &str, config: &provider::Config, ask: &Ask<'_>) -> Result<String, String> {
@@ -615,6 +677,8 @@ pub fn mark_ready() {
     if DONE.swap(true, Ordering::SeqCst) {
         return;
     }
+    install::record_base();
+    install::prune_now();
     if let Ok(path) = std::env::var("RUNECORD_READY_FILE") {
         let _ = std::fs::write(path, b"ready");
     }
@@ -623,6 +687,12 @@ pub fn mark_ready() {
 /// Starts the supervisor for the next process. The caller then quits.
 pub fn supervise_cli() -> bool {
     install::supervise_from_args()
+}
+
+/// True when the installed app dispatched to the current staged build and this
+/// process should exit.
+pub fn launch_current() -> bool {
+    install::launch_current()
 }
 
 /// The note from a build that failed to start, read once per launch.
@@ -826,9 +896,21 @@ impl crate::app::App {
         result
     }
 
+    /// Rebuild a source-only version, then leave it staged for Restart.
+    pub fn ui_edit_rebuild(&mut self, name: &str) {
+        match rebuild(name) {
+            Ok(()) => {
+                self.ui_edit.detail.clear();
+                self.ui_edit.stage = Stage::Running(format!("Rebuilding {name}"));
+            }
+            Err(error) if busy() => self.toast(error),
+            Err(error) => self.ui_edit.stage = Stage::Failed(error),
+        }
+    }
+
     pub fn ui_edit_reset(&mut self) -> Result<(), String> {
         let restored = install::restore_all_backups()?;
-        let result = install::restart_last_good();
+        let result = install::restart_base();
         if let Err(error) = &result {
             self.ui_edit.stage = Stage::Failed(error.clone());
         }

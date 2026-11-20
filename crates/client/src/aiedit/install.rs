@@ -2,11 +2,18 @@
 //!
 //! ```text
 //! %APPDATA%\Runecord\aiedit\
-//!   versions\base\runecord.exe    the binary that was running when the first edit was staged
-//!   versions\ui-<stamp>\...       a build the model produced
-//!   backup\<stamp>\...            the source files as they were before that edit
-//!   state.json                    current, last_good, pending
+//!   versions\ui-<stamp>\...     current, last-good and pending binaries only
+//!   source\objects\<hash>       content-addressed UI source files
+//!   source\versions\<name>\     full-tree manifests, kept after binaries are pruned
+//!   backup\<stamp>\...          per-edit rollback files
+//!   state.json                  current, last_good, pending, base_exe
 //! ```
+//!
+//! A version is a source snapshot plus an optional binary. Only the current and
+//! last-good binaries stay on disk; older versions are rebuilt from their
+//! source manifest when selected. The installed app can act as a launcher: it
+//! reads `state.json`, starts the current version, and falls back to the
+//! last-good build or its own built-in UI.
 //!
 //! The app cannot replace its own image on Windows, so "restart" hands the swap
 //! to a short-lived copy of the same executable: it starts the staged binary,
@@ -30,6 +37,9 @@ pub struct State {
     pub last_good: String,
     #[serde(default)]
     pub pending: Option<String>,
+    /// The installed app that serves as the built-in fallback and launcher.
+    #[serde(default)]
+    pub base_exe: String,
 }
 
 /// Per-user data for this feature.
@@ -126,9 +136,18 @@ pub struct VersionMeta {
     pub files: Vec<String>,
     #[serde(default)]
     pub created_ms: i64,
-    /// The source backup this build was made from.
+    /// The pre-edit backup this build was made from (legacy undo).
     #[serde(default)]
     pub backup: String,
+    /// The source snapshot that can rebuild this version.
+    #[serde(default)]
+    pub source: String,
+    /// The app version this UI was built against.
+    #[serde(default)]
+    pub app_version: String,
+    /// True when the binary was produced by a later rebuild, not the first edit.
+    #[serde(default)]
+    pub rebuilt: bool,
 }
 
 /// One entry in the version list.
@@ -139,13 +158,18 @@ pub struct Version {
     pub when: String,
     pub current: bool,
     pub pending: bool,
+    /// A runnable binary is present.
+    pub binary: bool,
+    /// A full source snapshot is present, so the version can be rebuilt.
+    pub source: bool,
+    pub rebuilt: bool,
 }
 
-/// Copies a built binary into `versions/<name>`, records what it was for, and
-/// marks it pending.
+/// Copies a built binary into `versions/<name>`, records the full source
+/// snapshot, and marks it pending.
 pub fn stage(exe: &Path, goal: &str, files: &[String], backup: &str) -> Result<String, String> {
     let dir = root()?;
-    ensure_base(&dir)?;
+    record_base();
     let name = format!("ui-{}", stamp());
     let version = dir.join("versions").join(&name);
     std::fs::create_dir_all(&version)
@@ -154,103 +178,189 @@ pub fn stage(exe: &Path, goal: &str, files: &[String], backup: &str) -> Result<S
     std::fs::copy(exe, &target)
         .map_err(|error| format!("Could not copy the new build: {error}"))?;
     copy_assets(&version);
+    if let Err(error) = super::source::snapshot(&name, goal) {
+        let _ = std::fs::remove_dir_all(&version);
+        return Err(error);
+    }
     let meta = VersionMeta {
         goal: goal.to_string(),
         files: files.to_vec(),
         created_ms: now_ms(),
         backup: backup.to_string(),
+        source: name.clone(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        rebuilt: false,
     };
-    let bytes = serde_json::to_vec_pretty(&meta).unwrap_or_default();
-    let _ = std::fs::write(version.join("meta.json"), bytes);
+    write_meta(&version, &meta)?;
     let mut state = state();
     state.pending = Some(name.clone());
     save_state(&state)?;
-    prune_versions(5);
+    prune_binaries();
     Ok(name)
 }
 
-/// Every staged build, newest first, with the original last.
+/// Adds a rebuilt binary to an existing source-backed version.
+pub fn adopt_build(name: &str, exe: &Path) -> Result<(), String> {
+    if !super::source::exists(name) {
+        return Err(format!("The source snapshot for {name} is missing."));
+    }
+    record_base();
+    let dir = root()?;
+    let version = dir.join("versions").join(name);
+    std::fs::create_dir_all(&version)
+        .map_err(|error| format!("Could not create {}: {error}", version.display()))?;
+    std::fs::copy(exe, version.join(exe_name()))
+        .map_err(|error| format!("Could not copy the rebuilt binary: {error}"))?;
+    copy_assets(&version);
+    let mut meta = version_meta(name).unwrap_or_else(|| {
+        super::source::manifest(name)
+            .map(|manifest| VersionMeta {
+                goal: manifest.goal,
+                created_ms: manifest.created_ms,
+                source: manifest.version,
+                app_version: manifest.app_version,
+                ..VersionMeta::default()
+            })
+            .unwrap_or_default()
+    });
+    meta.source = name.to_string();
+    meta.rebuilt = true;
+    meta.app_version = env!("CARGO_PKG_VERSION").to_string();
+    write_meta(&version, &meta)?;
+    let mut state = state();
+    state.pending = Some(name.to_string());
+    save_state(&state)?;
+    prune_binaries();
+    Ok(())
+}
+
+/// Every known version, newest first: runnable binaries plus source-only
+/// versions whose binary was pruned.
 pub fn versions() -> Vec<Version> {
     let Ok(dir) = root() else {
         return Vec::new();
     };
     let state = state();
-    let mut out: Vec<(u64, Version)> = Vec::new();
+    let mut out: Vec<(i64, Version)> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir.join("versions")) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "base" {
+                seen.push(name);
+                continue;
+            }
+            let binary = entry.path().join(exe_name()).exists();
+            let source = super::source::exists(&name);
+            if !binary && !source {
+                continue;
+            }
+            let meta: VersionMeta = std::fs::read(entry.path().join("meta.json"))
+                .ok()
+                .and_then(|bytes| parse_json(&bytes))
+                .unwrap_or_default();
+            let goal = if meta.goal.trim().is_empty() {
+                "UI edit".to_string()
+            } else {
+                one_line(meta.goal.trim(), 96)
+            };
+            out.push((
+                meta.created_ms,
+                Version {
+                    current: state.current == name,
+                    pending: state.pending.as_deref() == Some(name.as_str()),
+                    when: when_label(meta.created_ms),
+                    goal,
+                    name: name.clone(),
+                    binary,
+                    source,
+                    rebuilt: meta.rebuilt,
+                },
+            ));
+            seen.push(name);
+        }
+    }
+    for manifest in super::source::list() {
+        if seen.iter().any(|name| name == &manifest.version) || manifest.version == "base" {
+            continue;
+        }
+        let goal = if manifest.goal.trim().is_empty() {
+            "UI edit".to_string()
+        } else {
+            one_line(manifest.goal.trim(), 96)
+        };
+        out.push((
+            manifest.created_ms,
+            Version {
+                current: state.current == manifest.version,
+                pending: state.pending.as_deref() == Some(manifest.version.as_str()),
+                when: when_label(manifest.created_ms),
+                goal,
+                name: manifest.version,
+                binary: false,
+                source: true,
+                rebuilt: false,
+            },
+        ));
+    }
+    out.sort_by_key(|(stamp, _)| std::cmp::Reverse(*stamp));
+    out.into_iter().map(|(_, version)| version).collect()
+}
+
+/// Keeps only the runnable versions a restart can use. Source manifests stay;
+/// the binaries for older versions are deleted and rebuilt on demand.
+fn prune_binaries() {
+    let Ok(dir) = root() else {
+        return;
+    };
+    let state = state();
+    let base = base_exe();
+    let keep = [
+        state.current.clone(),
+        state.last_good.clone(),
+        state.pending.clone().unwrap_or_default(),
+    ];
     let Ok(entries) = std::fs::read_dir(dir.join("versions")) else {
-        return Vec::new();
+        return;
     };
     for entry in entries.flatten() {
         if !entry.path().is_dir() {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if !entry.path().join(exe_name()).exists() {
+        if name == "base" {
+            let base_copy = entry.path().join(exe_name());
+            let keep_base = base
+                .as_ref()
+                .is_some_and(|base| same_path(base, &base_copy));
+            if !keep_base {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
             continue;
         }
-        let meta: VersionMeta = std::fs::read(entry.path().join("meta.json"))
-            .ok()
-            .and_then(|bytes| parse_json(&bytes))
-            .unwrap_or_default();
-        let stamp = name
-            .strip_prefix("ui-")
-            .and_then(|rest| rest.parse::<u64>().ok())
-            .unwrap_or(0);
-        let goal = if name == "base" {
-            "Original build".to_string()
-        } else if meta.goal.trim().is_empty() {
-            "UI edit".to_string()
-        } else {
-            one_line(meta.goal.trim(), 96)
-        };
-        out.push((
-            stamp,
-            Version {
-                current: state.current == name,
-                pending: state.pending.as_deref() == Some(name.as_str()),
-                when: if name == "base" {
-                    String::new()
-                } else {
-                    when_label(meta.created_ms)
-                },
-                goal,
-                name,
-            },
-        ));
+        if keep.iter().any(|kept| kept == &name) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(entry.path());
     }
-    out.sort_by_key(|a| std::cmp::Reverse(a.0));
-    out.into_iter().map(|(_, version)| version).collect()
 }
 
-/// Keeps the newest `keep` builds, never the ones a restart can fall back to.
-fn prune_versions(keep: usize) {
-    let Ok(dir) = root() else {
-        return;
-    };
-    let state = state();
-    let protected = [state.current, state.last_good, "base".to_string()];
-    let Ok(entries) = std::fs::read_dir(dir.join("versions")) else {
-        return;
-    };
-    let mut stamps: Vec<(u64, PathBuf)> = entries
-        .flatten()
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let stamp = name
-                .strip_prefix("ui-")
-                .and_then(|rest| rest.parse::<u64>().ok())?;
-            if protected.iter().any(|kept| kept == &name)
-                || state.pending.as_deref() == Some(name.as_str())
-            {
-                return None;
-            }
-            Some((stamp, entry.path()))
-        })
-        .collect();
-    stamps.sort_by_key(|a| std::cmp::Reverse(a.0));
-    for (_, path) in stamps.into_iter().skip(keep) {
-        let _ = std::fs::remove_dir_all(path);
-    }
+/// Startup enforcement: only current, last-good and pending binaries stay.
+pub fn prune_now() {
+    prune_binaries();
+}
+
+/// Whether a version can be rebuilt from its source snapshot.
+pub fn has_source(name: &str) -> bool {
+    super::source::exists(name)
+}
+
+/// Restores a version's writable trees from its source snapshot.
+pub fn restore_source(name: &str) -> Result<usize, String> {
+    super::source::restore(name)
 }
 
 /// Collapses a goal to one display line. Stored goals are whole prompts, and a
@@ -280,27 +390,80 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// The binary that was running before the first staged edit.
-fn ensure_base(dir: &Path) -> Result<(), String> {
-    let base = dir.join("versions").join("base");
-    if base.join(exe_name()).exists() {
-        return Ok(());
-    }
-    std::fs::create_dir_all(&base)
-        .map_err(|error| format!("Could not create {}: {error}", base.display()))?;
-    let current = std::env::current_exe()
-        .map_err(|error| format!("Could not find the running executable: {error}"))?;
-    std::fs::copy(&current, base.join(exe_name()))
-        .map_err(|error| format!("Could not keep a copy of the current build: {error}"))?;
-    copy_assets(&base);
+/// Records the installed app path the launcher/fallback should use.
+///
+/// A staged child receives `RUNECORD_BASE_EXE` from the launcher so it never
+/// mistakes itself for the built-in app.
+pub fn record_base() {
+    let from_env = std::env::var_os("RUNECORD_BASE_EXE").map(PathBuf::from);
+    let path = from_env.clone().or_else(|| {
+        std::env::current_exe()
+            .ok()
+            .filter(|exe| !is_version_exe(exe))
+    });
+    let Some(path) = path else {
+        return;
+    };
     let mut state = state();
-    if state.last_good.is_empty() {
-        state.last_good = "base".into();
+    let value = path.to_string_lossy().to_string();
+    if state.base_exe != value {
+        state.base_exe = value;
+        let _ = save_state(&state);
     }
-    if state.current.is_empty() {
-        state.current = "base".into();
+}
+
+/// The installed app that owns the built-in UI.
+pub fn base_exe() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("RUNECORD_BASE_EXE").map(PathBuf::from)
+        && path.exists()
+    {
+        return Some(path);
     }
-    save_state(&state)
+    let state = state();
+    if !state.base_exe.is_empty() {
+        let path = PathBuf::from(&state.base_exe);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    std::env::current_exe()
+        .ok()
+        .filter(|exe| !is_version_exe(exe))
+}
+
+/// Whether a path is one of the staged `versions/ui-*` executables.
+fn is_version_exe(exe: &Path) -> bool {
+    let Ok(root) = root() else {
+        return false;
+    };
+    let versions = root.join("versions");
+    exe.parent()
+        .and_then(|parent| parent.parent())
+        .is_some_and(|parent| same_path(parent, &versions))
+}
+
+/// A development checkout should run the source the user just built, not the
+/// staged build. Installed apps have no workspace manifest above them.
+fn is_dev_checkout(exe: &Path) -> bool {
+    let Some(dir) = exe.parent() else {
+        return false;
+    };
+    dir.ancestors().take(6).any(|candidate| {
+        candidate.join("crates/client/Cargo.toml").exists() && candidate.join("Cargo.toml").exists()
+    })
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+fn write_meta(version: &Path, meta: &VersionMeta) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(meta).map_err(|error| error.to_string())?;
+    std::fs::write(version.join("meta.json"), bytes)
+        .map_err(|error| format!("Could not record the build metadata: {error}"))
 }
 
 /// The icon files an executable expects beside it, when they can be found.
@@ -335,6 +498,10 @@ pub fn version_exe(name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn fallback_exe(state: &State) -> Option<PathBuf> {
+    version_exe(&state.last_good).ok().or_else(base_exe)
+}
+
 /// Starts the staged build through a supervisor and returns once it is spawned.
 pub fn restart_staged() -> Result<(), String> {
     let state = state();
@@ -343,38 +510,35 @@ pub fn restart_staged() -> Result<(), String> {
         .clone()
         .ok_or("There is no staged build to restart into.")?;
     let child = version_exe(&pending)?;
-    let fallback = if state.last_good.is_empty() {
-        std::env::current_exe().map_err(|error| error.to_string())?
-    } else {
-        version_exe(&state.last_good).unwrap_or_else(|_| {
-            std::env::current_exe().unwrap_or_else(|_| PathBuf::from(exe_name()))
-        })
-    };
+    if super::source::exists(&pending) {
+        super::source::restore(&pending)?;
+    }
+    let fallback = fallback_exe(&state).unwrap_or_else(|| child.clone());
     supervise_spawn(&child, &fallback)
 }
 
-/// Starts the last good build, used by reset.
+/// Starts the last good build, used by undo.
 pub fn restart_last_good() -> Result<(), String> {
     let state = state();
-    let name = if state.last_good.is_empty() {
-        "base".to_string()
-    } else {
-        state.last_good
-    };
-    let child = version_exe(&name)?;
-    supervise_spawn(&child, &child)
+    if let Ok(child) = version_exe(&state.last_good) {
+        if super::source::exists(&state.last_good) {
+            let _ = super::source::restore(&state.last_good);
+        }
+        let fallback = base_exe().unwrap_or_else(|| child.clone());
+        return supervise_spawn(&child, &fallback);
+    }
+    restart_base()
 }
 
 /// Switches the next restart to one of the staged builds.
 ///
-/// Its source backup is restored first, so the files on disk match the build
+/// Its source snapshot is restored first, so the files on disk match the build
 /// that is about to run; otherwise the next edit would start from a newer tree
-/// than the UI the user is looking at. Choosing the original build restores
-/// every backup.
+/// than the UI the user is looking at.
 pub fn restart_into(name: &str) -> Result<(), String> {
     let child = version_exe(name)?;
-    if name == "base" {
-        let _ = restore_all_backups();
+    if super::source::exists(name) {
+        super::source::restore(name)?;
     } else if let Some(meta) = version_meta(name)
         && !meta.backup.is_empty()
     {
@@ -383,12 +547,164 @@ pub fn restart_into(name: &str) -> Result<(), String> {
     let mut state = state();
     state.pending = Some(name.to_string());
     save_state(&state)?;
-    let fallback = version_exe(&state.current)
-        .or_else(|_| version_exe(&state.last_good))
-        .or_else(|_| std::env::current_exe().map_err(|error| error.to_string()))?;
+    let fallback = fallback_exe(&state).unwrap_or_else(|| child.clone());
     supervise_spawn(&child, &fallback)
 }
 
+/// Restarts into the installed app's built-in UI and clears the custom state.
+pub fn restart_base() -> Result<(), String> {
+    let base = base_exe().ok_or(
+        "The installed Runecord executable is unknown, so the default UI cannot be started.",
+    )?;
+    let mut state = state();
+    state.current.clear();
+    state.last_good.clear();
+    state.pending = None;
+    save_state(&state)?;
+    supervise_spawn(&base, &base)
+}
+
+/// Promotes the pending build when the caller has already verified it starts.
+/// The supervisor does this automatically; the cleanup uses it for a build that
+/// was launched manually.
+pub fn promote_pending() -> Result<(), String> {
+    let Some(state) = finish_pending() else {
+        return Err("There is no pending build to promote.".into());
+    };
+    save_state(&state)
+}
+
+/// One-time and startup cleanup: keep the current and last-good binaries, delete
+/// every other executable, and leave their source manifests in place.
+#[derive(Clone, Debug, Default)]
+pub struct CleanupReport {
+    pub kept: Vec<String>,
+    pub removed: Vec<String>,
+    pub freed: u64,
+}
+
+pub fn cleanup_versions() -> Result<CleanupReport, String> {
+    record_base();
+    let dir = root()?;
+    let mut state = state();
+    if state.current == "base" {
+        state.current.clear();
+    }
+    if state.last_good == "base" {
+        state.last_good.clear();
+    }
+    if !state.current.is_empty() && version_exe(&state.current).is_err() {
+        state.current.clear();
+    }
+    if !state.last_good.is_empty() && version_exe(&state.last_good).is_err() {
+        state.last_good.clear();
+    }
+    if state.current == state.last_good {
+        state.last_good.clear();
+    }
+    // A pending build is kept until the user restarts; never silently promote an
+    // unverified executable.
+    save_state(&state)?;
+
+    // Record the source behind the current version when this is the first run of
+    // the snapshot store.
+    if !state.current.is_empty() && !super::source::exists(&state.current) {
+        let goal = version_meta(&state.current)
+            .map(|meta| meta.goal)
+            .unwrap_or_else(|| "Current UI".to_string());
+        let _ = super::source::snapshot(&state.current, &goal);
+    }
+
+    let keep = [
+        state.current.clone(),
+        state.last_good.clone(),
+        state.pending.clone().unwrap_or_default(),
+    ];
+    let base = base_exe();
+    let mut report = CleanupReport {
+        kept: keep
+            .iter()
+            .filter(|name| !name.is_empty())
+            .cloned()
+            .collect(),
+        ..CleanupReport::default()
+    };
+    let Ok(entries) = std::fs::read_dir(dir.join("versions")) else {
+        return Ok(report);
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let keep_this = if name == "base" {
+            base.as_ref()
+                .is_some_and(|base| same_path(base, &entry.path().join(exe_name())))
+        } else {
+            keep.iter().any(|kept| kept == &name)
+        };
+        if keep_this {
+            continue;
+        }
+        report.freed += dir_size(&entry.path());
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            report.removed.push(name);
+        }
+    }
+    Ok(report)
+}
+
+fn dir_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                dir_size(&path)
+            } else {
+                entry.metadata().map(|meta| meta.len()).unwrap_or(0)
+            }
+        })
+        .sum()
+}
+
+/// The installed app dispatches to the current version on startup. Returns true
+/// when a child was started and this process should exit.
+pub fn launch_current() -> bool {
+    if std::env::var_os("RUNECORD_AIEDIT_CHILD").is_some() {
+        return false;
+    }
+    let Ok(me) = std::env::current_exe() else {
+        return false;
+    };
+    // A development checkout must run the source that was just built.
+    if is_version_exe(&me) || is_dev_checkout(&me) {
+        return false;
+    }
+    let state = state();
+    if state.current.is_empty() || state.current == "base" {
+        return false;
+    }
+    let Ok(child) = version_exe(&state.current) else {
+        return false;
+    };
+    if same_path(&child, &me) {
+        return false;
+    }
+    record_base();
+    prune_binaries();
+    let fallback = fallback_exe(&state).unwrap_or_else(|| me.clone());
+    match supervise_spawn(&child, &fallback) {
+        Ok(()) => true,
+        Err(error) => {
+            eprintln!("aiedit launcher: {error}");
+            false
+        }
+    }
+}
 fn version_meta(name: &str) -> Option<VersionMeta> {
     let path = root().ok()?.join("versions").join(name).join("meta.json");
     let bytes = std::fs::read(path).ok()?;
@@ -402,6 +718,9 @@ fn supervise_spawn(child: &Path, fallback: &Path) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     let mut command = std::process::Command::new(exe);
     command.arg(SUPERVISE).arg(child).arg(&ready).arg(fallback);
+    if let Some(base) = base_exe() {
+        command.env("RUNECORD_BASE_EXE", base);
+    }
     for arg in std::env::args().skip(1) {
         if !arg.starts_with("--aiedit") {
             command.arg(arg);
@@ -432,44 +751,123 @@ fn supervise(child: &str, ready: &str, fallback: &str, extra: &[String]) {
     if child.is_empty() || ready.is_empty() {
         return;
     }
-    let _ = std::fs::remove_file(ready);
-    let mut spawned = std::process::Command::new(child)
-        .env("RUNECORD_READY_FILE", ready)
-        .args(extra)
-        .spawn()
-        .ok();
-    let deadline = Instant::now() + Duration::from_secs(90);
-    let mut started = false;
-    while Instant::now() < deadline {
-        if Path::new(ready).exists() {
-            started = true;
-            break;
-        }
-        if let Some(waiting) = spawned.as_mut() {
-            match waiting.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {}
-                Err(_) => break,
-            }
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    let _ = std::fs::remove_file(ready);
-    if started {
+    let base = std::env::var("RUNECORD_BASE_EXE").unwrap_or_default();
+    if start_and_wait(child, Path::new(ready), extra, &base) {
         if let Some(state) = finish_pending() {
             let _ = save_state(&state);
         }
+        prune_binaries();
         if let Ok(dir) = root() {
             let _ = std::fs::remove_file(dir.join("last-failure.txt"));
         }
         return;
     }
-    if let Some(mut waiting) = spawned.take() {
-        let _ = waiting.kill();
+
+    // The new build never painted. Try the previous build with the same proof
+    // before falling back to the installed app's built-in UI.
+    if !fallback.is_empty() && fallback != child {
+        let second = fallback_ready(ready, "last-good");
+        if start_and_wait(fallback, &second, extra, &base) {
+            note_failure("The new UI build did not start; Runecord reopened the previous build.");
+            mark_current_from_path(fallback);
+            prune_binaries();
+            return;
+        }
+    }
+    if !base.is_empty() && base != child && base != fallback {
+        let third = fallback_ready(ready, "built-in");
+        if start_and_wait(&base, &third, extra, &base) {
+            note_failure("The new UI build did not start; Runecord reopened the built-in UI.");
+            clear_current();
+            prune_binaries();
+            return;
+        }
     }
     record_failure("The new UI build did not start, so Runecord reopened the previous one.");
-    if !fallback.is_empty() && fallback != child {
-        let _ = std::process::Command::new(fallback).args(extra).spawn();
+}
+
+/// Starts an executable and waits for its ready marker. On success the child is
+/// deliberately left running; on failure it is killed.
+fn start_and_wait(exe: &str, ready: &Path, extra: &[String], base: &str) -> bool {
+    let _ = std::fs::remove_file(ready);
+    let mut command = std::process::Command::new(exe);
+    command
+        .env("RUNECORD_READY_FILE", ready)
+        .env("RUNECORD_AIEDIT_CHILD", "1");
+    if !base.is_empty() {
+        command.env("RUNECORD_BASE_EXE", base);
+    }
+    command.args(extra);
+    let mut spawned = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_secs(90);
+    while Instant::now() < deadline {
+        if ready.exists() {
+            let _ = std::fs::remove_file(ready);
+            return true;
+        }
+        match spawned.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {}
+            Err(_) => break,
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let _ = spawned.kill();
+    let _ = std::fs::remove_file(ready);
+    false
+}
+
+fn fallback_ready(ready: &str, label: &str) -> PathBuf {
+    let path = Path::new(ready);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("ready");
+    parent.join(format!("{stem}-{label}-{}.flag", stamp()))
+}
+
+fn version_name_for_path(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    let versions = root().ok()?.join("versions");
+    let parent = path.parent()?;
+    let grand = parent.parent()?;
+    if !same_path(grand, &versions) {
+        return None;
+    }
+    parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
+}
+
+fn mark_current_from_path(path: &str) {
+    let mut state = state();
+    state.pending = None;
+    if let Some(name) = version_name_for_path(path) {
+        state.current = name;
+        state.last_good.clear();
+    } else {
+        state.current.clear();
+        state.last_good.clear();
+    }
+    let _ = save_state(&state);
+}
+
+fn clear_current() {
+    let mut state = state();
+    state.current.clear();
+    state.last_good.clear();
+    state.pending = None;
+    let _ = save_state(&state);
+}
+
+fn note_failure(note: &str) {
+    if let Ok(dir) = root() {
+        let _ = std::fs::write(dir.join("last-failure.txt"), note);
     }
 }
 

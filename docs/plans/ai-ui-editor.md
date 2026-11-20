@@ -11,6 +11,7 @@ the full source bundle for packaged installs are not.
 | `crates/client/src/aiedit/mod.rs` | prompt, worker thread, progress events, `App` actions |
 | `crates/client/src/aiedit/brief.rs` | turns a short request and its references into an implementation brief |
 | `crates/client/src/aiedit/attach.rs` | decodes, downscales and previews reference images |
+| `crates/client/src/aiedit/source.rs` | content-addressed UI source snapshots and restore |
 | `crates/client/src/aiedit/provider.rs` | OpenAI-compatible chat completions, including image parts |
 | `crates/client/src/aiedit/patch.rs` | file allowlist, reply parser, backup and write |
 | `crates/client/src/aiedit/build.rs` | `cargo build --release` child process, streamed lines |
@@ -81,6 +82,36 @@ guessing. Caps: 12 model calls, 5 file rounds, 2 plan-only turns, 3 repairs. A
 failed build rolls the files back, then hands the compiler output back to the
 model with the list of files in the failed patch; after the third repair the
 error is shown and the tree is left compiling.
+
+### Storage: two binaries, full source history
+
+Only the installed app, `current` and `last_good` stay as executables. Every
+version records a full-tree source snapshot in `aiedit\source`:
+
+```text
+source\objects\<sha256>          one copy of each distinct UI file
+source\versions\<name>\manifest.json
+```
+
+A manifest lists every writable file and its object hash, so it can reconstruct
+the exact tree; unchanged files are stored once. When a build is promoted, the
+old current becomes last-good and the old last-good executable is deleted. An
+older version without a binary shows **Rebuild** in the card: it restores the
+manifest, builds, stages the result, and leaves the running UI alone until
+**Restart**. Source snapshots are roughly 1 MB for the whole UI, versus 93 MB
+per executable.
+
+### Launcher
+
+The installed app also dispatches on startup: it reads `state.json`, starts
+`current` through the supervisor, and exits. If current never writes its ready
+marker, it tries `last_good`, then its own built-in UI. A development checkout
+skips this dispatch so `run.bat` still runs the source that was just built.
+This is what makes the desktop shortcut follow the edited version instead of
+always opening the original binary.
+
+Startup also prunes any executable that is not current, last-good or pending.
+The source manifests are never pruned by that pass.
 
 Not built yet: the one-time toolchain and source download for packaged installs
 (`source_root()` currently finds a sibling checkout or `%APPDATA%\runecord\aiedit\src`);

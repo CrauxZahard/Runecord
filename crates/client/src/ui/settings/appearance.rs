@@ -760,7 +760,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                         entry = entry.fill(p.rail.alpha(0.55)).child(
                             el().size(6.0, 6.0).radius(3.0).fill(p.green),
                         );
-                    } else {
+                    } else if version.binary && version.source {
                         let name = version.name.clone();
                         entry = entry
                             .key(format!("ai-use-{}", version.name))
@@ -778,11 +778,29 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                             } else {
                                 p.divider
                             }));
+                    } else if version.source {
+                        let name = version.name.clone();
+                        entry = entry
+                            .key(format!("ai-rebuild-{}", version.name))
+                            .role("button")
+                            .label(format!("Rebuild {}", version.goal))
+                            .help("Rebuild this version from its saved source (1–3 minutes)")
+                            .hover(p.rail_hover)
+                            .on_press(move |s: &mut App| s.ui_edit_rebuild(&name))
+                            .child(el().size(6.0, 6.0).radius(3.0).fill(p.text_link));
+                    } else {
+                        entry = entry.child(el().size(6.0, 6.0).radius(3.0).fill(p.divider));
                     }
                     let state = if version.current {
                         text("In use").font(theme::TINY).color(p.green)
                     } else if version.pending {
                         text("Staged").font(theme::TINY).color(p.yellow)
+                    } else if version.binary && !version.source {
+                        text("Fallback").font(theme::TINY).color(p.text_faint)
+                    } else if !version.binary && version.source {
+                        text("Rebuild").font(theme::TINY).color(p.text_link)
+                    } else if !version.binary {
+                        text("No source").font(theme::TINY).color(p.text_faint)
                     } else {
                         text("Use").font(theme::TINY).color(p.text_muted)
                     };
@@ -822,14 +840,28 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     .count();
                 if hidden == 1 {
                     list = list.child(
-                        text("1 earlier build stays on disk.")
+                        text("1 earlier version is in the source history.")
                             .font(theme::TINY)
                             .color(p.text_faint)
                             .padding(8.0),
                     );
                 } else if hidden > 1 {
                     list = list.child(
-                        text(format!("{hidden} earlier builds stay on disk."))
+                        text(format!(
+                            "{hidden} earlier versions are in the source history."
+                        ))
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .padding(8.0),
+                    );
+                }
+                if ui
+                    .history
+                    .iter()
+                    .any(|version| !version.binary && version.source)
+                {
+                    list = list.child(
+                        text("Source-only versions rebuild when selected (1–3 minutes).")
                             .font(theme::TINY)
                             .color(p.text_faint)
                             .padding(8.0),

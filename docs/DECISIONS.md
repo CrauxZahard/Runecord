@@ -328,11 +328,16 @@ which rejects the whole reply unless every path is under
 `crates/client/src/ui/` or `crates/ui/src/`; new `.rs` files in those trees are
 allowed, and the reply may `NEED` (read, never write) `app/mod.rs`,
 `app/actions/**`, `app/events/**` and `cache.rs` for state context. Files are
-backed up per edit. Builds run as a child process into the release profile, and
-the result is copied to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>`; the
-running binary is never overwritten. A restart starts the staged build through a
-supervisor copy of the executable, which waits for that build's ready marker
-(`App::poll` writes it) and reopens the previous binary if it never appears.
+backed up per edit. Builds run as a child process into the release profile. A
+finished build is copied to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>` and
+its full writable tree is recorded in `aiedit/source` as content-addressed
+objects plus a manifest; the running binary is never overwritten. A restart
+starts the staged build through a supervisor copy of the executable, which waits
+for that build's ready marker (`App::poll` writes it) and reopens the previous
+binary if it never appears. The installed app also acts as the launcher: it
+reads `state.json`, starts the current version, and falls back to last-good or
+its own built-in UI. A development checkout skips that dispatch so `run.bat`
+runs the source it just built.
 
 **Consequences.** "UI only" is enforced by the writer rather than by the system
 prompt, and no edit can reach `net/`, `config.rs` or the session tokens. New
@@ -358,9 +363,15 @@ three repairs. The caps live in `aiedit/mod.rs` (`MAX_STEPS`,
 `MAX_FILE_ROUNDS`, `MAX_REPAIRS`, `MAX_IDLE`) so a looping model cannot spin
 forever or exhaust the user's budget.
 
-Each staged build records the goal, its files and the backup it came from, so
-the card can list versions and switch between them; switching restores that
-build's source first, keeping the tree and the running UI in step. Five builds
-are kept — each is a full 88 MB executable — and the ones a restart can fall
-back to (`current`, `last_good`, `base`, `pending`) are never pruned.
+Each staged build records the goal, its files and the source manifest, so the
+card can list versions and switch between them; switching restores that build's
+source first, keeping the tree and the running UI in step. Only the installed
+app, `current` and `last_good` stay on disk as executables: a promoted build
+turns the old current into last-good and deletes the old last-good. Older
+versions keep their source manifest and show **Rebuild** instead of **Use**;
+rebuilding takes the same 1-3 minute build but frees roughly 93 MB per retired
+executable. Source snapshots are about 1 MB for the whole UI, and unchanged files
+are stored once. The binaries a restart can use (`current`, `last_good`,
+`pending`) are never pruned by the startup pass; `base` is used only when the
+installed app path is unknown.
 

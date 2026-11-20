@@ -10,5 +10,10 @@ fn main() {
     if runecord_client::aiedit::supervise_cli() {
         return;
     }
+    // The installed app is also the launcher: with a staged current version it
+    // starts that build (and exits), otherwise it runs its built-in UI.
+    if runecord_client::aiedit::launch_current() {
+        return;
+    }
     runecord_client::run();
 }

@@ -252,11 +252,62 @@ fn provider_settings_round_trip() {
     println!("provider round trip ok; previous: {before:?}");
 }
 
+/// Simulates a pruned binary and rebuilds it from its source snapshot. Only
+/// runs against a throwaway `RUNECORD_DATA` when `RUNECORD_HYBRID_TEST=1`.
+#[test]
+#[ignore = "rebuilds from a source snapshot; needs a warm target"]
+fn a_source_only_version_rebuilds() {
+    if std::env::var_os("RUNECORD_HYBRID_TEST").is_none() {
+        return;
+    }
+    let Some(version) = super::install::versions()
+        .into_iter()
+        .find(|version| version.source)
+    else {
+        return;
+    };
+    let exe = super::install::version_exe(&version.name).expect("staged binary");
+    std::fs::remove_file(&exe).expect("remove the binary to simulate pruning");
+    let rebuilt = super::rebuild_run(&version.name);
+    assert!(rebuilt.is_ok(), "{rebuilt:?}");
+    assert!(super::install::version_exe(&version.name).is_ok());
+}
+
 #[test]
 fn history_shows_the_request_not_the_brief_heading() {
     let composed = "User request:\nadd a pink mascot\n\nImplementation brief\nINTENT — ...";
     assert_eq!(super::stage_label(composed), "add a pink mascot");
     assert_eq!(super::stage_label("move the sidebar"), "move the sidebar");
+}
+
+/// Promotes a manually verified pending build, records the current source, and
+/// prunes every other staged executable on the real per-user store.
+///
+/// ```text
+/// RUNECORD_BASE_EXE=... RUNECORD_HYBRID_PROMOTE=1 ^
+///   cargo test -p runecord --lib aiedit::tests::prepare_and_clean_hybrid_store -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "promotes and prunes the real per-user store"]
+fn prepare_and_clean_hybrid_store() {
+    if std::env::var_os("RUNECORD_HYBRID_PROMOTE").is_some()
+        && let Some(pending) = super::install::state().pending.clone()
+        && super::install::version_exe(&pending).is_ok()
+    {
+        super::source::snapshot(&pending, "Hello Kitty theme")
+            .expect("snapshot the current source");
+        super::install::promote_pending().expect("promote the pending build");
+    }
+    let report = super::install::cleanup_versions().expect("cleanup the version store");
+    println!("kept: {:?}", report.kept);
+    println!("removed: {:?}", report.removed);
+    println!("freed: {:.1} MB", report.freed as f64 / (1024.0 * 1024.0));
+    for version in super::install::versions() {
+        println!(
+            "version {} binary={} source={} goal={}",
+            version.name, version.binary, version.source, version.goal
+        );
+    }
 }
 
 #[test]
