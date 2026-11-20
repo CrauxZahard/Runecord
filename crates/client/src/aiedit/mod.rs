@@ -1,11 +1,17 @@
 //! "Edit your own UI": an AI-authored change to the view layer, built into a
 //! separate executable and staged for a restart.
 //!
+//! A short request is first expanded into an implementation brief, with any
+//! attached reference images in front of the model. The orchestrator then reads,
+//! plans and patches; it may create new modules under the same UI trees.
+//!
 //! The model may only write files under [`patch::WRITABLE`]. The writer rejects
 //! any other path, so "UI only, never logic" is enforced here rather than by the
 //! system prompt. The build is a child process, the result is a new binary under
 //! `versions/`, and the previous one stays runnable.
 
+mod attach;
+mod brief;
 mod build;
 pub mod install;
 mod patch;
@@ -14,6 +20,9 @@ mod secret;
 #[cfg(test)]
 mod tests;
 
+pub use attach::Attachment;
+pub use provider::Image;
+
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -21,9 +30,10 @@ use rune::TextEdit;
 
 /// The orchestrator contract. Sent once, ahead of every session.
 const SYSTEM_PROMPT: &str = r#"You are the UI orchestrator for Runecord, a desktop chat client written in Rust
-with the Rune UI toolkit. A session has one goal, written by the user in plain language.
-You work in rounds: read, plan, patch, repair. You cannot ask the user questions; when a
-goal cannot be met inside the view layer, you say so with a NOTE.
+with the Rune UI toolkit. A session has one goal, written by the user in plain language and possibly
+expanded into an implementation brief. You work in rounds: read, plan, patch, repair. You cannot ask
+the user questions; when part of a goal cannot be met inside the view layer, build the closest
+UI-only version and say what was left out in a NOTE.
 
 ## Scope
 
@@ -31,23 +41,49 @@ You may read and write only:
   crates/client/src/ui/**   screens, shell, settings, modals
   crates/ui/src/**          palette, type scale, icon catalogue
 
-The host rejects the whole patch if it names any other path. Networking (net/), application
-state (app/), configuration (config.rs, paths.rs), startup (bootstrap.rs), the binary
-(main.rs), manifests and dependencies are permanently out of reach; do not request them.
+You may create new .rs files inside those two trees. A new file joins the build only when a file in
+the same tree declares it (`mod mascot;`) and a mounted view calls it, so include that parent file in
+the same reply even when nothing else in it changes.
 
-A change that needs new state, a new server call, a new dependency, or a file outside those
-two folders cannot be made. Return a NOTE explaining that instead of a patch that cannot
-compile.
+You may also request these read-only files when you need to know what the view can reach:
+  crates/client/src/app/mod.rs
+  crates/client/src/app/actions/**
+  crates/client/src/app/events/**
+  crates/client/src/cache.rs
+Never write them. The host rejects the whole patch if it names any other path. Networking (net/),
+secrets, configuration (config.rs, paths.rs), startup, the binary, manifests, dependencies and the
+App fields themselves are permanently out of reach.
+
+## Build what does not exist yet
+
+The icon catalogue and the current screens are a starting point, not a limit. If the user asks for
+something the app has never had — a mascot, sticker, decorative panel, badge, background pattern, a
+new card, an alternate navigation — make it from the primitives the UI already has. Do not refuse
+because there is no existing field, icon or widget for it.
+
+- A new icon: add an entry to `crates/ui/src/icons.rs` with `stroke_icon!` for a line glyph or
+  `fill_icon!` for a solid mascot shape (or an inline `Icon { name, view, body }`), then draw it with
+  `icon(&icons::YOUR_NAME, size)`.
+- A new widget or panel: add `crates/client/src/ui/<name>.rs`, declare `mod <name>;` in
+  `ui/mod.rs` (or the owning module), expose `pub(crate) fn <name>(s: &App, p: Palette) -> El`, and
+  mount it from the shell or the screen it belongs to.
+- A visual motif: gradients, rounded shapes, borders, inset shadows and type are available on `El`.
+  Build the motif; recolouring an existing card is not the same thing.
+- A reference image: keep its palette, proportions and mood, but draw an original glyph. Do not
+  reproduce a trademarked character exactly.
+- If the idea needs data the view cannot see (a new server field, a new persisted setting), build
+  the part that is visible, use existing state where possible, and name the missing piece in PLAN.
 
 ## Rounds
 
-1. You receive the goal, the file list, and three grounding files. Reply with a PLAN and NEED
-   lines for the files you must read. Do not write code for a file you have not seen.
-2. You receive the files you requested. When you have everything, return the complete
-   replacement files.
-3. The host builds. If it fails you are shown the compiler errors and your patch has been
-   rolled back, so the files on disk are the originals again; return the complete corrected
-   files. At most three file requests and two repairs. Do not loop.
+1. You receive the goal, the brief when one was generated, the file list, and four grounding files.
+   Reply with a PLAN and NEED lines for the files you must read. Do not write code for a file you
+   have not seen.
+2. You receive the files you requested. When you have everything, return the complete replacement
+   files.
+3. The host builds. If it fails you are shown the compiler errors and your patch has been rolled
+   back, so the files on disk are the originals again; return the complete corrected files. At most
+   four file requests and three repairs. Do not loop.
 
 ## Reply format
 
@@ -58,36 +94,36 @@ Which elements move, resize, restyle, appear or disappear; which files; what sta
 Three to six lines.
 >>>
 <<<NEED crates/client/src/ui/sidebar.rs>>>
-<<<NOTE This needs a stored preference, which the view layer cannot add.>>>
+<<<NOTE This part needs a stored preference, which the view layer cannot add.>>>
 <<<FILE crates/client/src/ui/sidebar.rs
 <the complete file>
 >>>
 
 ## Patch rules
 
-- Whole files, not diffs, and only files you actually change.
-- It must compile on the first try. Use only `s.<field>` reads and `s.<method>()` calls that
-  appear in the files you were given; inventing one fails the build. Import only what the file
+- Whole files, not diffs, and only files you actually change. A new file is a complete file.
+- Register every new module in a parent file included in the same reply.
+- It must compile on the first try. Use only `s.<field>` reads and `s.<method>()` calls that appear
+  in the files you were given or requested; inventing one fails the build. Import only what the file
   already imports or what `rune`/`rune_kit` offers there. No new crates.
 - Keep every existing `key`, `role`, `label`, `help` and handler unless the goal is about them.
 - Do not reformat code you are not changing. A reviewable diff is part of the deliverable.
-- Both themes: take colours from `Palette` (`p.*`) or `theme::*`; never hardcode a light-only
-  value.
-- Layout must not overflow: `.wrap()` or `.truncate()` text, `.min_w(0.0)` on flexible columns,
-  and leave room for the member list, resize handles and the title bar.
+- Both themes: take colours from `Palette` (`p.*`) or `theme::*`; never hardcode a light-only value.
+- Layout must not overflow: `.wrap()` or `.truncate()` text, `.min_w(0.0)` on flexible columns, and
+  leave room for the member list, resize handles and the title bar.
 - "Whole new UI", "redesign", "different app", "reorganize": these are structural briefs. Change
-  where things are — column order, navigation model, header and composer placement, density, and
-  the product name on screen — not only colours. Repainting the tokens while keeping the same
-  columns does not satisfy that goal, and the user will reject it.
+  where things are — column order, navigation model, header and composer placement, density, and the
+  product name on screen — not only colours. Repainting the tokens while keeping the same columns
+  does not satisfy that goal, and the user will reject it.
 - Position lives in the shell: `crates/client/src/ui/mod.rs` holds `guild_shell` and `dm_shell`
   (column order is the order of their `.child(...)` calls) and the title bar; `rail.rs` is the
-  server column, `sidebar.rs` the channel list, `members.rs` the member column, `dms.rs` the DM
-  list and DM view, `composer.rs` the message box. Request these with NEED before a structural
-  edit instead of patching only the tokens.
-- For a structural goal, the smallest change that satisfies it is a layout change; do not fall
-  back to a recolour. For a narrow goal, still change as little as possible and say so in PLAN.
-- If the goal is already satisfied by the code, return a NOTE saying so; do not rewrite files
-  for no reason."#;
+  server column, `sidebar.rs` the channel list, `members.rs` the member column, `dms.rs` the DM list
+  and DM view, `composer.rs` the message box. Request these with NEED before a structural edit
+  instead of patching only the tokens.
+- For a structural goal, the smallest change that satisfies it is a layout change; do not fall back
+  to a recolour. For a narrow goal, still change as little as possible and say so in PLAN.
+- If the goal is already satisfied by the code, return a NOTE saying so; do not rewrite files for no
+  reason."#;
 
 /// One AI edit attempt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +135,8 @@ pub enum Stage {
     Staged(String),
     /// The provider answered a test request.
     Checked(String),
+    /// A short request was expanded into an implementation brief.
+    Briefed(String),
     Failed(String),
 }
 
@@ -106,6 +144,11 @@ pub enum Stage {
 pub enum Event {
     Stage(Stage),
     Line(String),
+    /// The full brief, and the request it was written from.
+    Brief {
+        text: String,
+        goal: String,
+    },
 }
 
 /// The settings card's state. One of these lives on `App`.
@@ -119,6 +162,12 @@ pub struct UiEdit {
     pub detail: Vec<String>,
     /// Staged builds, newest first, for switching between looks.
     pub history: Vec<install::Version>,
+    /// Reference images attached to the next edit.
+    pub attachments: Vec<Attachment>,
+    /// The implementation brief for [`brief_for`](Self::brief_for), when one was
+    /// generated. Reused only while the request is unchanged.
+    pub brief: Option<String>,
+    pub brief_for: String,
 }
 
 impl Default for UiEdit {
@@ -145,6 +194,9 @@ impl Default for UiEdit {
             stage: Stage::Idle,
             detail: Vec::new(),
             history: install::versions(),
+            attachments: Vec::new(),
+            brief: None,
+            brief_for: String::new(),
         }
     }
 }
@@ -152,13 +204,13 @@ impl Default for UiEdit {
 static BUSY: AtomicBool = AtomicBool::new(false);
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 
-/// Model calls per session, across planning, file requests and repairs.
-const MAX_STEPS: usize = 10;
+/// Model calls per session, across briefing, planning, file requests and repairs.
+const MAX_STEPS: usize = 12;
 /// Rounds of "send me these files" before the session is abandoned. A
 /// structural redesign needs the shell modules too, not just the tokens.
-const MAX_FILE_ROUNDS: usize = 4;
+const MAX_FILE_ROUNDS: usize = 5;
 /// Compiler-error repairs after the first failed build.
-const MAX_REPAIRS: usize = 2;
+const MAX_REPAIRS: usize = 3;
 /// Plan-only turns before the session is abandoned.
 const MAX_IDLE: usize = 2;
 
@@ -215,7 +267,17 @@ pub fn test_key(base_url: &str, model: &str) -> Result<String, String> {
 }
 
 /// Starts an edit on a worker thread.
-pub fn start(prompt: &str, base_url: &str, model: &str) -> Result<(), String> {
+///
+/// `brief` is a brief the user generated ahead of time for this exact request;
+/// when it is absent the worker writes one before orchestrating. `images` are
+/// the provider-facing reference images, not the preview buffers.
+pub fn start(
+    prompt: &str,
+    base_url: &str,
+    model: &str,
+    images: Vec<Image>,
+    brief: Option<String>,
+) -> Result<(), String> {
     let goal = prompt.trim().to_string();
     if goal.is_empty() {
         return Err("Describe the change you want first.".into());
@@ -234,7 +296,7 @@ pub fn start(prompt: &str, base_url: &str, model: &str) -> Result<(), String> {
     std::thread::Builder::new()
         .name("runecord-ui-edit".into())
         .spawn(move || {
-            let result = run(&goal, &config);
+            let result = run(&goal, &config, &images, brief.as_deref());
             BUSY.store(false, Ordering::SeqCst);
             match result {
                 Ok(version) => set_stage(Stage::Staged(version)),
@@ -248,17 +310,110 @@ pub fn start(prompt: &str, base_url: &str, model: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes a brief for a request without building anything, so the user can see
+/// the plan before spending a build on it.
+pub fn refine(prompt: &str, base_url: &str, model: &str, images: Vec<Image>) -> Result<(), String> {
+    let goal = prompt.trim().to_string();
+    if goal.is_empty() {
+        return Err("Describe the change you want first.".into());
+    }
+    if BUSY.swap(true, Ordering::SeqCst) {
+        return Err("An edit is already running.".into());
+    }
+    let config = provider::Config {
+        base_url: base_url.trim().to_string(),
+        model: model.trim().to_string(),
+        key: secret::load().unwrap_or_default(),
+    };
+    let _ = install::save_provider(&config.base_url, &config.model);
+    set_stage(Stage::Running("Refining the idea".into()));
+    std::thread::Builder::new()
+        .name("runecord-ui-refine".into())
+        .spawn(move || {
+            let text = brief::expand(&goal, &config, &images, &ask_with_images);
+            BUSY.store(false, Ordering::SeqCst);
+            if text.trim() == goal.trim() {
+                set_stage(Stage::Failed(
+                    "The provider couldn't write a brief. The request is unchanged; Generate still works."
+                        .into(),
+                ));
+                return;
+            }
+            for line in text.lines().take(12) {
+                log(&format!("Brief: {}", line.trim()));
+            }
+            push(Event::Brief {
+                text,
+                goal: goal.clone(),
+            });
+            set_stage(Stage::Briefed("Brief ready".into()));
+        })
+        .map_err(|error| {
+            BUSY.store(false, Ordering::SeqCst);
+            format!("Could not start the brief: {error}")
+        })?;
+    Ok(())
+}
+
 /// A model call. The orchestrator gets replies through this so a test can drive
 /// the whole loop without a network.
-type Ask = dyn Fn(&provider::Config, &[(String, String)]) -> Result<String, String>;
+type Ask<'a> = dyn Fn(&provider::Config, &[(String, String)]) -> Result<String, String> + 'a;
 
-fn run(goal: &str, config: &provider::Config) -> Result<String, String> {
-    run_with(goal, config, &|cfg, messages| provider::ask(cfg, messages))
+fn ask_with_images(
+    cfg: &provider::Config,
+    messages: &[(String, String)],
+    images: &[Image],
+) -> Result<String, String> {
+    provider::ask_images(cfg, messages, images)
+}
+
+fn run(
+    goal: &str,
+    config: &provider::Config,
+    images: &[provider::Image],
+    brief: Option<&str>,
+) -> Result<String, String> {
+    let mut generated = false;
+    let brief = match brief {
+        Some(text) if !text.trim().is_empty() => text.trim().to_string(),
+        _ => {
+            generated = true;
+            set_stage(Stage::Running("Briefing the idea".into()));
+            brief::expand(goal, config, images, &ask_with_images)
+        }
+    };
+    if brief.trim() != goal.trim() {
+        log(&format!(
+            "Brief prepared ({} lines); handing it to the orchestrator.",
+            brief.lines().count()
+        ));
+        if generated {
+            // Show the auto-generated brief and remember it, so pressing
+            // Generate again on the same request does not pay for it twice.
+            push(Event::Brief {
+                text: brief.clone(),
+                goal: goal.to_string(),
+            });
+        }
+    }
+    let goal = brief::orchestration_goal(goal, &brief);
+    // The first turn is the only one that needs the pictures: the brief and the
+    // plan carry the decisions into later rounds. A provider that rejects
+    // images falls back to text inside `ask_images`.
+    let first = AtomicBool::new(true);
+    let ask = move |cfg: &provider::Config, messages: &[(String, String)]| {
+        if first.swap(false, Ordering::SeqCst) {
+            provider::ask_images(cfg, messages, images)
+        } else {
+            provider::ask(cfg, messages)
+        }
+    };
+    run_with(&goal, config, &ask)
 }
 
 /// The orchestrator, with the model call passed in so a test can drive the whole
 /// loop — planning, file requests, patch, build, staging — without a network.
-fn run_with(goal: &str, config: &provider::Config, ask: &Ask) -> Result<String, String> {
+fn run_with(goal: &str, config: &provider::Config, ask: &Ask<'_>) -> Result<String, String> {
     let manifest = patch::manifest()?;
     let grounding = patch::grounding()?;
     log(&format!(
@@ -312,7 +467,7 @@ fn run_with(goal: &str, config: &provider::Config, ask: &Ask) -> Result<String, 
             match build::release(&root, &target) {
                 Ok(exe) => {
                     set_stage(Stage::Running("Staging the new build".into()));
-                    let version = install::stage(&exe, goal, &changed, &backup)?;
+                    let version = install::stage(&exe, stage_label(goal), &changed, &backup)?;
                     log(&format!("Build {version} is ready. Restart to try it."));
                     return Ok(version);
                 }
@@ -388,12 +543,29 @@ fn run_with(goal: &str, config: &provider::Config, ask: &Ask) -> Result<String, 
     Err("The model ran out of steps without producing a patch. Nothing was applied.".into())
 }
 
+/// The version history should show what the user asked for, not the headings
+/// the orchestrator received. `run` prefixes the goal with the brief; undo that
+/// for the label only.
+fn stage_label(goal: &str) -> &str {
+    let label = goal
+        .strip_prefix("User request:\n")
+        .and_then(|rest| rest.split("\n\nImplementation brief").next())
+        .unwrap_or(goal)
+        .trim();
+    if label.is_empty() { goal.trim() } else { label }
+}
+
 fn opening(goal: &str, manifest: &str, grounding: &[(String, String)]) -> String {
     let mut out = String::new();
     out.push_str("Goal:\n");
     out.push_str(goal.trim());
     out.push_str("\n\nFiles you may edit:\n");
     out.push_str(manifest);
+    out.push_str(
+        "\nNew .rs files under those folders are allowed and are not in the list. Request read-only \
+         context from crates/client/src/app/** or crates/client/src/cache.rs with NEED when you need \
+         to know a field or action; never write those paths.\n",
+    );
     out.push_str("\nGrounding files you already have:\n\n");
     append_files(&mut out, grounding);
     out.push_str(
@@ -506,15 +678,74 @@ impl crate::app::App {
             });
     }
 
+    /// Adds a reference image picked from disk. The card owns the count limit so
+    /// both the picker and a paste share one error path.
+    pub fn ui_edit_attach(&mut self, path: std::path::PathBuf) {
+        if self.ui_edit.attachments.len() >= attach::MAX_COUNT {
+            self.toast(format!(
+                "At most {} reference images can be attached.",
+                attach::MAX_COUNT
+            ));
+            return;
+        }
+        match attach::from_path(&path) {
+            Ok(attachment) => {
+                self.toast(format!("Attached {}", attachment.name));
+                self.ui_edit.attachments.push(attachment);
+            }
+            Err(error) => self.toast(error),
+        }
+    }
+
+    /// Adds an image pasted or dropped on the prompt field.
+    pub fn ui_edit_attach_bytes(&mut self, name: String, bytes: Vec<u8>) {
+        if self.ui_edit.attachments.len() >= attach::MAX_COUNT {
+            self.toast(format!(
+                "At most {} reference images can be attached.",
+                attach::MAX_COUNT
+            ));
+            return;
+        }
+        match attach::from_bytes(name, bytes) {
+            Ok(attachment) => {
+                self.toast(format!("Attached {}", attachment.name));
+                self.ui_edit.attachments.push(attachment);
+            }
+            Err(error) => self.toast(error),
+        }
+    }
+
+    /// The provider-facing copies of the attached references.
+    fn ui_edit_images(&self) -> Vec<provider::Image> {
+        self.ui_edit
+            .attachments
+            .iter()
+            .map(attach::Attachment::image)
+            .collect()
+    }
+
+    /// The brief is reused only when it was written for the current request;
+    /// otherwise Generate asks the worker for a fresh one.
+    fn ui_edit_brief_for_prompt(&self) -> Option<String> {
+        (self.ui_edit.brief_for == self.ui_edit.prompt.text.trim())
+            .then(|| self.ui_edit.brief.clone())
+            .flatten()
+    }
+
     pub fn ui_edit_begin(&mut self) {
         if !self.ui_edit.key_saved {
             self.ui_edit.stage = Stage::Failed("Save an API key first.".into());
             return;
         }
+        let prompt = self.ui_edit.prompt.text.clone();
+        let images = self.ui_edit_images();
+        let brief = self.ui_edit_brief_for_prompt();
         match start(
-            &self.ui_edit.prompt.text,
+            &prompt,
             &self.ui_edit.base_url.text,
             &self.ui_edit.model.text,
+            images,
+            brief,
         ) {
             Ok(()) => {
                 self.ui_edit.detail.clear();
@@ -525,6 +756,43 @@ impl crate::app::App {
             Err(error) if busy() => self.toast(error),
             Err(error) => self.ui_edit.stage = Stage::Failed(error),
         }
+    }
+
+    /// Asks for the implementation brief without building; the Generate button
+    /// reuses it while the request is unchanged.
+    pub fn ui_edit_refine(&mut self) {
+        if !self.ui_edit.key_saved {
+            self.ui_edit.stage = Stage::Failed("Save an API key first.".into());
+            return;
+        }
+        let prompt = self.ui_edit.prompt.text.clone();
+        let images = self.ui_edit_images();
+        match refine(
+            &prompt,
+            &self.ui_edit.base_url.text,
+            &self.ui_edit.model.text,
+            images,
+        ) {
+            Ok(()) => {
+                self.ui_edit.detail.clear();
+                self.ui_edit.stage = Stage::Running("Refining the idea".into());
+            }
+            Err(error) if busy() => self.toast(error),
+            Err(error) => self.ui_edit.stage = Stage::Failed(error),
+        }
+    }
+
+    /// Copies the generated brief into the prompt, so the user can edit the
+    /// plan that the orchestrator will follow. Generate then reuses it instead
+    /// of paying for a second brief.
+    pub fn ui_edit_use_brief(&mut self) {
+        let Some(brief) = self.ui_edit.brief.clone() else {
+            self.toast("There is no brief to use yet.");
+            return;
+        };
+        self.ui_edit.prompt.replace_text(brief.trim());
+        self.ui_edit.brief_for = self.ui_edit.prompt.text.trim().to_string();
+        self.toast("Brief copied into the prompt; edit it or press Generate.");
     }
 
     pub fn ui_edit_restart(&mut self) -> Result<(), String> {

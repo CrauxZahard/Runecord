@@ -19,6 +19,19 @@ macro_rules! stroke_icon {
     };
 }
 
+/// A solid glyph, for mascots and decorative marks. The body supplies the
+/// shapes; the wrapper makes them take the element's colour.
+#[allow(unused_macros)] // generated icons use it; the shipped catalogue is strokes
+macro_rules! fill_icon {
+    ($name:ident, $key:literal, $body:literal) => {
+        pub static $name: Icon = Icon {
+            name: $key,
+            view: 24.0,
+            body: concat!(r#"<g fill="currentColor">"#, $body, "</g>"),
+        };
+    };
+}
+
 stroke_icon!(
     HASH,
     "hash",

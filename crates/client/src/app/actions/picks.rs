@@ -26,6 +26,9 @@ impl App {
             }
             PickKind::DmIcon { channel } => self.begin_dm_icon_crop(channel, source),
             PickKind::ChannelUpload { .. } => self.upload_file(source),
+            // The AI editor's picker handles its own path in the callback; this
+            // arm exists only because the enum is shared.
+            PickKind::UiReference => {}
         }
     }
 }

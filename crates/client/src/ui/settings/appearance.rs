@@ -285,6 +285,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
         crate::aiedit::Stage::Running(_) => Some(pill(p.yellow, "Working")),
         crate::aiedit::Stage::Staged(_) => Some(pill(p.green, "Build ready")),
         crate::aiedit::Stage::Checked(_) => Some(pill(p.green, "Key works")),
+        crate::aiedit::Stage::Briefed(_) => Some(pill(p.green, "Brief ready")),
         crate::aiedit::Stage::Failed(_) => Some(pill(p.danger, "Needs attention")),
     };
 
@@ -325,7 +326,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 .gap(10.0)
                 .child(header)
                 .child(
-                    text("Describe a change in plain words. The app rewrites the UI source and builds a fresh copy beside the current one. Restart when it is ready.")
+                    text("Describe a change in plain words — even something the app has never had. Attach reference images if a look matters. The app writes the UI source and builds a fresh copy beside the current one. Restart when it is ready.")
                         .wrap()
                         .font(theme::SMALL)
                         .color(p.text_muted),
@@ -358,7 +359,47 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     p.text_faint,
                 )
                 .padding(11.0)
-                .on_edit(|s: &mut App| &mut s.ui_edit.prompt),
+                .on_edit(|s: &mut App| &mut s.ui_edit.prompt)
+                .on_input_paste(|s: &mut App, content, _: &mut rune::Tx| {
+                    if let Some(image) = content.image() {
+                        s.ui_edit_attach_bytes(
+                            format!("pasted-{}.png", now_ms()),
+                            image.png().to_vec(),
+                        );
+                        return true;
+                    }
+                    if let Some(path) = content.files().first() {
+                        s.ui_edit_attach(path.clone());
+                        return true;
+                    }
+                    false
+                }),
+        )
+        .child(
+            row()
+                .w_full()
+                .gap(8.0)
+                .center_y()
+                .child(
+                    ghost("ai-attach", "Attach image", 30.0)
+                        .help("Add a reference image the model can look at")
+                        .on_press_tx(|_s: &mut App, tx: &mut rune::Tx| {
+                            crate::files::open(
+                                tx,
+                                crate::files::PickKind::UiReference,
+                                "Attach a reference image",
+                                &["png", "jpg", "jpeg", "webp", "gif"],
+                                |s, path| s.ui_edit_attach(path),
+                            );
+                        }),
+                )
+                .child(
+                    text("or paste / drop an image on the box")
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .grow(1.0)
+                        .min_w(0.0),
+                ),
         )
         .child(
             row()
@@ -368,7 +409,9 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 .child(chip("ai-chip-right", "Sidebar on the right", p))
                 .child(chip("ai-chip-compact", "Tighter message rows", p))
                 .child(chip("ai-chip-bigger", "Bigger chat type", p))
-                .child(chip("ai-chip-members", "Hide the member list", p)),
+                .child(chip("ai-chip-members", "Hide the member list", p))
+                .child(chip("ai-chip-mascot", "Add a mascot in the corner", p))
+                .child(chip("ai-chip-playful", "Playful, rounded icons", p)),
         )
         .child({
             let label = if running {
@@ -404,6 +447,13 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
             }
             let mut actions = row().w_full().gap(8.0).center_y();
             actions = actions.child(generate);
+            if !running {
+                actions = actions.child(
+                    ghost("ai-refine", "Refine idea", 34.0)
+                        .help("Turn the request into a detailed brief before building")
+                        .on_press(|s: &mut App| s.ui_edit_refine()),
+                );
+            }
             // Undo and reset restart the app, so they stay out of reach while a
             // build is running.
             if !running {
@@ -430,6 +480,116 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
             }
             actions
         });
+
+    if !ui.attachments.is_empty() {
+        let mut strip = row().w_full().gap(8.0).flex_wrap();
+        for (index, attachment) in ui.attachments.iter().enumerate() {
+            let tile = row()
+                .w(190.0)
+                .h(50.0)
+                .px(6.0)
+                .radius(8.0)
+                .gap(8.0)
+                .center_y()
+                .fill(p.input)
+                .border(1.0, p.divider_soft)
+                .child(
+                    el().size(38.0, 38.0)
+                        .radius(6.0)
+                        .clip_rounded(6.0)
+                        .pixels_fit(&attachment.pixels, rune::SurfaceFit::Fill),
+                )
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(2.0)
+                        .child(
+                            text(attachment.name.clone())
+                                .font(theme::TINY)
+                                .color(p.text)
+                                .truncate()
+                                .help_when_truncated(attachment.name.clone()),
+                        )
+                        .child(
+                            text(format!("{}×{}", attachment.width, attachment.height))
+                                .font(theme::TINY)
+                                .color(p.text_faint),
+                        ),
+                )
+                .child(
+                    el().key(format!("ai-attach-remove-{index}"))
+                        .size(20.0, 20.0)
+                        .radius(10.0)
+                        .center()
+                        .role("button")
+                        .label("Remove reference image")
+                        .hover(p.rail_hover)
+                        .on_press(move |s: &mut App| {
+                            if index < s.ui_edit.attachments.len() {
+                                s.ui_edit.attachments.remove(index);
+                            }
+                        })
+                        .child(icon(&icons::CLOSE, 11.0).color(p.text_muted).a11y_hidden()),
+                );
+            strip = strip.child(tile);
+        }
+        change = change.child(strip);
+    }
+
+    if let Some(brief) = &ui.brief {
+        let shown: String = brief.lines().take(8).collect::<Vec<_>>().join("\n");
+        let hidden = brief.lines().count().saturating_sub(8);
+        let mut panel = col()
+            .w_full()
+            .radius(6.0)
+            .fill(p.code_bg)
+            .border(1.0, p.divider_soft)
+            .padding(10.0)
+            .gap(4.0)
+            .child(
+                row()
+                    .w_full()
+                    .gap(6.0)
+                    .center_y()
+                    .child(
+                        text("GENERATED BRIEF")
+                            .font(theme::TINY)
+                            .color(p.text_link)
+                            .grow(1.0),
+                    )
+                    .child(
+                        el().key("ai-use-brief")
+                            .h(20.0)
+                            .px(8.0)
+                            .radius(10.0)
+                            .center()
+                            .role("button")
+                            .label("Use the brief as the prompt")
+                            .fill(Color::TRANSPARENT)
+                            .border(1.0, p.divider)
+                            .hover(p.rail_hover)
+                            .on_press(|s: &mut App| s.ui_edit_use_brief())
+                            .child(text("Use as prompt").font(theme::TINY).color(p.text_muted)),
+                    )
+                    .child(
+                        text(format!("{} lines", brief.lines().count()))
+                            .font(theme::TINY)
+                            .color(p.text_faint),
+                    ),
+            )
+            .child(text(shown).wrap().font(theme::MONO).color(p.text_faint));
+        if hidden > 0 {
+            panel = panel.child(
+                text(format!(
+                    "… {hidden} more lines are included in the build request."
+                ))
+                .font(theme::TINY)
+                .color(p.text_faint),
+            );
+        }
+        change = change.child(panel);
+    }
 
     if let crate::aiedit::Stage::Running(step) = &ui.stage {
         let mut log = col()

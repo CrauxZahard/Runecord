@@ -9,7 +9,9 @@ the full source bundle for packaged installs are not.
 |---|---|
 | `crates/ui` | `runecord-ui`: palette, type scale, icon catalogue |
 | `crates/client/src/aiedit/mod.rs` | prompt, worker thread, progress events, `App` actions |
-| `crates/client/src/aiedit/provider.rs` | OpenAI-compatible chat completions |
+| `crates/client/src/aiedit/brief.rs` | turns a short request and its references into an implementation brief |
+| `crates/client/src/aiedit/attach.rs` | decodes, downscales and previews reference images |
+| `crates/client/src/aiedit/provider.rs` | OpenAI-compatible chat completions, including image parts |
 | `crates/client/src/aiedit/patch.rs` | file allowlist, reply parser, backup and write |
 | `crates/client/src/aiedit/build.rs` | `cargo build --release` child process, streamed lines |
 | `crates/client/src/aiedit/install.rs` | versions, `state.json`, restart supervisor, restore |
@@ -36,9 +38,29 @@ sends the `x-opencode-session` header that gateway requires when it sees an
 `opencode.ai` host. **Test** sends one tiny request and reports the provider's
 answer, so a key can be checked without paying for a build.
 
-Four prompt chips sit above the buttons ("Sidebar on the right", "Tighter message
-rows", "Bigger chat type", "Hide the member list") and fill the box rather than
-replacing it.
+Six prompt chips sit above the buttons ("Sidebar on the right", "Tighter message
+rows", "Bigger chat type", "Hide the member list", "Add a mascot in the corner",
+"Playful, rounded icons") and fill the box rather than replacing it. The last two
+show that the editor is not limited to rearranging what already exists.
+
+The card also accepts **reference images** (picker, paste or drop on the prompt).
+Each one is decoded, shrunk to a 1400px long side, re-encoded and shown as a
+thumbnail; Generate sends them to the model with the request. A provider that
+rejects image parts gets one text-only retry instead of failing the edit.
+
+**Refine idea** turns the request into a structured implementation brief
+(intent, reference, placement, new modules, steps, look, limits, acceptance)
+before any build. Generate runs the same step automatically when no brief exists
+for the current request, shows it under the prompt, and reuses it while the text
+is unchanged. A failed brief is not fatal: the original request is used, and the
+reference images still reach the first planning turn. **Use as prompt** copies
+the brief into the editable prompt so it can be tuned before building.
+
+The writable tree now includes files that do not exist yet. A new icon in
+`crates/ui/src/icons.rs`, a new widget module under `crates/client/src/ui/`, and
+the parent file that registers it are a valid patch. Read-only context from
+`crates/client/src/app/**` and `cache.rs` can be requested with `NEED` so a new
+view can call real state and actions without guessing.
 
 ## How a session runs
 
@@ -52,12 +74,13 @@ message history and accepts one action per turn:
 | `<<<FILE path … >>>` | Complete replacement files. Host writes, backs up, builds. |
 | `<<<NOTE … >>>` | The goal needs logic the UI layer cannot add; shown to the user as-is. |
 
-Round 1 gets the goal, a manifest of every writable file with line counts, and
-three grounding files (`ui/mod.rs`, `ui/common.rs`, `theme.rs`), so it plans
-instead of guessing. Caps: 8 model calls, 3 file rounds, 2 plan-only turns, 2
-repairs. A failed build rolls the files back, then hands the compiler output back
-to the model with the list of files in the failed patch; after the second repair
-the error is shown and the tree is left compiling.
+Round 1 gets the goal, the generated brief, a manifest of every writable file
+with line counts, four grounding files (`ui/mod.rs`, `ui/common.rs`, `theme.rs`,
+`icons.rs`) and the reference images on the first turn, so it plans instead of
+guessing. Caps: 12 model calls, 5 file rounds, 2 plan-only turns, 3 repairs. A
+failed build rolls the files back, then hands the compiler output back to the
+model with the list of files in the failed patch; after the third repair the
+error is shown and the tree is left compiling.
 
 Not built yet: the one-time toolchain and source download for packaged installs
 (`source_root()` currently finds a sibling checkout or `%APPDATA%\runecord\aiedit\src`);

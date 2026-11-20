@@ -28,6 +28,8 @@ pub enum PickKind {
     ChannelUpload {
         channel: Id,
     },
+    /// A reference image for the AI UI editor; nothing is uploaded to a server.
+    UiReference,
 }
 
 /// Opens the native picker and calls `on_path` with the chosen path.

@@ -223,11 +223,16 @@ fn a_live_edit_builds() {
         model,
         key,
     };
-    let result = super::run(&goal, &config);
+    let result = super::run(&goal, &config, &[], None);
     for event in super::take() {
         match event {
             super::Event::Stage(stage) => println!("STAGE {stage:?}"),
             super::Event::Line(line) => println!("LINE {line}"),
+            super::Event::Brief { goal, text } => println!(
+                "BRIEF for <{} chars> ({} lines)",
+                goal.chars().count(),
+                text.lines().count()
+            ),
         }
     }
     match result {
@@ -245,6 +250,13 @@ fn provider_settings_round_trip() {
     assert_eq!(back.base_url, "https://example.test/v1");
     assert_eq!(back.model, "test-model");
     println!("provider round trip ok; previous: {before:?}");
+}
+
+#[test]
+fn history_shows_the_request_not_the_brief_heading() {
+    let composed = "User request:\nadd a pink mascot\n\nImplementation brief\nINTENT — ...";
+    assert_eq!(super::stage_label(composed), "add a pink mascot");
+    assert_eq!(super::stage_label("move the sidebar"), "move the sidebar");
 }
 
 #[test]

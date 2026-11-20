@@ -18,6 +18,13 @@ pub struct Config {
     pub key: String,
 }
 
+/// One image attached to the conversation, in the form a vision model expects.
+#[derive(Clone)]
+pub struct Image {
+    pub media_type: String,
+    pub bytes: Vec<u8>,
+}
+
 /// opencode's gateway routes by session: a request without this header is
 /// rejected with `MissingSessionID` before the key is even checked. One id per
 /// process keeps its cache lanes stable.
@@ -34,6 +41,19 @@ fn opencode_session() -> &'static str {
 
 /// Sends the conversation and returns the assistant's text.
 pub fn ask(cfg: &Config, messages: &[(String, String)]) -> Result<String, String> {
+    ask_images(cfg, messages, &[])
+}
+
+/// Sends the conversation with reference images attached to the last user turn.
+///
+/// A provider that does not accept images gets one text-only retry: losing the
+/// reference is better than losing the edit. Providers that reject the user
+/// message for another reason still report that reason.
+pub fn ask_images(
+    cfg: &Config,
+    messages: &[(String, String)],
+    images: &[Image],
+) -> Result<String, String> {
     if cfg.key.trim().is_empty() {
         return Err("No API key saved. Add one above and try again.".into());
     }
@@ -56,7 +76,23 @@ pub fn ask(cfg: &Config, messages: &[(String, String)]) -> Result<String, String
         .map_err(|error| format!("Could not start the request: {error}"))?;
 
     let mut streamed = true;
-    let mut response = send(&client, &url, cfg, messages, streamed)?;
+    let mut images = images;
+    let mut response = send(&client, &url, cfg, messages, images, streamed)?;
+    // A text-only model rejects the whole turn when it sees an image part.
+    // Drop the references once and keep the idea; the brief can still describe
+    // what the user asked for.
+    if !response.status().is_success() && !images.is_empty() {
+        let status = response.status();
+        // Only content errors are worth dropping the images for. A 5xx or 429
+        // is a provider problem that a second request would not fix.
+        if matches!(status.as_u16(), 400 | 404 | 413 | 415 | 422) {
+            super::log(&format!(
+                "The provider refused the reference image ({status}); continuing without it."
+            ));
+            images = &[];
+            response = send(&client, &url, cfg, messages, images, streamed)?;
+        }
+    }
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().unwrap_or_default();
@@ -64,7 +100,7 @@ pub fn ask(cfg: &Config, messages: &[(String, String)]) -> Result<String, String
         if streamed && status.as_u16() == 400 && text.to_ascii_lowercase().contains("stream") {
             super::log("The provider refused streaming; retrying without it.");
             streamed = false;
-            response = send(&client, &url, cfg, messages, streamed)?;
+            response = send(&client, &url, cfg, messages, images, streamed)?;
             if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().unwrap_or_default();
@@ -102,9 +138,10 @@ fn send(
     url: &str,
     cfg: &Config,
     messages: &[(String, String)],
+    images: &[Image],
     stream: bool,
 ) -> Result<reqwest::blocking::Response, String> {
-    let body = payload(cfg, messages, stream);
+    let body = payload(cfg, messages, images, stream);
     let mut last_error = String::new();
     for attempt in 0..3 {
         let mut request = client
@@ -132,16 +169,74 @@ fn send(
     Err(last_error)
 }
 
-fn payload(cfg: &Config, messages: &[(String, String)], stream: bool) -> serde_json::Value {
+fn payload(
+    cfg: &Config,
+    messages: &[(String, String)],
+    images: &[Image],
+    stream: bool,
+) -> serde_json::Value {
+    let last_user = messages
+        .iter()
+        .rposition(|(role, _)| role == "user")
+        .unwrap_or(usize::MAX);
+    let messages: Vec<serde_json::Value> = messages
+        .iter()
+        .enumerate()
+        .map(|(index, (role, content))| {
+            if index == last_user && !images.is_empty() {
+                let mut parts = vec![serde_json::json!({ "type": "text", "text": content })];
+                parts.extend(images.iter().map(|image| {
+                    serde_json::json!({
+                        "type": "image_url",
+                        "image_url": { "url": data_url(image) },
+                    })
+                }));
+                serde_json::json!({ "role": role, "content": parts })
+            } else {
+                serde_json::json!({ "role": role, "content": content })
+            }
+        })
+        .collect();
     serde_json::json!({
         "model": cfg.model.trim(),
         "temperature": 0.2,
         "stream": stream,
-        "messages": messages
-            .iter()
-            .map(|(role, content)| serde_json::json!({ "role": role, "content": content }))
-            .collect::<Vec<_>>(),
+        "messages": messages,
     })
+}
+
+/// The `data:` URL an OpenAI-compatible vision request expects.
+fn data_url(image: &Image) -> String {
+    format!(
+        "data:{};base64,{}",
+        image.media_type.trim(),
+        base64_encode(&image.bytes)
+    )
+}
+
+/// Minimal standard base64, so a reference image does not pull in a dependency
+/// for four lines of arithmetic.
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(b2 & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
 }
 
 fn is_event_stream(response: &reqwest::blocking::Response) -> bool {
@@ -253,7 +348,7 @@ fn snippet(text: &str, limit: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{consume_event, parse_message, read_stream};
+    use super::{Config, Image, base64_encode, consume_event, parse_message, payload, read_stream};
 
     #[test]
     fn accumulates_streamed_deltas() {
@@ -291,5 +386,51 @@ mod tests {
     fn done_ends_the_stream() {
         let mut out = String::new();
         assert_eq!(consume_event("data: [DONE]", &mut out).unwrap(), Some(true));
+    }
+
+    #[test]
+    fn base64_matches_the_standard_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn images_attach_to_the_last_user_turn_only() {
+        let config = Config {
+            base_url: "http://stub.invalid/v1".into(),
+            model: "stub".into(),
+            key: "stub".into(),
+        };
+        let messages = vec![
+            ("system".to_string(), "rules".to_string()),
+            ("user".to_string(), "make it pink".to_string()),
+        ];
+        let image = Image {
+            media_type: "image/png".into(),
+            bytes: b"ab".to_vec(),
+        };
+        let body = payload(&config, &messages, &[image], false);
+        assert_eq!(body["messages"][0]["content"], "rules");
+        let parts = body["messages"][1]["content"]
+            .as_array()
+            .expect("a vision message is an array of parts");
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[1]["type"], "image_url");
+        assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,YWI=");
+    }
+
+    #[test]
+    fn a_text_only_request_keeps_string_content() {
+        let config = Config {
+            base_url: "http://stub.invalid/v1".into(),
+            model: "stub".into(),
+            key: "stub".into(),
+        };
+        let messages = vec![("user".to_string(), "hello".to_string())];
+        let body = payload(&config, &messages, &[], false);
+        assert_eq!(body["messages"][0]["content"], "hello");
     }
 }

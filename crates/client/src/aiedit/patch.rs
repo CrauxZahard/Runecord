@@ -7,34 +7,69 @@
 
 use std::path::{Path, PathBuf};
 
-/// Directories the editor writes to. Everything else is read-only.
+/// Directories the editor writes to. Everything else is read-only. New files
+/// inside these trees are allowed; the paths do not have to exist yet.
 pub const WRITABLE: [&str; 2] = ["crates/client/src/ui/", "crates/ui/src/"];
 
+/// Files the model may read for context but never patch. These explain the
+/// state and actions a new view can call without letting generation reach
+/// networking, secrets or configuration.
+pub const READ_ONLY: [&str; 4] = [
+    "crates/client/src/app/mod.rs",
+    "crates/client/src/app/actions/",
+    "crates/client/src/app/events/",
+    "crates/client/src/cache.rs",
+];
+
 /// Files sent before the model has asked for anything: the shell, the shared
-/// widgets and the tokens. Enough to plan against without spending the budget
-/// on the whole tree.
-const GROUNDING: [&str; 3] = [
+/// widgets, the tokens and the icon catalogue. Enough to add a new widget and a
+/// new glyph without spending the budget on the whole tree.
+const GROUNDING: [&str; 4] = [
     "crates/client/src/ui/mod.rs",
     "crates/client/src/ui/common.rs",
     "crates/ui/src/theme.rs",
+    "crates/ui/src/icons.rs",
 ];
 
-/// Bytes of source sent up front. Roughly 20k tokens.
-const BUDGET: usize = 80_000;
+/// Bytes of source sent up front. Roughly 30k tokens.
+const BUDGET: usize = 120_000;
 
-/// Whether a path from a reply may be written.
+/// Whether a path from a reply may be written. Only Rust source under the UI
+/// trees passes; a new module is fine, anything outside is not.
 pub fn is_writable(path: &str) -> bool {
+    let Some(normal) = normalise(path) else {
+        return false;
+    };
+    normal.ends_with(".rs") && WRITABLE.iter().any(|prefix| normal.starts_with(prefix))
+}
+
+/// Whether a path from a reply may be read. Writable files are readable, and a
+/// small set of app files gives the model the state it needs to build new UI.
+pub fn is_readable(path: &str) -> bool {
+    if is_writable(path) {
+        return true;
+    }
+    let Some(normal) = normalise(path) else {
+        return false;
+    };
+    normal.ends_with(".rs")
+        && READ_ONLY.iter().any(|allowed| {
+            normal == *allowed || (allowed.ends_with('/') && normal.starts_with(allowed))
+        })
+}
+
+fn normalise(path: &str) -> Option<String> {
     let normal = path.trim().replace('\\', "/");
     if normal.is_empty() || normal.starts_with('/') || normal.contains(':') {
-        return false;
+        return None;
     }
     if normal
         .split('/')
         .any(|part| part.is_empty() || part == "." || part == "..")
     {
-        return false;
+        return None;
     }
-    normal.ends_with(".rs") && WRITABLE.iter().any(|prefix| normal.starts_with(prefix))
+    Some(normal)
 }
 
 /// The source tree the editor reads and writes.
@@ -73,6 +108,11 @@ pub fn manifest() -> Result<String, String> {
             if attached { "  (attached)" } else { "" }
         ));
     }
+    out.push_str("\nNew .rs files are allowed in these folders and are not listed above.\n");
+    out.push_str("Read-only context on request (NEED, never write):\n");
+    for path in READ_ONLY {
+        out.push_str(&format!("  {path}\n"));
+    }
     Ok(out)
 }
 
@@ -110,7 +150,7 @@ fn read_budgeted(
     let mut out = Vec::new();
     let mut used = 0usize;
     for name in names {
-        if !is_writable(&name) {
+        if !is_readable(&name) {
             continue;
         }
         let path = root.join(&name);
@@ -164,7 +204,7 @@ pub fn parse(text: &str) -> Result<Reply, String> {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("<<<NEED ") {
             let name = rest.trim_end_matches(">>>").trim();
-            if is_writable(name) {
+            if is_readable(name) {
                 needs.push(name.to_string());
             }
             continue;
@@ -330,13 +370,18 @@ pub struct Change {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_writable, parse};
+    use super::{is_readable, is_writable, parse};
 
     #[test]
     fn the_allowlist_covers_ui_and_nothing_else() {
         assert!(is_writable("crates/client/src/ui/sidebar.rs"));
         assert!(is_writable("crates/client/src/ui/settings/appearance.rs"));
         assert!(is_writable("crates/ui/src/theme.rs"));
+        assert!(
+            is_writable("crates/client/src/ui/mascot.rs"),
+            "a new module must be writable before the file exists"
+        );
+        assert!(is_writable("crates/ui/src/hello_kitty.rs"));
         assert!(!is_writable("crates/client/src/net/mod.rs"));
         assert!(!is_writable("crates/client/src/app/mod.rs"));
         assert!(!is_writable("crates/client/src/ui/../net/mod.rs"));
@@ -345,6 +390,17 @@ mod tests {
         assert!(!is_writable("/etc/x.rs"));
         assert!(!is_writable("crates/ui/src/theme.rs.bak"));
         assert!(!is_writable("crates/client/src/ui/"));
+    }
+
+    #[test]
+    fn app_context_is_readable_but_never_writable() {
+        assert!(is_readable("crates/client/src/app/mod.rs"));
+        assert!(is_readable("crates/client/src/app/actions/messages.rs"));
+        assert!(is_readable("crates/client/src/cache.rs"));
+        assert!(is_readable("crates/client/src/ui/mod.rs"));
+        assert!(!is_readable("crates/client/src/net/mod.rs"));
+        assert!(!is_readable("crates/client/src/app/../../config.rs"));
+        assert!(!is_readable("crates/client/src/app/mod.rs.bak"));
     }
 
     #[test]
@@ -376,6 +432,16 @@ mod tests {
     fn rejects_a_file_outside_the_ui() {
         let reply = "<<<FILE crates/client/src/net/mod.rs\nfn x() {}\n>>>\n";
         assert!(parse(reply).is_err());
+    }
+
+    #[test]
+    fn a_new_module_and_read_only_context_are_accepted() {
+        let reply = "<<<NEED crates/client/src/app/mod.rs>>>\n\
+                     <<<FILE crates/client/src/ui/mascot.rs\nfn mascot() {}\n>>>\n";
+        let parsed = parse(reply).expect("reply parses");
+        assert_eq!(parsed.needs, vec!["crates/client/src/app/mod.rs"]);
+        assert_eq!(parsed.files[0].0, "crates/client/src/ui/mascot.rs");
+        assert_eq!(parsed.files[0].1, "fn mascot() {}\n");
     }
 
     #[test]

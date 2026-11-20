@@ -325,26 +325,38 @@ build must not leave an install that cannot start.
 
 **Decision.** Generated patches go through `crates/client/src/aiedit/patch.rs`,
 which rejects the whole reply unless every path is under
-`crates/client/src/ui/` or `crates/ui/src/`. Files are backed up per edit.
-Builds run as a child process into the release profile, and the result is copied
-to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>`; the running binary is never
-overwritten. A restart starts the staged build through a supervisor copy of the
-executable, which waits for that build's ready marker (`App::poll` writes it)
-and reopens the previous binary if it never appears.
+`crates/client/src/ui/` or `crates/ui/src/`; new `.rs` files in those trees are
+allowed, and the reply may `NEED` (read, never write) `app/mod.rs`,
+`app/actions/**`, `app/events/**` and `cache.rs` for state context. Files are
+backed up per edit. Builds run as a child process into the release profile, and
+the result is copied to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>`; the
+running binary is never overwritten. A restart starts the staged build through a
+supervisor copy of the executable, which waits for that build's ready marker
+(`App::poll` writes it) and reopens the previous binary if it never appears.
 
 **Consequences.** "UI only" is enforced by the writer rather than by the system
-prompt, and no edit can reach `net/`, `config.rs` or the session tokens. A failed
-build restores the previous files automatically, so the tree still compiles. The
-cost is that an edit rebuilds the whole `runecord` crate (1-3 minutes warm): the
-`crates/ui` crate exists for tokens today, and moving screens into it is what
-will shorten that build, not the allowlist. The key lives in `aiedit\.env` as a
-DPAPI-sealed blob, so it is bound to the signed-in account and never written in
-the clear; saving verifies the file reads back before the card reports success.
+prompt, and no edit can reach `net/`, `config.rs` or the session tokens. New
+widgets, icons and whole modules are still expressible: the editor adds the file
+and the parent that registers it. A failed build restores the previous files
+automatically, so the tree still compiles. The cost is that an edit rebuilds the
+whole `runecord` crate (1-3 minutes warm): the `crates/ui` crate exists for
+tokens today, and moving screens into it is what will shorten that build, not
+the allowlist. The key lives in `aiedit\.env` as a DPAPI-sealed blob, so it is
+bound to the signed-in account and never written in the clear; saving verifies
+the file reads back before the card reports success.
 
-The model runs as an orchestrator rather than one prompt: it plans, requests the
-files it needs, patches, and gets compiler errors fed back for up to two repairs.
-The caps live in `aiedit/mod.rs` (`MAX_STEPS`, `MAX_FILE_ROUNDS`, `MAX_REPAIRS`,
-`MAX_IDLE`) so a looping model cannot spin forever or exhaust the user's budget.
+Requests are expanded before patching: `aiedit/brief.rs` turns the goal and any
+reference images into a structured brief, and the orchestrator receives both. A
+brief is advisory — the user's words stay authoritative — and a provider that
+cannot write one leaves the original request in place. Images are optional,
+downscaled once in `attach.rs`, capped at four, and retried text-only if the
+provider rejects image parts.
+
+The model runs as an orchestrator rather than one prompt: it briefs, plans,
+requests the files it needs, patches, and gets compiler errors fed back for up to
+three repairs. The caps live in `aiedit/mod.rs` (`MAX_STEPS`,
+`MAX_FILE_ROUNDS`, `MAX_REPAIRS`, `MAX_IDLE`) so a looping model cannot spin
+forever or exhaust the user's budget.
 
 Each staged build records the goal, its files and the backup it came from, so
 the card can list versions and switch between them; switching restores that

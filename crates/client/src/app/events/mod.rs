@@ -69,6 +69,11 @@ impl App {
                     }
                     changed = true;
                 }
+                crate::aiedit::Event::Brief { text, goal } => {
+                    self.ui_edit.brief = Some(text);
+                    self.ui_edit.brief_for = goal;
+                    changed = true;
+                }
             }
         }
         if self.presence_auto && self.clock - self.last_presence_scan >= 15.0 {
