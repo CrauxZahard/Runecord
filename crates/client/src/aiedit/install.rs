@@ -395,16 +395,26 @@ fn now_ms() -> i64 {
 /// A staged child receives `RUNECORD_BASE_EXE` from the launcher so it never
 /// mistakes itself for the built-in app.
 pub fn record_base() {
-    let from_env = std::env::var_os("RUNECORD_BASE_EXE").map(PathBuf::from);
-    let path = from_env.clone().or_else(|| {
-        std::env::current_exe()
-            .ok()
-            .filter(|exe| !is_version_exe(exe))
-    });
-    let Some(path) = path else {
+    let mut state = state();
+    if let Some(path) = std::env::var_os("RUNECORD_BASE_EXE").map(PathBuf::from) {
+        let value = path.to_string_lossy().to_string();
+        if state.base_exe != value {
+            state.base_exe = value;
+            let _ = save_state(&state);
+        }
+        return;
+    }
+    // Keep the first known-good base. A dev checkout should not replace a
+    // packaged build just because `run.bat` happened to start a debug exe.
+    if !state.base_exe.is_empty() && Path::new(&state.base_exe).exists() {
+        return;
+    }
+    let Some(path) = std::env::current_exe()
+        .ok()
+        .filter(|exe| !is_version_exe(exe))
+    else {
         return;
     };
-    let mut state = state();
     let value = path.to_string_lossy().to_string();
     if state.base_exe != value {
         state.base_exe = value;
