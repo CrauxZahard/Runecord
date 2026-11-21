@@ -419,25 +419,33 @@ pub enum Command {
         banner_color: Option<u32>,
     },
     LoadBots,
+    // Reserved for the bot/application surface; no client view constructs these
+    // yet, but the transport handlers and server routes exist.
+    #[allow(dead_code)]
     CreateBot {
         name: String,
         guild: Option<Id>,
     },
+    #[allow(dead_code)]
     DeleteBot {
         id: Id,
     },
     LoadApplications,
+    #[allow(dead_code)]
     CreateApplication {
         name: String,
         description: String,
     },
+    #[allow(dead_code)]
     DeleteApplication {
         id: Id,
     },
+    #[allow(dead_code)]
     ApplicationToken {
         id: Id,
         name: String,
     },
+    #[allow(dead_code)]
     ApplicationInstallLink {
         id: Id,
     },

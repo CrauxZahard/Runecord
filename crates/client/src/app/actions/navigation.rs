@@ -204,8 +204,8 @@ impl App {
         self.event_name.clear();
         self.event_description.clear();
         self.event_start_minutes = TextEdit::new("60");
-        self.event_start_date = TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string());
-        self.event_start_time = TextEdit::new(&chrono::Local::now().format("%H:%M").to_string());
+        self.event_start_date = TextEdit::new(chrono::Local::now().format("%Y-%m-%d").to_string());
+        self.event_start_time = TextEdit::new(chrono::Local::now().format("%H:%M").to_string());
         self.modal = Modal::CreateEvent;
     }
 

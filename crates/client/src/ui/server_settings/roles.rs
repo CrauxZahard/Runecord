@@ -27,9 +27,7 @@ pub(crate) fn roles_view(s: &App, p: Palette) -> El {
             .center_y()
             .role("button")
             .label(format!("{} role", role.name))
-            .fill(if dragged {
-                p.selected
-            } else if selected {
+            .fill(if dragged || selected {
                 p.selected
             } else {
                 Color::TRANSPARENT
