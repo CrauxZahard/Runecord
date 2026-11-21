@@ -1,7 +1,7 @@
 Runecord
 ========
 
-Windows: Run Runecord-Setup-0.1.0.exe. Use Runecord.exe for a portable copy.
+Windows: Run Runecord-Setup-0.1.1.exe. Use Runecord.exe for a portable copy.
 Linux:   Unpack Runecord-linux.tar.gz. Run ./install.sh.
 
 The app starts its own backend. No launcher or second process is needed.

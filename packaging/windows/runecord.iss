@@ -5,10 +5,10 @@
 ; and optional desktop shortcuts, registers an uninstaller, and keeps the user's
 ; data in %APPDATA%\Runecord when the app is removed.
 ;
-;   ISCC.exe /DAppVersion=0.1.0 /DSourceDir=... /DOutputDir=... runecord.iss
+;   ISCC.exe /DAppVersion=0.1.1 /DSourceDir=... /DOutputDir=... runecord.iss
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist"

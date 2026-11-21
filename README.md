@@ -35,7 +35,7 @@ To build locally, run `build.bat`. It writes these files to `dist\`:
 
 | File | Use |
 |---|---|
-| `Runecord-Setup-0.1.0.exe` | Windows installer. No admin rights needed. |
+| `Runecord-Setup-0.1.1.exe` | Windows installer. No admin rights needed. |
 | `Runecord.exe` | Portable Windows app. |
 | `Runecord-linux.tar.gz` | Linux app. Run `./install.sh`. |
 
