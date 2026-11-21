@@ -367,10 +367,15 @@ pub struct App {
     pub bots: Vec<User>,
     pub applications: Vec<Application>,
     pub token_reveal: Option<(String, String)>,
+    // Reserved for the bot/application surface; the client view is not wired.
+    #[allow(dead_code)]
     pub bot_name: TextEdit,
+    #[allow(dead_code)]
     pub app_name: TextEdit,
+    #[allow(dead_code)]
     pub app_description: TextEdit,
     pub install_code: TextEdit,
+    #[allow(dead_code)]
     pub add_bot_to_guild: bool,
     pub pending_install_app: Option<Id>,
     pub server_tab: ServerTab,
@@ -754,8 +759,8 @@ impl App {
             event_name: TextEdit::new(""),
             event_description: TextEdit::new(""),
             event_start_minutes: TextEdit::new("60"),
-            event_start_date: TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string()),
-            event_start_time: TextEdit::new(&chrono::Local::now().format("%H:%M").to_string()),
+            event_start_date: TextEdit::new(chrono::Local::now().format("%Y-%m-%d").to_string()),
+            event_start_time: TextEdit::new(chrono::Local::now().format("%H:%M").to_string()),
             event_recurrence: String::new(),
             event_reminder: 0,
             event_duration: TextEdit::new("60"),

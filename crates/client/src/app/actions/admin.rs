@@ -702,6 +702,8 @@ impl App {
         self.mark_cache_dirty();
     }
 
+    // Reserved for the bot/application surface; the client view is not wired.
+    #[allow(dead_code)]
     pub fn create_bot(&mut self) {
         let name = self.bot_name.text.trim().to_string();
         if name.chars().count() < 2 {
@@ -717,10 +719,12 @@ impl App {
         self.bot_name.clear();
     }
 
+    #[allow(dead_code)]
     pub fn revoke_bot(&mut self, id: Id) {
         self.send(Command::DeleteBot { id });
     }
 
+    #[allow(dead_code)]
     pub fn create_application(&mut self) {
         let name = self.app_name.text.trim().to_string();
         if name.chars().count() < 2 {
@@ -733,10 +737,12 @@ impl App {
         self.app_description.clear();
     }
 
+    #[allow(dead_code)]
     pub fn delete_application(&mut self, id: Id) {
         self.send(Command::DeleteApplication { id });
     }
 
+    #[allow(dead_code)]
     pub fn reveal_application_token(&mut self, id: Id) {
         let name = self
             .applications
@@ -747,11 +753,13 @@ impl App {
         self.send(Command::ApplicationToken { id, name });
     }
 
+    #[allow(dead_code)]
     pub fn create_install_link(&mut self, id: Id) {
         self.pending_install_app = Some(id);
         self.send(Command::ApplicationInstallLink { id });
     }
 
+    #[allow(dead_code)]
     pub fn install_by_code(&mut self) {
         let code = self.install_code.text.trim().to_string();
         if code.is_empty() {

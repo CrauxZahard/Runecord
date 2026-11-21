@@ -260,7 +260,8 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
                 .child(
                     col()
                         .key("settings-content")
-                        .w(820.0)
+                        .w_full()
+                        .max_w(820.0)
                         .px(40.0)
                         .pb(48.0)
                         .gap(20.0)

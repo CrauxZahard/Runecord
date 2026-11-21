@@ -118,6 +118,8 @@ fn snapshot() -> cache::Snapshot {
                 roles: Vec::new(),
                 overwrites: Vec::new(),
                 permissions: u64::MAX / 2,
+                onboarding: Default::default(),
+                forum_tags: Vec::new(),
             });
         }
         guilds.push(summary);

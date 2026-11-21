@@ -41,7 +41,7 @@ await send("Emulation.setDeviceMetricsOverride", {
   width,
   height,
   deviceScaleFactor: dpr,
-  mobile: width < 720,
+  // Desktop viewports only.
   screenWidth: width,
   screenHeight: height,
 });

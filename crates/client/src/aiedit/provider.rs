@@ -259,10 +259,8 @@ fn read_stream(mut reader: impl BufRead) -> Result<String, String> {
         if read == 0 {
             break;
         }
-        if let Some(done) = consume_event(line.trim_end(), &mut out)? {
-            if done {
-                break;
-            }
+        if consume_event(line.trim_end(), &mut out)? == Some(true) {
+            break;
         }
     }
     Ok(out)

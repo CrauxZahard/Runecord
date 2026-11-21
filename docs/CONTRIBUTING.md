@@ -95,6 +95,8 @@ inside moves.
 - `docs/ARCHITECTURE.md` — module map and data flow.
 - `docs/DECISIONS.md` — why the boundaries are where they are.
 - `docs/CONTRIBUTING.md` — this file.
+- `docs/RELEASING.md` — signing, Linux verification and the release checklist.
+- `docs/plans/ai-ui-editor.md` — the AI UI editor's design and limits.
 - `BENCHMARKS.md` — cache benchmark methodology.
 
 `docs/` also hosts the published marketing site; Markdown files there are

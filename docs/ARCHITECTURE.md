@@ -69,6 +69,7 @@ crates/client/src
     settings/              user settings tabs
     server_settings/       guild settings views
     modals/                dialog sheets
+  aiedit/                  AI UI editor: brief, allowlist, build, stage, supervisor
   voice/                   capture, playback, camera and video runtime
     mod.rs                 config/state statics and the voice loop
     mic.rs, camera.rs, devices.rs, soundboard.rs, video.rs
@@ -81,6 +82,7 @@ bootstrap → app → net
      │        │
      └──────▶ ui ──▶ theme, icons, common widgets
 app ──▶ voice (commands and state), cache
+app ⇄ aiedit (UI self-edit; worker threads + events)
 net ──▶ runecord-protocol
 ```
 
@@ -103,6 +105,20 @@ net ──▶ runecord-protocol
 The UI thread never blocks on network or disk. HTTP work happens on a worker
 thread, cache writes on their own thread, and voice capture/playback on their
 own threads.
+
+### Self-editing UI
+
+`aiedit/` is the only code path that writes UI source at runtime. A request is
+expanded into a brief, then an orchestrator model plans, requests read-only
+context and returns whole files. `patch.rs` rejects the reply unless every path
+is under `crates/client/src/ui/` or `crates/ui/src/`; `build.rs` runs
+`cargo build --release` as a child process; `install.rs` stages the binary and
+supervises the restart. `net/`, `config.rs`, `paths.rs` and the session token
+type are outside the writable tree, so an edit cannot reach them. Progress
+crosses to the UI thread through an event queue; the UI thread never builds or
+blocks. Without a source tree the card disables itself, and each build records
+the app version so the card can warn when an older UI is running against a
+newer app.
 
 ### Persistent state
 

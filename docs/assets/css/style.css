@@ -982,6 +982,162 @@ section[id] {
   order: 1;
 }
 
+/* ---------- Custom UI studio ---------- */
+
+.studio {
+  background: var(--bg-2);
+}
+
+.studio-head {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+  margin-bottom: 36px;
+}
+
+.studio-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 32px;
+  align-items: end;
+  margin-bottom: 34px;
+}
+
+.studio-intro .bullets {
+  margin-top: 0;
+}
+
+.studio-prompt {
+  border: 1px solid var(--line-strong);
+  background: #01030c;
+}
+
+[data-theme="light"] .studio-prompt {
+  background: #07113d;
+}
+
+.studio-prompt .prompt-lines {
+  padding: 8px 0 12px;
+}
+
+.studio-prompt .prompt-line {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 14px;
+  color: #cbd5e1;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.studio-prompt .prompt-line b {
+  flex: none;
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.studio-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.studio-shot {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.studio-frame {
+  position: relative;
+  aspect-ratio: 1.62;
+  overflow: hidden;
+  background: #0b0f1c;
+}
+
+.studio-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  transition: transform 0.5s ease;
+}
+
+.studio-shot:hover .studio-frame img {
+  transform: scale(1.012);
+}
+
+.studio-shot figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 11px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+}
+
+.studio-shot figcaption span:first-child {
+  flex: none;
+  color: var(--cyan);
+}
+
+.studio-shot figcaption span:last-child {
+  text-align: right;
+}
+
+.studio-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 26px;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line);
+}
+
+.studio-step {
+  padding: 16px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.studio-step:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.studio-step:last-child {
+  padding-right: 0;
+}
+
+.studio-step .n {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+}
+
+.studio-step b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.studio-step p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 /* ---------- Manifesto ---------- */
 
 .manifesto {
@@ -1729,9 +1885,19 @@ section[id] {
   }
 
   .section-head,
-  .download-head {
+  .download-head,
+  .studio-head {
     grid-template-columns: 180px minmax(0, 1fr);
     gap: 30px;
+  }
+
+  .studio-intro {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .studio-prompt {
+    max-width: 520px;
   }
 
   .manifesto-grid {
@@ -1847,6 +2013,20 @@ section[id] {
   .site-head.nav-open {
     background: var(--bg);
   }
+
+  .studio-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .studio-step {
+    padding: 14px 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .studio-step:nth-child(-n + 2) {
+    border-top: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1898,10 +2078,19 @@ section[id] {
   }
 
   .section-head,
-  .download-head {
+  .download-head,
+  .studio-head {
     grid-template-columns: 1fr;
     gap: 14px;
     margin-bottom: 30px;
+  }
+
+  .studio-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-shot figcaption {
+    flex-wrap: wrap;
   }
 
   .sec-label {
@@ -2098,6 +2287,18 @@ section[id] {
 
   .faq-body {
     padding-left: 40px;
+  }
+
+  .studio-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-step:nth-child(n) {
+    border-top: 1px solid var(--line);
+  }
+
+  .studio-step:first-child {
+    border-top: 0;
   }
 
   .cta-actions .btn {

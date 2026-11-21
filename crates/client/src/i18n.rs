@@ -213,9 +213,16 @@ pub fn coverage() -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::{Locale, coverage, locale, set_locale, t};
+    use std::sync::Mutex;
+
+    /// The locale is process-global, so these two tests must not overlap.
+    static LOCALE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn translations_fall_back_to_english() {
+        let _locale = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         set_locale(Locale::German);
         assert_eq!(locale(), Locale::German);
         assert_eq!(t("Members"), "Mitglieder");
@@ -229,6 +236,9 @@ mod tests {
 
     #[test]
     fn every_locale_covers_the_catalogue() {
+        let _locale = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         for locale in super::locales() {
             set_locale(locale);
             let (done, total) = coverage();

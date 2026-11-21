@@ -164,6 +164,10 @@ pub fn run() {
                 s.logged_in = true;
                 s.open_settings(SettingsTab::Application);
             }),
+            ("appearance", |s: &mut App| {
+                s.logged_in = true;
+                s.open_settings(SettingsTab::Appearance);
+            }),
             ("light", |s: &mut App| s.dark = false),
             ("chat", |s: &mut App| {
                 s.logged_in = true;

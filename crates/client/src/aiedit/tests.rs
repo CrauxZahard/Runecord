@@ -30,12 +30,13 @@ fn a_canned_edit_builds_and_stages() {
     let counted = calls.clone();
     let ask = move |_cfg: &provider::Config, _messages: &[(String, String)]| {
         if counted.fetch_add(1, Ordering::SeqCst) == 0 {
-            return Ok(format!(
+            return Ok(
                 "<<<PLAN\nMove the channel sidebar to the right of the chat area.\n\
                  Keep the resize handle on the sidebar's left edge.\n\
                  Desktop shell only; keep the rest as it is.\n>>>\n\
                  <<<NEED crates/client/src/ui/mod.rs>>>\n"
-            ));
+                    .to_string(),
+            );
         }
         let text = std::fs::read_to_string(root.join("crates/client/src/ui/mod.rs"))
             .expect("read ui/mod.rs");

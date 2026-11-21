@@ -40,6 +40,10 @@ pub struct State {
     /// The installed app that serves as the built-in fallback and launcher.
     #[serde(default)]
     pub base_exe: String,
+    /// The app version the user chose to keep an older custom UI for. A new
+    /// app version warns again.
+    #[serde(default)]
+    pub kept_app_version: String,
 }
 
 /// Per-user data for this feature.
@@ -156,6 +160,8 @@ pub struct Version {
     pub name: String,
     pub goal: String,
     pub when: String,
+    /// The app version this UI was built against.
+    pub app_version: String,
     pub current: bool,
     pub pending: bool,
     /// A runnable binary is present.
@@ -273,6 +279,7 @@ pub fn versions() -> Vec<Version> {
                     current: state.current == name,
                     pending: state.pending.as_deref() == Some(name.as_str()),
                     when: when_label(meta.created_ms),
+                    app_version: meta.app_version,
                     goal,
                     name: name.clone(),
                     binary,
@@ -298,6 +305,7 @@ pub fn versions() -> Vec<Version> {
                 current: state.current == manifest.version,
                 pending: state.pending.as_deref() == Some(manifest.version.as_str()),
                 when: when_label(manifest.created_ms),
+                app_version: manifest.app_version,
                 goal,
                 name: manifest.version,
                 binary: false,
@@ -398,6 +406,7 @@ pub fn delete_custom_ui() -> Result<DeleteReport, String> {
     state.current.clear();
     state.last_good.clear();
     state.pending = None;
+    state.kept_app_version.clear();
     save_state(&state)?;
     Ok(DeleteReport { freed, builds })
 }
@@ -643,6 +652,7 @@ pub fn restart_base() -> Result<(), String> {
     state.current.clear();
     state.last_good.clear();
     state.pending = None;
+    state.kept_app_version.clear();
     save_state(&state)?;
     supervise_spawn(&base, &base)
 }
@@ -655,6 +665,36 @@ pub fn promote_pending() -> Result<(), String> {
         return Err("There is no pending build to promote.".into());
     };
     save_state(&state)
+}
+
+/// Records that the user chose to keep the current custom UI for this app
+/// version. The update warning returns when the app itself changes again.
+pub fn keep_current_version() -> Result<(), String> {
+    let mut state = state();
+    state.kept_app_version = super::app_version().to_string();
+    save_state(&state)
+}
+
+/// The app version the current UI was built for, when it differs from this app
+/// and the user has not acknowledged it for this version.
+pub fn outdated_current() -> Option<String> {
+    let state = state();
+    if state.current.is_empty() || state.kept_app_version == super::app_version() {
+        return None;
+    }
+    let built = version_meta(&state.current)
+        .map(|meta| meta.app_version)
+        .filter(|version| !version.trim().is_empty())
+        .or_else(|| {
+            super::source::manifest(&state.current)
+                .map(|manifest| manifest.app_version)
+                .filter(|version| !version.trim().is_empty())
+        })?;
+    if built.trim() == super::app_version() {
+        None
+    } else {
+        Some(built.trim().to_string())
+    }
 }
 
 /// One-time and startup cleanup: keep the current and last-good binaries, delete
@@ -684,6 +724,9 @@ pub fn cleanup_versions() -> Result<CleanupReport, String> {
     }
     if state.current == state.last_good {
         state.last_good.clear();
+    }
+    if state.current.is_empty() {
+        state.kept_app_version.clear();
     }
     // A pending build is kept until the user restarts; never silently promote an
     // unverified executable.
@@ -945,6 +988,7 @@ fn clear_current() {
     state.current.clear();
     state.last_good.clear();
     state.pending = None;
+    state.kept_app_version.clear();
     let _ = save_state(&state);
 }
 
@@ -978,6 +1022,7 @@ fn finish_pending() -> Option<State> {
     let pending = state.pending.take()?;
     state.last_good = state.current.clone();
     state.current = pending;
+    state.kept_app_version.clear();
     Some(state)
 }
 
