@@ -54,8 +54,8 @@ pub(crate) fn scheduled_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("scheduled-sheet")
-        .w(sheet_w(500.0))
-        .h(sheet_h(560.0))
+        .w(500.0)
+        .h(560.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

@@ -51,47 +51,7 @@ pub(crate) fn server_settings_page(s: &App, cx: &mut Cx<App>, p: Palette) -> El 
         crate::app::ServerTab::Audit => "Audit Log",
     };
 
-    let nav = (!mobile()).then(|| server_settings_nav(s, p, 232.0));
-    if mobile() && !s.mobile_server_settings {
-        return col()
-            .key("server-settings-page")
-            .w_full()
-            .grow(1.0)
-            .min_h(0.0)
-            .fill(p.modal_sidebar)
-            .child(
-                row()
-                    .key("server-settings-mobile-head")
-                    .w_full()
-                    .h(52.0)
-                    .px(6.0)
-                    .gap(4.0)
-                    .center_y()
-                    .child(mobile_header_button(
-                        "server-settings-close",
-                        "Close server settings",
-                        &icons::CLOSE,
-                        |s: &mut App| s.modal = Modal::None,
-                        p,
-                    ))
-                    .child(
-                        text("Server Settings")
-                            .font(theme::TITLE)
-                            .color(p.text_bright)
-                            .grow(1.0),
-                    ),
-            )
-            .child(
-                col()
-                    .w_full()
-                    .grow(1.0)
-                    .min_h(0.0)
-                    .scroll(ScrollSpec {
-                        stick_bottom: false,
-                    })
-                    .child(server_settings_nav(s, p, 0.0)),
-            );
-    }
+    let nav = server_settings_nav(s, p, 232.0);
     col()
         .key("server-settings-page")
         .w_full()
@@ -99,7 +59,7 @@ pub(crate) fn server_settings_page(s: &App, cx: &mut Cx<App>, p: Palette) -> El 
         .min_h(0.0)
         .fill(p.chat)
         .child(
-            row().w_full().h_full().children(nav).child(
+            row().w_full().h_full().child(nav).child(
                 col()
                     .grow(1.0)
                     .min_w(0.0)
@@ -109,20 +69,11 @@ pub(crate) fn server_settings_page(s: &App, cx: &mut Cx<App>, p: Palette) -> El 
                             .key("server-settings-top")
                             .w_full()
                             .h(64.0)
-                            .pl(if mobile() { 6.0 } else { 32.0 })
+                            .pl(32.0)
                             .pr(12.0 + trailing)
                             .gap(8.0)
                             .items_center()
                             .window_drag()
-                            .children(mobile().then(|| {
-                                mobile_header_button(
-                                    "server-settings-back",
-                                    "Back to the server settings list",
-                                    &icons::CHEVRON_LEFT,
-                                    |s: &mut App| s.close_mobile_server_settings(),
-                                    p,
-                                )
-                            }))
                             .child(
                                 text(title)
                                     .font(theme::TITLE)
@@ -174,7 +125,7 @@ pub(crate) fn server_settings_page(s: &App, cx: &mut Cx<App>, p: Palette) -> El 
                             .w_full()
                             .grow(1.0)
                             .min_h(0.0)
-                            .px(if mobile() { 16.0 } else { 32.0 })
+                            .px(32.0)
                             .pb(32.0)
                             .scroll(ScrollSpec {
                                 stick_bottom: false,
@@ -204,7 +155,7 @@ fn server_settings_nav(s: &App, p: Palette, width: f32) -> El {
         let selected = s.server_tab == tab;
         el().key(key)
             .w_full()
-            .h(if mobile() { 44.0 } else { 32.0 })
+            .h(32.0)
             .px(8.0)
             .radius(4.0)
             .center_y()
@@ -273,33 +224,30 @@ fn server_settings_nav(s: &App, p: Palette, width: f32) -> El {
                 "role-tab-overview",
             )
         }))
-        .children(s.can_manage_tab(crate::app::ServerTab::Onboarding).then(|| {
+        .children(
+            s.can_manage_tab(crate::app::ServerTab::Onboarding)
+                .then(|| {
+                    nav_item(
+                        "Onboarding",
+                        crate::app::ServerTab::Onboarding,
+                        "role-tab-onboarding",
+                    )
+                }),
+        )
+        .children(s.can_manage_tab(crate::app::ServerTab::AutoMod).then(|| {
             nav_item(
-                "Onboarding",
-                crate::app::ServerTab::Onboarding,
-                "role-tab-onboarding",
+                "AutoMod",
+                crate::app::ServerTab::AutoMod,
+                "role-tab-automod",
             )
         }))
-        .children(
-            s.can_manage_tab(crate::app::ServerTab::AutoMod)
-                .then(|| {
-                    nav_item(
-                        "AutoMod",
-                        crate::app::ServerTab::AutoMod,
-                        "role-tab-automod",
-                    )
-                }),
-        )
-        .children(
-            s.can_manage_tab(crate::app::ServerTab::Templates)
-                .then(|| {
-                    nav_item(
-                        "Templates",
-                        crate::app::ServerTab::Templates,
-                        "role-tab-templates",
-                    )
-                }),
-        )
+        .children(s.can_manage_tab(crate::app::ServerTab::Templates).then(|| {
+            nav_item(
+                "Templates",
+                crate::app::ServerTab::Templates,
+                "role-tab-templates",
+            )
+        }))
         .children(
             s.can_manage_tab(crate::app::ServerTab::Integrations)
                 .then(|| {
@@ -322,18 +270,15 @@ fn server_settings_nav(s: &App, p: Palette, width: f32) -> El {
             (s.can_manage_tab(crate::app::ServerTab::Members)
                 || s.can_manage_tab(crate::app::ServerTab::Bans)
                 || s.can_manage_tab(crate::app::ServerTab::Audit))
-                .then(|| nav_group("MODERATION", p)),
+            .then(|| nav_group("MODERATION", p)),
         )
-        .children(
-            s.can_manage_tab(crate::app::ServerTab::Members)
-                .then(|| {
-                    nav_item(
-                        "Members",
-                        crate::app::ServerTab::Members,
-                        "server-nav-members",
-                    )
-                }),
-        )
+        .children(s.can_manage_tab(crate::app::ServerTab::Members).then(|| {
+            nav_item(
+                "Members",
+                crate::app::ServerTab::Members,
+                "server-nav-members",
+            )
+        }))
         .children(
             s.can_manage_tab(crate::app::ServerTab::Bans)
                 .then(|| nav_item("Bans", crate::app::ServerTab::Bans, "role-tab-bans")),

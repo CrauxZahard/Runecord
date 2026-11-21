@@ -34,6 +34,7 @@ pub enum Modal {
         parent: Id,
         message: Option<Id>,
     },
+    ThreadTags(Id),
     Threads,
     EditMessage(Id),
     ForwardMessage(Id),
@@ -44,8 +45,6 @@ pub enum Modal {
     Activities(Id),
     GifPicker,
     ScheduledMessages,
-    MessageMenu(Id),
-    ConfirmDelete(Id),
     ConfirmLeave(Id),
     ChannelNotifications(Id),
     ServerNotifications,
@@ -97,18 +96,29 @@ pub enum Modal {
     ChannelPermissions(Id),
 }
 
-/// The in-app context menu, positioned where the secondary click landed.
+/// The in-app context menu and where it opens.
 #[derive(Clone, Debug)]
 pub struct ContextMenu {
     pub kind: ContextMenuKind,
-    pub x: f32,
-    pub y: f32,
+    pub anchor: ContextMenuAnchor,
+}
+
+/// Where a context menu's top-left corner goes.
+#[derive(Clone, Debug)]
+pub enum ContextMenuAnchor {
+    /// The point the secondary click landed on, in window points.
+    Pointer { x: f32, y: f32 },
+    /// The bottom-right corner of the element with this layout key, so a
+    /// button can open the same menu the row's secondary click does.
+    Element(String),
 }
 
 #[derive(Clone, Debug)]
 pub enum ContextMenuKind {
     Channel(Id),
     Member(Id),
+    Message(Id),
+    Thread(Id),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,6 +195,8 @@ pub struct MemberState {
 pub struct App {
     pub dark: bool,
     pub screen: Screen,
+    /// Settings → Appearance → "Edit your own UI".
+    pub ui_edit: crate::aiedit::UiEdit,
     pub dm_home: bool,
     pub friend_tab: u8,
     pub friend_filter: TextEdit,
@@ -222,14 +234,6 @@ pub struct App {
     pub last_guild_channel: HashMap<Id, Id>,
     pub collapsed: HashSet<Id>,
     pub show_members: bool,
-    /// On a narrow screen, whether the chat pane is open instead of its list.
-    pub mobile_chat: bool,
-    /// On a narrow screen, the member list drawn as a drawer over the chat.
-    pub members_drawer: bool,
-    /// On a narrow screen, whether a settings section is open instead of the list.
-    pub mobile_settings: bool,
-    /// On a narrow screen, whether a server settings section is open.
-    pub mobile_server_settings: bool,
     /// Disk rail width, dragged by the edge between the channel list and chat.
     pub sidebar_width: f32,
     /// Member list width, dragged by its leading edge.
@@ -483,11 +487,22 @@ pub struct App {
     pub webhook_channel: Id,
     pub webhook_token: Option<(Id, String)>,
     pub forum_tags: Vec<ForumTag>,
-    pub forum_tag_filter: Option<Id>,
+    /// Tags selected in the forum filter. Posts must carry every chosen tag.
+    pub forum_tag_filter: BTreeSet<Id>,
     pub forum_tag_draft: TextEdit,
     pub forum_sort_new: bool,
     pub forum_list_layout: bool,
     pub thread_tag_ids: Vec<Id>,
+    /// Threads the user joined from the thread menu or by posting in them.
+    pub joined_threads: BTreeSet<Id>,
+    /// Threads the user explicitly left, so ownership or an old message does
+    /// not silently re-join them.
+    pub left_threads: BTreeSet<Id>,
+    /// 0 lists active threads, 1 lists archived ones.
+    pub thread_tab: u8,
+    pub thread_search: TextEdit,
+    /// Post guidelines must be acknowledged before a forum post is created.
+    pub forum_guidelines_ok: bool,
     pub prune_days: u32,
     pub prune_roles: BTreeSet<Id>,
     pub prune_preview: Option<u32>,
@@ -532,9 +547,7 @@ impl App {
             // window paints immediately and the gateway reconnects when the server
             // is ready, which removes the long white launch screen. The packaged
             // build hosts the backend itself, so it must not spawn a second copy.
-            // A browser cannot spawn processes either; it talks to a server the
-            // page's origin already points at.
-            #[cfg(all(not(feature = "embedded-server"), not(target_arch = "wasm32")))]
+            #[cfg(not(feature = "embedded-server"))]
             std::thread::spawn(ensure_server);
         }
         let server_unreachable = false;
@@ -554,6 +567,7 @@ impl App {
         let mut app = App {
             dark: if headless { true } else { load_theme() },
             screen: Screen::Guild,
+            ui_edit: crate::aiedit::UiEdit::default(),
             dm_home: true,
             friend_tab: 0,
             friend_filter: TextEdit::new(""),
@@ -591,10 +605,6 @@ impl App {
             last_guild_channel: HashMap::new(),
             collapsed: HashSet::new(),
             show_members: true,
-            mobile_chat: true,
-            members_drawer: false,
-            mobile_settings: false,
-            mobile_server_settings: false,
             sidebar_width: 240.0,
             members_width: 240.0,
             create_channel_kind: ChannelKind::Text,
@@ -744,9 +754,7 @@ impl App {
             event_name: TextEdit::new(""),
             event_description: TextEdit::new(""),
             event_start_minutes: TextEdit::new("60"),
-            event_start_date: TextEdit::new(
-                &chrono::Local::now().format("%Y-%m-%d").to_string(),
-            ),
+            event_start_date: TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string()),
             event_start_time: TextEdit::new(&chrono::Local::now().format("%H:%M").to_string()),
             event_recurrence: String::new(),
             event_reminder: 0,
@@ -837,11 +845,16 @@ impl App {
             webhook_channel: 0,
             webhook_token: None,
             forum_tags: Vec::new(),
-            forum_tag_filter: None,
+            forum_tag_filter: BTreeSet::new(),
             forum_tag_draft: TextEdit::new(""),
             forum_sort_new: false,
             forum_list_layout: false,
             thread_tag_ids: Vec::new(),
+            joined_threads: BTreeSet::new(),
+            left_threads: BTreeSet::new(),
+            thread_tab: 0,
+            thread_search: TextEdit::new(""),
+            forum_guidelines_ok: false,
             prune_days: 7,
             prune_roles: BTreeSet::new(),
             prune_preview: None,
@@ -922,6 +935,14 @@ impl App {
             .flatten()
             .chain(self.dms.iter().map(|d| &d.channel))
             .find(|c| c.id == id)
+    }
+
+    /// A message from any loaded channel, for a menu opened from its row.
+    pub fn message(&self, id: Id) -> Option<&Message> {
+        self.messages
+            .values()
+            .flatten()
+            .find(|message| message.id == id)
     }
 
     pub fn current_channel(&self) -> Option<&Channel> {
@@ -1195,7 +1216,7 @@ fn profile() -> Option<String> {
     std::env::var("RUNECORD_PROFILE").ok()
 }
 
-#[cfg(all(not(feature = "embedded-server"), not(target_arch = "wasm32")))]
+#[cfg(not(feature = "embedded-server"))]
 fn ensure_server() {
     if std::net::TcpStream::connect_timeout(
         &"127.0.0.1:47800".parse().unwrap(),

@@ -81,7 +81,7 @@ pub(crate) fn edit_channel_sheet(s: &App, p: Palette) -> El {
     let channel_id = channel.id;
     col()
         .key("edit-channel")
-        .w(sheet_w(460.0))
+        .w(460.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -343,7 +343,7 @@ pub(crate) fn onboarding_rules_sheet(s: &App, p: Palette, guild: Id) -> El {
     }
     col()
         .key("onboarding-rules")
-        .w(sheet_w(500.0))
+        .w(500.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

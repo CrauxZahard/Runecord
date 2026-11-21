@@ -6,8 +6,7 @@ set FAILED=0
 
 if not exist "%~dp0dist\assets" mkdir "%~dp0dist\assets"
 
-rem The download page and the portable notes ship next to the artifacts.
-copy /y "%~dp0download\index.html" "%~dp0dist\index.html" >nul
+rem The portable notes ship next to the artifacts.
 copy /y "%~dp0packaging\README.txt" "%~dp0dist\README.txt" >nul
 copy /y "%~dp0LICENSE" "%~dp0dist\LICENSE" >nul
 copy /y "%~dp0assets\icon.png" "%~dp0dist\assets\icon.png" >nul
@@ -34,7 +33,7 @@ echo [2/2] Linux    dist\Runecord-linux.tar.gz
 
 :packaged
 echo.
-echo Download page: %~dp0dist\index.html
+echo Artifacts: %~dp0dist
 echo Data lives in %%APPDATA%%\Runecord on Windows and ~/.local/share/runecord on Linux
 echo.
 

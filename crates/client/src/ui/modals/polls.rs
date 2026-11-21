@@ -51,7 +51,7 @@ pub(crate) fn create_poll_sheet(s: &App, p: Palette) -> El {
     };
     col()
         .key("poll-sheet")
-        .w(sheet_w(480.0))
+        .w(480.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

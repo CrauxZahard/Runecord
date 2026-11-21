@@ -17,8 +17,7 @@ pub(crate) fn http_worker(shared: Arc<Shared>, rx: mpsc::Receiver<Command>) {
     }
 }
 
-/// Runs one command. The desktop worker and the browser loop share this, so a
-/// handler only has to be written once.
+/// Runs one command; a handler has to be written once for the worker thread.
 pub(crate) fn dispatch(shared: &Arc<Shared>, cmd: Command) {
     match cmd {
         Command::Ping => {}

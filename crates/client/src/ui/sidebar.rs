@@ -472,8 +472,10 @@ pub(crate) fn channel_row(ch: &Channel, s: &App, p: Palette) -> El {
         .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
             s.context_menu = Some(crate::app::ContextMenu {
                 kind: crate::app::ContextMenuKind::Channel(id),
-                x: press.x,
-                y: press.y,
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
+                },
             });
         })
         .on_press(move |s: &mut App| {

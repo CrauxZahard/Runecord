@@ -117,7 +117,7 @@
           <div class="hero-actions">
             <a class="btn btn-primary btn-lg" href="#download">
               <svg class="icon"><use href="#i-download"/></svg>
-              DOWNLOAD BUILD
+              DOWNLOAD
             </a>
             <a class="btn btn-ghost btn-lg" href="../Runecord-backend/">
               DEVELOPER API
@@ -344,10 +344,10 @@
     <section class="download" id="download">
       <div class="wrap">
         <header class="download-head">
-          <div class="sec-label"><span>[ 07 ]</span> BUILDS</div>
+          <div class="sec-label"><span>[ 07 ]</span> DOWNLOADS</div>
           <div class="download-copy">
-            <h2>Installers are built, not published.</h2>
-            <p>Running <code>build.bat</code> produces a signed Windows installer, a portable executable and a Linux tarball in <code>dist/</code>, with a download page beside them. Nothing is hosted publicly yet.</p>
+            <h2>Download Runecord 0.1.0.</h2>
+            <p>A signed Windows installer, a portable executable and a Linux tarball. Every build is also reproducible from source with <code>build.bat</code>.</p>
           </div>
         </header>
 
@@ -363,8 +363,8 @@
                 <td data-label="Arch">x64</td>
                 <td data-label="Status"><span class="status queued">PREVIEW</span></td>
                 <td data-label="Build">
-                  <span class="tooltip" tabindex="0" role="group" aria-label="Build the Windows installer from source." data-tip="Run build.bat; the installer lands in dist/">
-                    <a class="btn btn-primary dl-btn" href="https://github.com/CrauxZahard/Runecord#build" target="_blank" rel="noopener">BUILD FROM SOURCE</a>
+                  <span class="tooltip" tabindex="0" role="group" aria-label="Download the Windows installer." data-tip="Runecord-Setup-0.1.0.exe, 23 MB">
+                    <a class="btn btn-primary dl-btn" href="https://github.com/CrauxZahard/Runecord/releases/download/v0.1.0/Runecord-Setup-0.1.0.exe" download>DOWNLOAD FOR WINDOWS</a>
                   </span>
                 </td>
               </tr>
@@ -374,8 +374,8 @@
                 <td data-label="Arch">x86_64</td>
                 <td data-label="Status"><span class="status queued">PREVIEW</span></td>
                 <td data-label="Build">
-                  <span class="tooltip" tabindex="0" role="group" aria-label="Build the Linux tarball from source." data-tip="Run build.bat; the tarball lands in dist/">
-                    <a class="btn btn-primary dl-btn" href="https://github.com/CrauxZahard/Runecord#build" target="_blank" rel="noopener">BUILD FROM SOURCE</a>
+                  <span class="tooltip" tabindex="0" role="group" aria-label="Download the Linux tarball." data-tip="Runecord-linux.tar.gz, 25 MB">
+                    <a class="btn btn-primary dl-btn" href="https://github.com/CrauxZahard/Runecord/releases/download/v0.1.0/Runecord-linux.tar.gz" download>DOWNLOAD FOR LINUX</a>
                   </span>
                 </td>
               </tr>
@@ -383,7 +383,8 @@
           </table>
         </div>
 
-        <p class="download-note">Build instructions: <a href="https://github.com/CrauxZahard/Runecord#build" target="_blank" rel="noopener">Build from source <svg class="icon"><use href="#i-up"/></svg></a></p>
+        <p class="download-note">No install: <a href="https://github.com/CrauxZahard/Runecord/releases/download/v0.1.0/Runecord.exe" download>portable Runecord.exe</a> (88 MB) &middot; <a href="https://github.com/CrauxZahard/Runecord/releases" target="_blank" rel="noopener">all releases</a> &middot; <a href="https://github.com/CrauxZahard/Runecord#build" target="_blank" rel="noopener">build from source <svg class="icon"><use href="#i-up"/></svg></a></p>
+        <p class="download-note">The Windows builds are self-signed, so SmartScreen may warn on first launch. Verify the signature with <code>Get-AuthenticodeSignature .\Runecord.exe</code>.</p>
       </div>
     </section>
 
@@ -419,7 +420,7 @@
           </details>
           <details class="faq-item reveal">
             <summary><span class="faq-num">06</span> How do I install it?<span class="faq-plus" aria-hidden="true"></span></summary>
-            <div class="faq-body"><p>Run <code>build.bat</code>. It produces a signed Windows installer, a portable executable, a Linux tarball with an install script, and a download page in <code>dist/</code>. The binaries are published from there; this site does not host them.</p></div>
+            <div class="faq-body"><p>Download the Windows installer or the Linux tarball from the latest GitHub release. The Linux archive contains <code>install.sh</code>; the Windows installer is per-user and needs no admin rights. To build from source, run <code>build.bat</code> and take the artifacts from <code>dist/</code>.</p></div>
           </details>
         </div>
       </div>
@@ -432,7 +433,7 @@
           <h2>RUN IT LOCALLY.<br>READ THE SOURCE.</h2>
         </div>
         <div class="cta-actions reveal">
-          <a class="btn btn-invert btn-lg" href="#download">DOWNLOAD BUILD <svg class="icon"><use href="#i-download"/></svg></a>
+          <a class="btn btn-invert btn-lg" href="#download">DOWNLOAD <svg class="icon"><use href="#i-download"/></svg></a>
           <a class="btn btn-outline-light btn-lg" href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener"><svg class="icon"><use href="#i-github"/></svg> STAR ON GITHUB</a>
         </div>
         <img class="cta-logo" src="assets/img/logo.svg" width="220" height="220" alt="" aria-hidden="true">

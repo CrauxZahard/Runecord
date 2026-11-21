@@ -47,7 +47,7 @@ pub(crate) fn soundboard_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("soundboard-panel")
-        .w(sheet_w(420.0))
+        .w(420.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

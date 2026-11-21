@@ -187,7 +187,7 @@ pub(crate) fn prune_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("prune-members")
-        .w(sheet_w(460.0))
+        .w(460.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -467,7 +467,7 @@ pub(crate) fn timeout_sheet(s: &App, p: Palette, guild: Id, user: Id) -> El {
 
     col()
         .key("timeout-sheet")
-        .w(sheet_w(430.0))
+        .w(430.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -541,8 +541,8 @@ pub(crate) fn timeout_sheet(s: &App, p: Palette, guild: Id, user: Id) -> El {
 pub(crate) fn bans_sheet(s: &App, p: Palette) -> El {
     col()
         .key("bans")
-        .w(sheet_w(520.0))
-        .h(sheet_h(520.0))
+        .w(520.0)
+        .h(520.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -588,7 +588,7 @@ pub(crate) fn bans_sheet(s: &App, p: Palette) -> El {
 pub(crate) fn ban_appeal_sheet(s: &App, p: Palette) -> El {
     col()
         .key("ban-appeal")
-        .w(sheet_w(470.0))
+        .w(470.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)

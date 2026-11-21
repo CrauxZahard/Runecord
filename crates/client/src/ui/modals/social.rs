@@ -95,7 +95,7 @@ pub(crate) fn group_dm_sheet(s: &App, p: Palette) -> El {
     let count = s.group_dm_selected.len();
     col()
         .key("group-dm")
-        .w(sheet_w(480.0))
+        .w(480.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)
@@ -193,7 +193,7 @@ pub(crate) fn group_dm_sheet(s: &App, p: Palette) -> El {
 pub(crate) fn invite_join_sheet(s: &App, p: Palette) -> El {
     col()
         .key("invite-join")
-        .w(sheet_w(440.0))
+        .w(440.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)
@@ -474,7 +474,7 @@ pub(crate) fn dm_settings_sheet(s: &App, p: Palette, channel: Id) -> El {
 
     col()
         .key("dm-settings")
-        .w(sheet_w(500.0))
+        .w(500.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(18.0)

@@ -70,7 +70,7 @@ pub(crate) fn slash_sheet(s: &App, p: Palette) -> El {
     }
     col()
         .key("slash-sheet")
-        .w(sheet_w(460.0))
+        .w(460.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

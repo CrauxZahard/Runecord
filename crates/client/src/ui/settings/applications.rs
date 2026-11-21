@@ -141,11 +141,7 @@ pub(crate) fn application_tab(s: &App, p: Palette) -> El {
                     |s: &mut App| &mut s.server_url,
                 ))
                 .child({
-                    let mut actions = row().w_full().gap(8.0).center_y();
-                    if mobile() {
-                        // Three buttons exceed a phone's card; let them wrap.
-                        actions = actions.flex_wrap();
-                    }
+                    let actions = row().w_full().gap(8.0).center_y();
                     actions
                         .child(button(
                             "server-url-save",

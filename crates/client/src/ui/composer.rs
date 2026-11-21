@@ -7,12 +7,16 @@ pub(crate) fn composer(s: &App, channel: &Channel, p: Palette) -> El {
 }
 
 pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: bool) -> El {
-    if !has(channel.my_permissions, perm::SEND_MESSAGES) {
+    if !s.can_send_in(channel) {
         return col().key("composer-wrap").w_full().px(16.0).pb(16.0).child(
             row().h(44.0).radius(8.0).fill(p.input).center().child(
-                text("You do not have permission to send messages in this channel.")
-                    .font(theme::SMALL)
-                    .color(p.text_muted),
+                text(if channel.kind == ChannelKind::Thread {
+                    "You do not have permission to send messages in this thread."
+                } else {
+                    "You do not have permission to send messages in this channel."
+                })
+                .font(theme::SMALL)
+                .color(p.text_muted),
             ),
         );
     }
@@ -37,8 +41,8 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
     let mut wrap = col()
         .key("composer-wrap")
         .w_full()
-        .px(if mobile() { 12.0 } else { 20.0 })
-        .pb(if mobile() { 12.0 } else { 18.0 })
+        .px(20.0)
+        .pb(18.0)
         .gap(8.0);
     if let Some(reply) = &s.reply_to {
         let reply_id = reply.message_id;
@@ -357,42 +361,34 @@ pub(crate) fn composer_with(s: &App, channel: &Channel, p: Palette, compact: boo
                                 .py(1.0),
                         ),
                 );
-                // On the narrowest phones the sticker button pushes the message
-                // placeholder onto a second line; GIF stays.
-                if !mobile() || mobile_size().0 >= 380.0 {
-                    extras = extras.child(
-                        icon(&icons::STICKER, 24.0)
-                            .key("composer-sticker")
+                extras = extras.child(
+                    icon(&icons::STICKER, 24.0)
+                        .key("composer-sticker")
+                        .color(p.interactive)
+                        .role("button")
+                        .label("Stickers")
+                        .help("Stickers")
+                        .on_press(|s: &mut App| s.modal = Modal::StickerPicker),
+                );
+                extras = extras
+                    .child(
+                        icon(&icons::POLL, 22.0)
+                            .key("composer-poll")
                             .color(p.interactive)
                             .role("button")
-                            .label("Stickers")
-                            .help("Stickers")
-                            .on_press(|s: &mut App| s.modal = Modal::StickerPicker),
+                            .label("Create poll")
+                            .help("Create poll")
+                            .on_press(|s: &mut App| s.open_create_poll()),
+                    )
+                    .child(
+                        icon(&icons::CLOCK, 22.0)
+                            .key("composer-schedule")
+                            .color(p.interactive)
+                            .role("button")
+                            .label("Schedule message")
+                            .help("Schedule message")
+                            .on_press(|s: &mut App| s.open_scheduled()),
                     );
-                }
-                // A phone keeps the GIF and sticker pickers in the composer and
-                // drops the rarer poll/schedule buttons to keep one line.
-                if !mobile() {
-                    extras = extras
-                        .child(
-                            icon(&icons::POLL, 22.0)
-                                .key("composer-poll")
-                                .color(p.interactive)
-                                .role("button")
-                                .label("Create poll")
-                                .help("Create poll")
-                                .on_press(|s: &mut App| s.open_create_poll()),
-                        )
-                        .child(
-                            icon(&icons::CLOCK, 22.0)
-                                .key("composer-schedule")
-                                .color(p.interactive)
-                                .role("button")
-                                .label("Schedule message")
-                                .help("Schedule message")
-                                .on_press(|s: &mut App| s.open_scheduled()),
-                        );
-                }
                 extras
             }))
             .child(
@@ -493,7 +489,11 @@ fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> E
 
     for (token, label, detail) in [
         ("@game ", "@game", "Mention a game"),
-        ("@time ", "@time", "Refer to a time dynamically in the viewer's time zone"),
+        (
+            "@time ",
+            "@time",
+            "Refer to a time dynamically in the viewer's time zone",
+        ),
     ] {
         if !matches(label) {
             continue;
@@ -516,7 +516,13 @@ fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> E
                         .color(p.text_bright)
                         .w(96.0),
                 )
-                .child(text(detail).font(theme::TINY).color(p.text_muted).grow(1.0).truncate()),
+                .child(
+                    text(detail)
+                        .font(theme::TINY)
+                        .color(p.text_muted)
+                        .grow(1.0)
+                        .truncate(),
+                ),
         );
     }
 
@@ -547,19 +553,58 @@ fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> E
                 .role("button")
                 .hover(p.selected)
                 .on_press(move |s: &mut App| s.insert_mention(at, caret, &token))
-                .child(crate::ui::common::avatar_status(&avatar_user, 20.0, p, p.card, true))
-                .child(text(label).font(theme::SMALL_MED).color(p.text_bright).w(130.0).truncate())
-                .child(text(handle).font(theme::TINY).color(p.text_faint).grow(1.0).truncate()),
+                .child(crate::ui::common::avatar_status(
+                    &avatar_user,
+                    20.0,
+                    p,
+                    p.card,
+                    true,
+                ))
+                .child(
+                    text(label)
+                        .font(theme::SMALL_MED)
+                        .color(p.text_bright)
+                        .w(130.0)
+                        .truncate(),
+                )
+                .child(
+                    text(handle)
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .grow(1.0)
+                        .truncate(),
+                ),
         );
     }
 
     for role in s.guild_roles(s.active_guild) {
-        let label = format!("@{}", role.name);
+        let everyone = role.name == "@everyone";
+        // `@everyone` already reads as a mention, so it needs no second `@`.
+        let label = if everyone {
+            role.name.clone()
+        } else {
+            format!("@{}", role.name)
+        };
         if !matches(&label) {
             continue;
         }
-        let token = format!("<@&{}> ", role.id);
-        let tint = theme::color(&format!("#{:06x}", role.color));
+        // `@everyone` is not a role ping. It is the plain-text word that pings
+        // the whole server, so send it as text instead of a role token.
+        let token = if everyone {
+            "@everyone ".to_string()
+        } else {
+            format!("<@&{}> ", role.id)
+        };
+        let tint = if role.color == 0 {
+            p.text_bright
+        } else {
+            theme::color(&format!("#{:06x}", role.color))
+        };
+        let detail = if everyone {
+            "Notify everyone in the server."
+        } else {
+            "Notify users with this role who have permission to view this channel."
+        };
         entries.push(
             row()
                 .key(format!("mention-role-{}", role.id))
@@ -571,9 +616,15 @@ fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> E
                 .role("button")
                 .hover(p.selected)
                 .on_press(move |s: &mut App| s.insert_mention(at, caret, &token))
-                .child(text(label).font(theme::SMALL_MED).color(tint).w(160.0).truncate())
                 .child(
-                    text("Notify users with this role who have permission to view this channel.")
+                    text(label)
+                        .font(theme::SMALL_MED)
+                        .color(tint)
+                        .w(160.0)
+                        .truncate(),
+                )
+                .child(
+                    text(detail)
                         .font(theme::TINY)
                         .color(p.text_muted)
                         .grow(1.0)
@@ -605,7 +656,9 @@ fn mention_popup(s: &App, at: usize, caret: usize, query: &str, p: Palette) -> E
         .fill(theme::color("#111214"))
         .border(1.0, p.divider)
         .clip_rounded(8.0)
-        .scroll(rune::ScrollSpec { stick_bottom: false })
+        .scroll(rune::ScrollSpec {
+            stick_bottom: false,
+        })
         .padding(5.0)
         .shadow(8.0, 20.0, p.shadow)
         .child(body)

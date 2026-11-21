@@ -17,6 +17,32 @@ impl App {
         if channel == 0 {
             return;
         }
+        let Some(current_channel) = self.channel(channel).cloned() else {
+            return;
+        };
+        if !self.can_send_in(&current_channel) {
+            self.toast("You do not have permission to send messages here");
+            return;
+        }
+        if current_channel.kind == ChannelKind::Thread {
+            let archived = current_channel
+                .thread
+                .as_ref()
+                .is_some_and(|info| info.archived);
+            if archived {
+                if !self.can_manage_thread(&current_channel) {
+                    self.toast("This thread is archived. Ask a moderator to reopen it.");
+                    return;
+                }
+                // Sending reopens a closed thread, the way Discord does.
+                self.send(Command::ArchiveThread {
+                    channel,
+                    archived: false,
+                });
+            }
+            self.joined_threads.insert(channel);
+            self.left_threads.remove(&channel);
+        }
         if let Some(command_text) = text.strip_prefix('/') {
             let mut parts = command_text.splitn(2, char::is_whitespace);
             let name = parts.next().unwrap_or_default();
@@ -54,20 +80,20 @@ impl App {
         // keeps every client in sync (including notification/unread counts) and
         // is exactly the mention chip Discord shows above a reply. "@ off"
         // suppresses it.
-        let reply_mention = self.reply_notify.then(|| {
-            self.reply_to
-                .as_ref()
-                .filter(|r| r.author_id != self.me.id)
-                .map(|r| r.author_id)
-        }).flatten();
+        let reply_mention = self
+            .reply_notify
+            .then(|| {
+                self.reply_to
+                    .as_ref()
+                    .filter(|r| r.author_id != self.me.id)
+                    .map(|r| r.author_id)
+            })
+            .flatten();
         let sent_text = match reply_mention {
             Some(author) => format!("<@{author}> {text}"),
             None => text.clone(),
         };
-        if self
-            .channel(channel)
-            .is_some_and(|channel| channel.kind == ChannelKind::Forum)
-        {
+        if current_channel.kind == ChannelKind::Forum {
             self.pending_forum = Some(channel);
         } else {
             let temp = Message {

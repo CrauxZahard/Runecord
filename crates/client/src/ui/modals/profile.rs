@@ -1,4 +1,4 @@
-//! Profile and message menus.
+//! Profile sheets.
 
 use super::super::*;
 
@@ -58,7 +58,7 @@ fn profile_card(s: &App, p: Palette, id: runecord_protocol::Id, full: bool) -> E
     };
     col()
         .key("profile-sheet")
-        .w(sheet_w(if full { 560.0 } else { 340.0 }))
+        .w(if full { 560.0 } else { 340.0 })
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(card_color)
@@ -308,8 +308,7 @@ fn profile_name(_s: &App, user: &User, p: Palette) -> El {
     if gradient {
         // A nameplate colours the username itself, not a pill around it. A
         // second, vertically faded copy gives a primary -> secondary gradient.
-        el()
-            .child(text(name.clone()).font(theme::TITLE).color(primary))
+        el().child(text(name.clone()).font(theme::TITLE).color(primary))
             .child(
                 el().absolute(0.0, 0.0)
                     .clip_fade(0.0, 24.0, 0.0, 0.0)
@@ -740,8 +739,8 @@ pub(crate) fn forward_sheet(s: &App, p: Palette, message: runecord_protocol::Id)
     }
     col()
         .key("forward-sheet")
-        .w(sheet_w(460.0))
-        .h(sheet_h(520.0))
+        .w(460.0)
+        .h(520.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -778,147 +777,10 @@ pub(crate) fn forward_sheet(s: &App, p: Palette, message: runecord_protocol::Id)
         )
 }
 
-pub(crate) fn message_menu(s: &App, p: Palette, id: runecord_protocol::Id) -> El {
-    let Some(msg) = s.messages.values().flatten().find(|m| m.id == id).cloned() else {
-        return el();
-    };
-    let mine = msg.author_id == s.me.id;
-    let perms = s
-        .channel(msg.channel_id)
-        .map(|c| c.my_permissions)
-        .unwrap_or(0);
-    let can_send = has(perms, perm::SEND_MESSAGES);
-    let can_manage = has(perms, perm::MANAGE_MESSAGES);
-    let can_react = has(perms, perm::ADD_REACTIONS);
-    let mid = id;
-    let author_id = msg.author_id;
-    let channel_id = msg.channel_id;
-    let content = msg.content.clone();
-    let content_reply = content.clone();
-    let content_copy = content.clone();
-    let content_edit = content.clone();
-    let thread_preview = content.clone();
-    let pinned = msg.pinned;
-
-    let item = |label: &'static str, red: bool, key: &'static str, p: Palette| {
-        el().key(key)
-            .w_full()
-            .h(32.0)
-            .px(8.0)
-            .radius(4.0)
-            .center_y()
-            .hover(if red { p.danger.alpha(0.15) } else { p.accent })
-            .child(text(label).font(theme::SMALL_MED).color(if red {
-                p.danger
-            } else {
-                p.text_bright
-            }))
-    };
-
-    let mut reactions = row().gap(2.0).px(4.0).py(2.0);
-    // These used to be mojibake strings (UTF-8 emoji bytes decoded as a legacy
-    // code page), which drew as unreadable "≡ƒ..." glyphs. Use real Unicode
-    // emoji so the quick-reaction row reads correctly for everyone.
-    for emoji in ["😂", "❤️", "👍", "🎉", "😮", "😢"] {
-        let label = format!("React with {emoji}");
-        reactions = reactions.child(
-            el().key(format!("quick-react-{emoji}"))
-                .radius(4.0)
-                .center()
-                .role("button")
-                .label(label.clone())
-                .help(label)
-                .padding(4.0)
-                .hover(p.selected)
-                .on_press(move |s: &mut App| {
-                    s.react(mid, emoji);
-                    s.modal = Modal::None;
-                })
-                .child(text(emoji).font(TextStyle::new(20.0, 400.0)).color(p.text)),
-        );
-    }
-
-    el().key("message-menu")
-        .w(220.0)
-        .radius(8.0)
-        .fill(theme::color("#111214"))
-        .padding(6.0)
-        .gap(2.0)
-        .shadow(8.0, 24.0, p.shadow)
-        .modal(true, |s: &mut App| s.modal = Modal::None)
-        .children(can_react.then_some(reactions))
-        .child(el().w_full().h(1.0).fill(p.divider).my(3.0))
-        .children(can_send.then(|| {
-            item("Reply", false, "menu-reply", p).on_press(move |s: &mut App| {
-                s.set_reply(mid, author_id, &content_reply);
-                s.modal = Modal::None;
-            })
-        }))
-        .children(can_send.then(|| {
-            item("Forward", false, "menu-forward", p).on_press(move |s: &mut App| {
-                s.open_forward(mid);
-            })
-        }))
-        .children(can_send.then(|| {
-            item("Create Thread", false, "menu-thread", p).on_press(move |s: &mut App| {
-                s.profile_edit = rune::TextEdit::new(plain_thread_name(&thread_preview));
-                s.modal = Modal::ThreadCreate {
-                    parent: channel_id,
-                    message: Some(mid),
-                };
-            })
-        }))
-        .child(item("Copy Text", false, "menu-copy", p).on_press_tx(
-            move |_: &mut App, tx: &mut rune::Tx| {
-                tx.copy(content_copy.clone());
-            },
-        ))
-        .child(
-            item("Copy Message Link", false, "menu-copy-link", p).on_press_tx(
-                move |_: &mut App, tx: &mut rune::Tx| {
-                    tx.copy(format!("runecord://channel/{channel_id}/{mid}"));
-                },
-            ),
-        )
-        .child(
-            item("Copy Message ID", false, "menu-copy-id", p).on_press_tx(
-                move |_: &mut App, tx: &mut rune::Tx| {
-                    tx.copy(mid.to_string());
-                },
-            ),
-        )
-        .children(can_manage.then(|| {
-            item(
-                if pinned {
-                    "Unpin Message"
-                } else {
-                    "Pin Message"
-                },
-                false,
-                "menu-pin",
-                p,
-            )
-            .on_press(move |s: &mut App| {
-                s.toggle_pin(mid);
-                s.modal = Modal::None;
-            })
-        }))
-        .children(mine.then(|| {
-            item("Edit Message", false, "menu-edit", p)
-                .on_press(move |s: &mut App| s.open_edit(mid, &content_edit))
-        }))
-        .children((mine || can_manage).then(|| {
-            item("Delete Message", true, "menu-delete", p).on_press(move |s: &mut App| {
-                s.delete_message(mid);
-                s.modal = Modal::None;
-            })
-        }))
-}
-
 pub(crate) fn edit_sheet(s: &App, p: Palette, _id: runecord_protocol::Id) -> El {
     col()
         .key("edit-sheet")
-        .w(sheet_w(520.0))
+        .w(520.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

@@ -316,3 +316,62 @@ through `/api/channels/{id}/components`.
 
 **Consequences.** The client has no component editor; bots own the component
 payload. Component rows are removed with their message or channel.
+
+## 22. The AI UI editor writes through an allowlist and stages binaries
+
+**Context.** "Edit your own UI" lets a model rewrite the view layer and rebuild
+the app. A prompt asking it not to touch logic is not a boundary, and a failed
+build must not leave an install that cannot start.
+
+**Decision.** Generated patches go through `crates/client/src/aiedit/patch.rs`,
+which rejects the whole reply unless every path is under
+`crates/client/src/ui/` or `crates/ui/src/`; new `.rs` files in those trees are
+allowed, and the reply may `NEED` (read, never write) `app/mod.rs`,
+`app/actions/**`, `app/events/**` and `cache.rs` for state context. Files are
+backed up per edit. Builds run as a child process into the release profile. A
+finished build is copied to `%APPDATA%\Runecord\aiedit\versions\ui-<stamp>` and
+its full writable tree is recorded in `aiedit/source` as content-addressed
+objects plus a manifest; the running binary is never overwritten. A restart
+starts the staged build through a supervisor copy of the executable, which waits
+for that build's ready marker (`App::poll` writes it) and reopens the previous
+binary if it never appears. The installed app also acts as the launcher: it
+reads `state.json`, starts the current version, and falls back to last-good or
+its own built-in UI. A development checkout skips that dispatch so `run.bat`
+runs the source it just built.
+
+**Consequences.** "UI only" is enforced by the writer rather than by the system
+prompt, and no edit can reach `net/`, `config.rs` or the session tokens. New
+widgets, icons and whole modules are still expressible: the editor adds the file
+and the parent that registers it. A failed build restores the previous files
+automatically, so the tree still compiles. The cost is that an edit rebuilds the
+whole `runecord` crate (1-3 minutes warm): the `crates/ui` crate exists for
+tokens today, and moving screens into it is what will shorten that build, not
+the allowlist. The key lives in `aiedit\.env` as a DPAPI-sealed blob, so it is
+bound to the signed-in account and never written in the clear; saving verifies
+the file reads back before the card reports success.
+
+Requests are expanded before patching: `aiedit/brief.rs` turns the goal and any
+reference images into a structured brief, and the orchestrator receives both. A
+brief is advisory — the user's words stay authoritative — and a provider that
+cannot write one leaves the original request in place. Images are optional,
+downscaled once in `attach.rs`, capped at four, and retried text-only if the
+provider rejects image parts.
+
+The model runs as an orchestrator rather than one prompt: it briefs, plans,
+requests the files it needs, patches, and gets compiler errors fed back for up to
+three repairs. The caps live in `aiedit/mod.rs` (`MAX_STEPS`,
+`MAX_FILE_ROUNDS`, `MAX_REPAIRS`, `MAX_IDLE`) so a looping model cannot spin
+forever or exhaust the user's budget.
+
+Each staged build records the goal, its files and the source manifest, so the
+card can list versions and switch between them; switching restores that build's
+source first, keeping the tree and the running UI in step. Only the installed
+app, `current` and `last_good` stay on disk as executables: a promoted build
+turns the old current into last-good and deletes the old last-good. Older
+versions keep their source manifest and show **Rebuild** instead of **Use**;
+rebuilding takes the same 1-3 minute build but frees roughly 93 MB per retired
+executable. Source snapshots are about 1 MB for the whole UI, and unchanged files
+are stored once. The binaries a restart can use (`current`, `last_good`,
+`pending`) are never pruned by the startup pass; `base` is used only when the
+installed app path is unknown.
+

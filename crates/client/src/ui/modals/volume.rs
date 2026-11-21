@@ -8,7 +8,7 @@ pub(crate) fn user_volume_sheet(s: &App, p: Palette, user: Id) -> El {
     let muted = crate::voice::user_muted(user);
     col()
         .key("user-volume")
-        .w(sheet_w(360.0))
+        .w(360.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

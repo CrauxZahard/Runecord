@@ -327,7 +327,7 @@ pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
     }
     col()
         .key("emoji-sheet")
-        .w(sheet_w(408.0))
+        .w(408.0)
         .radius(10.0)
         .fill(theme::color("#111214"))
         .padding(12.0)
@@ -360,21 +360,6 @@ pub(crate) fn emoji_sheet(s: &App, p: Palette, target: Option<Id>) -> El {
                         .hover(p.selected)
                         .on_press(|s: &mut App| s.emoji_search.clear())
                         .child(text("Clear").font(theme::TINY).color(p.text_muted))
-                }))
-                .children(mobile().then(|| {
-                    // Focus a button, not the search field: a modal otherwise
-                    // focuses its first text field and a phone keyboard covers
-                    // the picker before the user has asked to search.
-                    el().key("emoji-close")
-                        .size(28.0, 28.0)
-                        .radius(4.0)
-                        .center()
-                        .role("button")
-                        .label("Close emoji picker")
-                        .hover(p.selected)
-                        .on_press(|s: &mut App| s.modal = Modal::None)
-                        .autofocus()
-                        .child(icon(&icons::CLOSE, 16.0).color(p.text_muted))
                 })),
         )
         .child(

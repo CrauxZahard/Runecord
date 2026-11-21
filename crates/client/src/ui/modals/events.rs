@@ -57,8 +57,8 @@ pub(crate) fn events_sheet(s: &App, p: Palette) -> El {
 
     col()
         .key("events-panel")
-        .w(sheet_w(560.0))
-        .h(sheet_h(660.0))
+        .w(560.0)
+        .h(660.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
@@ -273,7 +273,7 @@ pub(crate) fn create_event_sheet(s: &App, p: Palette) -> El {
         .unwrap_or_else(|| "No channel".into());
     col()
         .key("create-event")
-        .w(sheet_w(460.0))
+        .w(460.0)
         .radius(8.0)
         .fill(p.modal)
         .padding(20.0)

@@ -50,11 +50,33 @@ if (-not $SkipBuild) {
 $built = Join-Path $root "target\release\runecord.exe"
 if (-not (Test-Path $built)) { throw "missing $built" }
 New-Item -ItemType Directory -Force -Path (Join-Path $dist "assets") | Out-Null
-# A running copy locks the old file; stop only the copy in dist.
-Get-CimInstance Win32_Process -Filter "Name='Runecord.exe'" |
-    Where-Object { $_.ExecutablePath -like "$dist*" } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Copy-Item $built (Join-Path $dist "Runecord.exe") -Force
+# A running copy locks the old file. Stop the dist copy, then wait for Windows
+# to actually release the handle: Stop-Process returns before the file is free,
+# and copying immediately used to fail with "being used by another process".
+$target = Join-Path $dist "Runecord.exe"
+$stopped = @()
+Get-Process -Name Runecord -ErrorAction SilentlyContinue |
+    Where-Object {
+        try { $_.Path -eq $target } catch { $false }
+    } |
+    ForEach-Object {
+        $stopped += $_.Id
+        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+    }
+if ($stopped.Count -gt 0) {
+    Write-Output ("stopped the running dist copy: " + ($stopped -join ", "))
+}
+$deadline = (Get-Date).AddSeconds(20)
+while ((Test-Path $target) -and ((Get-Date) -lt $deadline)) {
+    try {
+        $probe = [System.IO.File]::Open($target, 'Open', 'ReadWrite', 'None')
+        $probe.Close()
+        break
+    } catch {
+        Start-Sleep -Milliseconds 300
+    }
+}
+Copy-Item $built $target -Force
 Copy-Item (Join-Path $root "assets\icon.ico") (Join-Path $dist "assets\icon.ico") -Force
 Copy-Item (Join-Path $root "assets\icon.png") (Join-Path $dist "assets\icon.png") -Force
 Copy-Item (Join-Path $root "LICENSE") (Join-Path $dist "LICENSE") -Force
@@ -86,18 +108,31 @@ if ($Pfx) {
 
 function Sign-Artifact {
     param([string]$Path)
-    try {
-        $signature = Set-AuthenticodeSignature -FilePath $Path -Certificate $certificate `
-            -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com" -ErrorAction Stop
-    } catch {
-        # Timestamping needs the network; a signature without one still works.
-        $signature = Set-AuthenticodeSignature -FilePath $Path -Certificate $certificate `
-            -HashAlgorithm SHA256 -ErrorAction Stop
+    # ISCC may still hold the file for a moment; a failed attempt used to be
+    # reported as "no signer certificate" and failed the whole build. Retry, and
+    # judge success by the signature actually present on disk.
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Set-AuthenticodeSignature -FilePath $Path -Certificate $certificate `
+                -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com" -ErrorAction Stop | Out-Null
+        } catch {
+            # Timestamping needs the network; a signature without one still works.
+            try {
+                Set-AuthenticodeSignature -FilePath $Path -Certificate $certificate `
+                    -HashAlgorithm SHA256 -ErrorAction Stop | Out-Null
+            } catch {
+                # Locked or otherwise unusable this pass: wait and try again.
+            }
+        }
+        $check = Get-AuthenticodeSignature -FilePath $Path
+        if ($check.SignerCertificate) {
+            Write-Output ("signed {0}: {1} by {2}" -f `
+                (Split-Path -Leaf $Path), $check.Status, $check.SignerCertificate.Subject)
+            return
+        }
+        Start-Sleep -Milliseconds 800
     }
-    $check = Get-AuthenticodeSignature -FilePath $Path
-    Write-Output ("signed {0}: {1} by {2}" -f `
-        (Split-Path -Leaf $Path), $check.Status, $check.SignerCertificate.Subject)
-    if (-not $check.SignerCertificate) { throw "no signer certificate on $Path" }
+    throw "no signer certificate on $Path"
 }
 
 # 3. Sign the app, then build and sign the installer.

@@ -21,53 +21,6 @@ use self::prelude::*;
 /// Height of the in-app titlebar the window's caption buttons sit over.
 pub const TITLEBAR_HEIGHT: f32 = 36.0;
 
-thread_local! {
-    /// Whether this view runs the phone layout: the window is narrower than
-    /// [`MOBILE_BREAKPOINT`] points. Set by [`view`] from the root's layout.
-    static MOBILE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The root's size in points, so modal sheets can fit the screen.
-    static MOBILE_SIZE: std::cell::Cell<(f32, f32)> = const { std::cell::Cell::new((1360.0, 860.0)) };
-}
-
-/// The width at which the desktop columns stop fitting side by side.
-pub(crate) const MOBILE_BREAKPOINT: f32 = 720.0;
-
-/// A phone held sideways is wider than [`MOBILE_BREAKPOINT`] but too short for
-/// the desktop columns; below this height the phone layout still applies.
-pub(crate) const MOBILE_LANDSCAPE_HEIGHT: f32 = 520.0;
-
-/// Whether the current view runs the phone layout.
-pub(crate) fn mobile() -> bool {
-    MOBILE.get()
-}
-
-/// The root's size in points, as laid out.
-pub(crate) fn mobile_size() -> (f32, f32) {
-    MOBILE_SIZE.get()
-}
-
-/// A modal sheet's width: its desktop width, shrunk to the phone with a margin.
-pub(crate) fn sheet_w(desktop: f32) -> f32 {
-    if mobile() {
-        (mobile_size().0 - 24.0).clamp(280.0, desktop)
-    } else {
-        desktop
-    }
-}
-
-/// A modal sheet's height: its desktop height, capped to the phone. A phone
-/// keyboard takes roughly half the screen and WebView keeps the layout
-/// viewport full height, so a sheet taller than about half would slide under
-/// the keyboard; its body scrolls instead.
-pub(crate) fn sheet_h(desktop: f32) -> f32 {
-    if mobile() {
-        let (_, height) = mobile_size();
-        (height * 0.46).clamp(240.0, desktop).min(height - 24.0)
-    } else {
-        desktop
-    }
-}
-
 pub fn palette(dark: bool) -> Palette {
     if dark {
         Palette::dark()
@@ -78,23 +31,8 @@ pub fn palette(dark: bool) -> Palette {
 
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let p = palette(s.dark);
-    let root = cx
-        .layout_with("app", |rect| (rect[2], rect[3]))
-        .unwrap_or((1360.0, 860.0));
-    let root = if root.0 <= 0.0 || root.1 <= 0.0 {
-        (1360.0, 860.0)
-    } else {
-        root
-    };
-    MOBILE_SIZE.set(root);
-    let narrow = root.0 < MOBILE_BREAKPOINT || root.1 < MOBILE_LANDSCAPE_HEIGHT;
-    MOBILE.set(narrow);
-    // Browser safe-area insets (status bar, cutout, gesture bar). Zero on
-    // desktop; a browser reports them through `viewport-fit=cover`.
-    let safe = cx.safe_area();
-    // Keyboard focus for every pressable control, as a web page has it: Tab
-    // reaches the form fields and buttons, which also lets the phone shell
-    // drive the login without pointing at canvas coordinates.
+    // Keyboard focus for every pressable control: Tab reaches the form fields
+    // and buttons.
     cx.web_focus();
     cx.caption_color(if s.dark { Color::WHITE } else { Color::BLACK });
     let mut root = col()
@@ -102,10 +40,6 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .w_full()
         .h_full()
         .fill(p.chat)
-        .pl(safe[3])
-        .pr(safe[1])
-        .pt(safe[0])
-        .pb(safe[2])
         .child(title_bar(s, cx, p));
     if !s.logged_in {
         if let Modal::Settings(tab) = s.modal {
@@ -125,9 +59,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         }
         return root;
     }
-    if matches!(s.modal, Modal::ServerSettings | Modal::Roles)
-        && s.can_open_server_settings()
-    {
+    if matches!(s.modal, Modal::ServerSettings | Modal::Roles) && s.can_open_server_settings() {
         root = root.child(server_settings_page(s, cx, p));
         if let Some(t) = &s.toast {
             root = root.child(toast(t, p));
@@ -135,9 +67,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         return root;
     }
     let shell = match s.screen {
-        Screen::Guild if narrow => guild_shell_mobile(s, cx, p),
         Screen::Guild => guild_shell(s, cx, p),
-        Screen::Dms if narrow => dm_shell_mobile(s, cx, p),
         Screen::Dms => dm_shell(s, cx, p),
     };
     if s.developer {
@@ -146,12 +76,6 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
             .child(developer_bar(s, p));
     } else {
         root = root.child(col().grow(1.0).min_h(0.0).child(shell));
-    }
-    if let Some(menu) = &s.context_menu {
-        root = root.child(context_menu_layer(s, cx, menu, p));
-    }
-    if narrow && s.members_drawer && s.screen == Screen::Guild && s.mobile_chat {
-        root = root.child(member_drawer(s, p));
     }
     if s.modal == Modal::ServerMenu {
         root = root.child(
@@ -167,6 +91,11 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         );
     } else if s.modal != Modal::None {
         root = root.child(modal(s, p));
+    }
+    // Context menus sit above modals so a post menu works inside the thread
+    // browser.
+    if let Some(menu) = &s.context_menu {
+        root = root.child(context_menu_layer(s, cx, menu, p));
     }
     if let Some((url, width, height)) = &s.viewing_image {
         let image = if let Some(pixels) = s.images.get(url) {
@@ -228,7 +157,7 @@ fn title_bar(s: &App, cx: &Cx<App>, p: Palette) -> El {
     let bar = row()
         .key("titlebar")
         .w_full()
-        .h(if mobile() { 30.0 } else { TITLEBAR_HEIGHT })
+        .h(TITLEBAR_HEIGHT)
         .pl(insets.leading + 12.0)
         .pr(insets.trailing + 12.0)
         .gap(9.0)
@@ -252,14 +181,6 @@ fn title_bar(s: &App, cx: &Cx<App>, p: Palette) -> El {
                 .font(TextStyle::new(14.0, 700.0))
                 .color(p.text_bright),
         );
-    if mobile() {
-        // The chat header already names the channel; a phone bar only carries
-        // the app and its connection.
-        return bar
-            .child(el().grow(1.0))
-            .child(el().size(7.0, 7.0).radius(4.0).fill(dot))
-            .child(text(status).font(theme::TINY).color(p.text_faint));
-    }
     bar.child(el().w(1.0).h(14.0).fill(p.divider).mx(2.0))
         .child(text(section).font(theme::SMALL).color(p.text_muted))
         .child(el().grow(1.0))
@@ -494,26 +415,15 @@ fn auth_view(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     // old "waiting for the server" line read as a fault when nothing was wrong.
     // A real failure is the card above, and it names the address.
 
-    // On a phone the card takes the width it is given and the page scrolls
-    // when a short screen cannot hold it; the desktop keeps the card centred.
     let viewport_h = cx.layout_size("auth").map(|size| size[1]).unwrap_or(0.0);
     let column = col()
         .w_full()
         .min_h(viewport_h)
         .justify_center()
-        .px(if mobile() { 20.0 } else { 0.0 })
-        .py(if mobile() { 20.0 } else { 0.0 })
         .items_center()
         .child(card);
-    let mut page = col().key("auth").w_full().grow(1.0).min_h(0.0).fill(p.rail);
-    if mobile() {
-        page = page.scroll(ScrollSpec {
-            stick_bottom: false,
-        });
-    } else {
-        page = page.center();
-    }
-    page.child(column)
+    let page = col().key("auth").w_full().grow(1.0).min_h(0.0).fill(p.rail);
+    page.center().child(column)
 }
 
 // ---------------------------------------------------------------------------
@@ -561,53 +471,6 @@ fn guild_shell(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
             ));
     }
     shell
-}
-
-/// The phone layout. The rail and its list fill the screen until a channel is
-/// chosen, then the chat takes over; the titlebar's back button returns.
-fn guild_shell_mobile(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    if s.mobile_chat && s.active_channel != 0 {
-        return chat(s, cx, p);
-    }
-    row()
-        .key("shell")
-        .w_full()
-        .h_full()
-        .fill(p.chat)
-        .child(rail(s, p))
-        .child(sidebar(s, p).w_full().grow(1.0).min_w(0.0))
-}
-
-fn dm_shell_mobile(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
-    if s.mobile_chat && (s.dm_home || s.active_dm != 0) {
-        return dm_main(s, cx, p);
-    }
-    row()
-        .key("shell")
-        .w_full()
-        .h_full()
-        .fill(p.chat)
-        .child(rail(s, p))
-        .child(dm_sidebar(s, p).w_full().grow(1.0).min_w(0.0))
-}
-
-/// The member list as a drawer over the chat, dimmed behind it.
-fn member_drawer(s: &App, p: Palette) -> El {
-    el().key("member-drawer")
-        .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-        .child(
-            el().key("member-drawer-scrim")
-                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-                .fill(Color::BLACK.alpha(0.45))
-                .on_press(|s: &mut App| s.members_drawer = false),
-        )
-        .child(
-            row()
-                .key("member-drawer-panel")
-                .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
-                .justify_end()
-                .child(member_list(s, p, 0.0).w(300.0).max_w(320.0)),
-        )
 }
 
 /// A thin drag edge between two columns, the way resizable sidebars work.

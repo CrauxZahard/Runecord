@@ -77,8 +77,8 @@ pub(crate) fn activities_sheet(s: &App, p: Palette, channel: Id) -> El {
 
     col()
         .key("activities-sheet")
-        .w(sheet_w(520.0))
-        .h(sheet_h(520.0))
+        .w(520.0)
+        .h(520.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

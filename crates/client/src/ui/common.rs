@@ -73,6 +73,9 @@ pub(crate) fn panel_button(key: &'static str, ic: &'static Icon, p: Palette, act
 pub(crate) fn tool_button(key: &'static str, ic: &'static Icon, p: Palette) -> El {
     let label = match key {
         "threads" => "Threads",
+        "thread-notify" => "Notification settings",
+        "thread-actions" => "Thread actions",
+        "thread-close" => "Close thread",
         "notifications" => "Notification settings",
         "pins" => "Pinned messages",
         "members" => "Toggle member list",
@@ -81,8 +84,7 @@ pub(crate) fn tool_button(key: &'static str, ic: &'static Icon, p: Palette) -> E
         "help" => "About Runecord",
         _ => "Tool",
     };
-    // A finger needs a larger target than a mouse pointer.
-    let size = if mobile() { 40.0 } else { 32.0 };
+    let size = 32.0;
     el().key(key)
         .size(size, size)
         .radius(4.0)
@@ -111,6 +113,21 @@ pub(crate) fn action_button_named(
         button = button.label(name.to_string()).help(name.to_string());
     }
     button.child(icon(ic, 18.0).color(p.interactive))
+}
+
+/// A forum tag drawn as a coloured pill, on a post or in its header.
+pub(crate) fn forum_tag_pill(tag: &runecord_protocol::ForumTag, p: Palette) -> El {
+    let tint = theme::avatar_color(tag.id.rem_euclid(10) as u32);
+    el().h(20.0)
+        .px(7.0)
+        .radius(10.0)
+        .center()
+        .fill(tint.alpha(if p.dark { 0.2 } else { 0.12 }))
+        .child(
+            text(format!("{}{}", tag.emoji, tag.name))
+                .font(theme::TINY)
+                .color(tint),
+        )
 }
 
 pub(crate) fn markdown(s: &App, content: &str, p: Palette) -> El {

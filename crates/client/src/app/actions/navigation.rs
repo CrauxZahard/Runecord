@@ -8,9 +8,6 @@ impl App {
     pub fn switch_guild(&mut self, id: Id) {
         self.screen = Screen::Guild;
         self.active_guild = id;
-        // The phone layout starts a guild at its channel list.
-        self.mobile_chat = false;
-        self.members_drawer = false;
         self.member_search.clear();
         self.member_search_live.clear();
         self.member_search_due = 0.0;
@@ -124,9 +121,6 @@ impl App {
 
     pub fn switch_channel(&mut self, id: Id) {
         self.pinned_target = None;
-        // Selecting a channel opens the chat pane on a phone.
-        self.mobile_chat = true;
-        self.members_drawer = false;
         let current = match self.screen {
             Screen::Guild => self.active_channel,
             Screen::Dms => self.active_dm,
@@ -137,11 +131,15 @@ impl App {
         }
         self.screen = Screen::Guild;
         self.active_channel = id;
-        if self
-            .channel(id)
-            .is_some_and(|channel| channel.kind != ChannelKind::Thread)
-        {
-            self.thread_parent = None;
+        if current != id {
+            self.forum_tag_filter.clear();
+            self.thread_search.clear();
+        }
+        match self.channel(id) {
+            Some(channel) if channel.kind == ChannelKind::Thread => {
+                self.thread_parent = channel.thread.as_ref().map(|info| info.parent_id);
+            }
+            _ => self.thread_parent = None,
         }
         self.last_guild_channel.insert(self.active_guild, id);
         self.channel_seen.insert(id, now_ms());
@@ -155,27 +153,10 @@ impl App {
         self.screen = Screen::Dms;
         self.dm_home = false;
         self.active_dm = id;
-        self.mobile_chat = true;
-        self.members_drawer = false;
         self.channel_seen.insert(id, now_ms());
         self.ensure_messages(id);
         self.mark_read(id);
         self.trim_images();
-    }
-
-    pub fn close_mobile_chat(&mut self) {
-        self.mobile_chat = false;
-        self.members_drawer = false;
-    }
-
-    /// Leaves a settings section for the section list on a narrow screen.
-    pub fn close_mobile_settings(&mut self) {
-        self.mobile_settings = false;
-    }
-
-    /// Leaves a server settings section for its list on a narrow screen.
-    pub fn close_mobile_server_settings(&mut self) {
-        self.mobile_server_settings = false;
     }
 
     pub fn current_channel_id(&self) -> Id {
@@ -223,8 +204,7 @@ impl App {
         self.event_name.clear();
         self.event_description.clear();
         self.event_start_minutes = TextEdit::new("60");
-        self.event_start_date =
-            TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string());
+        self.event_start_date = TextEdit::new(&chrono::Local::now().format("%Y-%m-%d").to_string());
         self.event_start_time = TextEdit::new(&chrono::Local::now().format("%H:%M").to_string());
         self.modal = Modal::CreateEvent;
     }
@@ -237,12 +217,10 @@ impl App {
         }
         let date = self.event_start_date.text.trim();
         let time = self.event_start_time.text.trim();
-        let calendar = chrono::NaiveDateTime::parse_from_str(
-            &format!("{date} {time}"),
-            "%Y-%m-%d %H:%M",
-        )
-        .ok()
-        .and_then(|naive| naive.and_local_timezone(chrono::Local).single());
+        let calendar =
+            chrono::NaiveDateTime::parse_from_str(&format!("{date} {time}"), "%Y-%m-%d %H:%M")
+                .ok()
+                .and_then(|naive| naive.and_local_timezone(chrono::Local).single());
         let fallback_minutes = self
             .event_start_minutes
             .text

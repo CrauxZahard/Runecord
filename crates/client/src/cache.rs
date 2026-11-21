@@ -179,13 +179,6 @@ fn writer() -> &'static mpsc::Sender<Job> {
 }
 
 /// Queue a snapshot write. Serialization and disk IO happen on the writer thread.
-///
-/// A browser has no filesystem and cannot spawn a thread, so the web build
-/// keeps everything in memory and skips the disk cache entirely.
-#[cfg(target_arch = "wasm32")]
-pub fn save(_profile: &str, _snapshot: Snapshot) {}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn save(profile: &str, snapshot: Snapshot) {
     let Some(path) = cache_path(profile) else {
         return;

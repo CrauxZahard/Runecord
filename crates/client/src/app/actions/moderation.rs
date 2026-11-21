@@ -160,13 +160,6 @@ impl App {
         });
     }
 
-    pub fn toggle_guild_mobile_push(&mut self) {
-        let guild = self.active_guild;
-        self.update_guild_notification(guild, |settings| {
-            settings.mobile_push = !settings.mobile_push
-        });
-    }
-
     pub fn toggle_guild_mute(&mut self, guild: Id) {
         self.update_guild_notification(guild, |settings| settings.muted = !settings.muted);
     }

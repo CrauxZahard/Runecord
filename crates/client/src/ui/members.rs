@@ -321,8 +321,10 @@ pub(crate) fn member_row(s: &App, m: &Member, p: Palette) -> El {
         .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
             s.context_menu = Some(crate::app::ContextMenu {
                 kind: crate::app::ContextMenuKind::Member(uid),
-                x: press.x,
-                y: press.y,
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
+                },
             });
         })
         .on_press(move |s: &mut App| s.modal = Modal::Profile(uid))

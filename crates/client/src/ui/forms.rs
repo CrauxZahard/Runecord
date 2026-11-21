@@ -144,7 +144,7 @@ fn modal_frame_inner(
     );
     col()
         .key(key)
-        .w(sheet_w(440.0))
+        .w(440.0)
         .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)

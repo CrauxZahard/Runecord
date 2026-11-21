@@ -161,7 +161,6 @@ impl App {
 
     pub fn select_settings_tab(&mut self, tab: SettingsTab) {
         self.settings_tab = tab;
-        self.mobile_settings = true;
         // The view renders the tab stored in the modal; without this the nav
         // click only moved a field nobody read, so settings felt unclickable.
         self.modal = Modal::Settings(tab);
@@ -236,12 +235,16 @@ impl App {
         self.modal = Modal::ServerSettings;
         self.server_tab = ServerTab::Overview;
         if !self.can_manage_tab(self.server_tab) {
-            self.server_tab = [ServerTab::Roles, ServerTab::Members, ServerTab::Bans, ServerTab::Audit]
-                .into_iter()
-                .find(|tab| self.can_manage_tab(*tab))
-                .unwrap_or(ServerTab::Overview);
+            self.server_tab = [
+                ServerTab::Roles,
+                ServerTab::Members,
+                ServerTab::Bans,
+                ServerTab::Audit,
+            ]
+            .into_iter()
+            .find(|tab| self.can_manage_tab(*tab))
+            .unwrap_or(ServerTab::Overview);
         }
-        self.mobile_server_settings = false;
         self.sync_server_overview();
         self.ensure_guild(self.active_guild);
         if self.active_guild != 0 {
@@ -304,7 +307,6 @@ impl App {
             return;
         }
         self.server_tab = tab;
-        self.mobile_server_settings = true;
         match tab {
             ServerTab::Audit => self.load_audit(false),
             ServerTab::Bans => {

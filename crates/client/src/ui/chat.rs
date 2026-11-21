@@ -7,7 +7,12 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
         return col().grow(1.0).fill(p.chat);
     };
     let insets = cx.chrome_insets();
-    let header = chat_header(s, &channel, p, insets.trailing);
+    let is_thread = channel.kind == ChannelKind::Thread;
+    let header = if is_thread {
+        thread_header(s, &channel, p, insets.trailing)
+    } else {
+        chat_header(s, &channel, p, insets.trailing)
+    };
     if channel.kind.is_voice_like() {
         return voice_view(s, cx, &channel, p, header);
     }
@@ -31,6 +36,7 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
         .thread
         .as_ref()
         .is_some_and(|thread| thread.archived);
+    let can_reopen = is_thread && archived && s.can_manage_thread(&channel);
     let mut chat = col()
         .key("chat")
         .grow(1.0)
@@ -45,32 +51,29 @@ pub(crate) fn chat(s: &App, cx: &mut Cx<App>, p: Palette) -> El {
     {
         chat = chat.child(strip);
     }
-    if channel.kind == ChannelKind::Thread {
-        chat = chat.child(thread_context(s, &channel, p));
-        if let Some(row_el) = thread_tag_bar(s, &channel, p) {
-            chat = chat.child(row_el);
-        }
+    if let Some(banner) = thread_banner(s, &channel, p) {
+        chat = chat.child(banner);
     }
     chat = chat.child(list);
-    if archived {
-        chat = chat.child(
-            row()
-                .key("thread-archived")
-                .w_full()
-                .h(44.0)
-                .px(20.0)
-                .center_y()
-                .fill(p.sidebar)
-                .child(
-                    text("This thread is archived.")
-                        .font(theme::SMALL)
-                        .color(p.text_muted),
-                ),
-        );
+    if archived && !can_reopen {
+        chat = chat.child(archived_composer_note(p));
     } else {
         chat = chat.child(composer);
     }
     chat
+}
+
+/// The bar that replaces the composer in an archived thread the user cannot
+/// reopen. Discord reopens a closed thread when you type; ours only allows the
+/// creator and moderators to do that, so the bar explains the difference.
+fn archived_composer_note(p: Palette) -> El {
+    col().key("composer-wrap").w_full().px(16.0).pb(16.0).child(
+        row().h(44.0).radius(8.0).fill(p.input).center().child(
+            text("This thread is archived. Only the creator or a moderator can reopen it.")
+                .font(theme::SMALL)
+                .color(p.text_muted),
+        ),
+    )
 }
 
 pub(crate) fn video_tile_size(count: usize, chat_open: bool) -> (f32, f32) {
@@ -706,81 +709,214 @@ fn voice_chat_panel(s: &App, cx: &Cx<App>, channel: &Channel, p: Palette) -> El 
         .child(composer_with(s, channel, p, true))
 }
 
-fn thread_context(s: &App, channel: &Channel, p: Palette) -> El {
+/// The thread header: title, applied tags, the parent channel and the thread
+/// tools, matching the bar Discord shows above a thread.
+fn thread_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
     let Some(info) = channel.thread.clone() else {
-        return el();
+        return chat_header(s, channel, p, trailing);
     };
-    let parent = s
-        .channel(info.parent_id)
+    let parent = s.channel(info.parent_id).cloned();
+    let forum = parent
+        .as_ref()
+        .is_some_and(|parent| parent.kind == ChannelKind::Forum);
+    let parent_name = parent
+        .as_ref()
         .map(|parent| parent.name.clone())
         .unwrap_or_else(|| "channel".to_string());
     let archived = info.archived;
-    let can_manage = has(channel.my_permissions, perm::MANAGE_THREADS)
-        || has(channel.my_permissions, perm::MANAGE_CHANNELS)
-        || channel.owner_id == Some(s.me.id);
-    row()
-        .key("thread-context")
+    let id = channel.id;
+    let parent_id = info.parent_id;
+    let mut tag_row = row().gap(4.0).center_y();
+    for tag in s
+        .forum_tags
+        .iter()
+        .filter(|tag| tag.channel_id == parent_id && info.tags.contains(&tag.id))
+    {
+        tag_row = tag_row.child(forum_tag_pill(tag, p));
+    }
+    let mut people: Vec<Id> = Vec::new();
+    if let Some(owner) = channel.owner_id {
+        people.push(owner);
+    }
+    if let Some(messages) = s.messages.get(&id) {
+        for message in messages.iter().rev() {
+            if people.len() >= 5 {
+                break;
+            }
+            if !people.contains(&message.author_id) {
+                people.push(message.author_id);
+            }
+        }
+    }
+    let mut participants = row().gap(1.0).center_y();
+    for user_id in people {
+        if let Some(user) = s.user(user_id) {
+            participants = participants.child(avatar_status(user, 22.0, p, p.header, false));
+        }
+    }
+    let tools = row()
+        .gap(2.0)
+        .center_y()
+        .child(participants)
+        .child(
+            tool_button("thread-notify", &icons::BELL, p)
+                .on_press(move |s: &mut App| s.open_channel_notifications(id)),
+        )
+        .child(
+            tool_button("thread-actions", &icons::MORE, p).on_press(move |s: &mut App| {
+                s.context_menu = Some(crate::app::ContextMenu {
+                    kind: crate::app::ContextMenuKind::Thread(id),
+                    anchor: crate::app::ContextMenuAnchor::Element("thread-actions".into()),
+                });
+            }),
+        )
+        .child(
+            tool_button("thread-close", &icons::CLOSE, p).on_press(|s: &mut App| s.close_thread()),
+        );
+
+    let header = row()
+        .key("thread-header")
         .w_full()
-        .h(38.0)
+        .h(52.0)
+        .pl(20.0)
+        .pr(8.0 + trailing)
+        .gap(10.0)
+        .center_y()
+        .fill(p.header)
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
+        .window_drag();
+    header
+        .child(icon(if forum { &icons::FORUM } else { &icons::THREAD }, 22.0).color(p.text_faint))
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(1.0)
+                .justify_center()
+                .child(
+                    row()
+                        .gap(8.0)
+                        .center_y()
+                        .child(
+                            text(channel.name.clone())
+                                .font(theme::NAME)
+                                .color(p.text_bright)
+                                .truncate()
+                                .min_w(0.0),
+                        )
+                        .child(tag_row),
+                )
+                .child(
+                    row()
+                        .gap(5.0)
+                        .center_y()
+                        .child(
+                            text(if forum { "Post in" } else { "Thread in" })
+                                .font(theme::TINY)
+                                .color(p.text_faint),
+                        )
+                        .child(
+                            el().key("thread-parent")
+                                .role("button")
+                                .label(format!("Open #{parent_name}"))
+                                .on_press(move |s: &mut App| s.switch_channel(parent_id))
+                                .child(
+                                    text(format!("#{parent_name}"))
+                                        .font(theme::TINY)
+                                        .color(p.text_link),
+                                ),
+                        )
+                        .child(text("•").font(theme::TINY).color(p.text_faint))
+                        .child(
+                            text(format!(
+                                "{} message{}",
+                                info.message_count,
+                                if info.message_count == 1 { "" } else { "s" }
+                            ))
+                            .font(theme::TINY)
+                            .color(p.text_faint),
+                        )
+                        .children(archived.then(|| {
+                            text(if forum { "CLOSED" } else { "ARCHIVED" })
+                                .font(theme::TINY)
+                                .color(p.yellow)
+                                .border(1.0, p.yellow)
+                                .radius(4.0)
+                                .px(5.0)
+                        })),
+                ),
+        )
+        .child(tools)
+}
+
+/// The read-only bar Discord shows above an archived thread.
+fn thread_banner(s: &App, channel: &Channel, p: Palette) -> Option<El> {
+    let info = channel.thread.as_ref()?;
+    if !info.archived {
+        return None;
+    }
+    let id = channel.id;
+    let forum = s
+        .channel(info.parent_id)
+        .is_some_and(|parent| parent.kind == ChannelKind::Forum);
+    let can_reopen = s.can_manage_thread(channel);
+    let mut banner = row()
+        .key("thread-archived")
+        .w_full()
+        .h(44.0)
         .px(20.0)
         .gap(8.0)
         .center_y()
         .fill(p.sidebar)
-        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider)
-        .child(icon(&icons::THREAD, 16.0).color(p.text_muted))
+        .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
+        .child(icon(&icons::LOCK, 16.0).color(p.yellow))
         .child(
-            text(format!("Thread in #{}", parent))
-                .font(theme::SMALL)
-                .color(p.text_muted),
+            text(if forum {
+                "This post is closed."
+            } else {
+                "This thread is archived."
+            })
+            .font(theme::SMALL_MED)
+            .color(p.text_bright),
         )
         .child(
-            text(format!("{} messages", info.message_count))
-                .font(theme::TINY)
-                .color(p.text_faint),
+            text(if can_reopen {
+                "Type a message to reopen it."
+            } else {
+                "Only the creator or a moderator can reopen it."
+            })
+            .font(theme::SMALL)
+            .color(p.text_muted),
         )
-        .children(archived.then(|| {
-            text("ARCHIVED")
-                .font(theme::TINY)
-                .color(p.yellow)
-                .border(1.0, p.yellow)
+        .child(el().grow(1.0));
+    if can_reopen {
+        banner = banner.child(
+            el().key("thread-unarchive")
+                .h(28.0)
+                .px(12.0)
                 .radius(4.0)
-                .px(5.0)
-        }))
-        .child(el().grow(1.0))
-        .child(
-            el().h(26.0)
-                .px(10.0)
-                .radius(4.0)
-                .key("thread-close")
-                .role("button")
-                .label("Back to parent channel")
-                .fill(p.rail)
-                .hover(p.rail_hover)
                 .center()
-                .on_press(|s: &mut App| s.close_thread())
-                .child(text("Back").font(theme::LABEL).color(p.text_bright)),
-        )
-        .children(can_manage.then(|| {
-            el().h(26.0)
-                .px(10.0)
-                .radius(4.0)
-                .key("thread-archive")
                 .role("button")
-                .label(if archived {
-                    "Unarchive thread"
+                .label(if forum {
+                    "Open Post"
                 } else {
-                    "Archive thread"
+                    "Unarchive Thread"
                 })
-                .fill(p.rail)
-                .hover(p.rail_hover)
-                .center()
-                .on_press(move |s: &mut App| s.archive_thread(!archived))
+                .fill(p.accent)
+                .hover(p.accent_hover)
+                .on_press(move |s: &mut App| s.archive_thread(id, false))
                 .child(
-                    text(if archived { "Unarchive" } else { "Archive" })
-                        .font(theme::LABEL)
-                        .color(if archived { p.green } else { p.text_bright }),
-                )
-        }))
+                    text(if forum {
+                        "Open Post"
+                    } else {
+                        "Unarchive Thread"
+                    })
+                    .font(theme::LABEL)
+                    .color(Color::WHITE),
+                ),
+        );
+    }
+    Some(banner)
 }
 
 fn dm_call_strip(s: &App, channel: &Channel, p: Palette) -> Option<El> {
@@ -903,20 +1039,18 @@ fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
                     .truncate()
                     .min_w(0.0),
             );
-        if !mobile() {
-            title_row = title_row.child(
-                text(if group {
-                    format!("{} members", dm.recipients.len() + 1)
-                } else {
-                    dm.recipients
-                        .first()
-                        .map(|user| user.handle())
-                        .unwrap_or_default()
-                })
-                .font(theme::SMALL)
-                .color(p.text_muted),
-            );
-        }
+        title_row = title_row.child(
+            text(if group {
+                format!("{} members", dm.recipients.len() + 1)
+            } else {
+                dm.recipients
+                    .first()
+                    .map(|user| user.handle())
+                    .unwrap_or_default()
+            })
+            .font(theme::SMALL)
+            .color(p.text_muted),
+        );
         title_row
     } else {
         let manage = s.guild_can(perm::MANAGE_CHANNELS);
@@ -946,22 +1080,16 @@ fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
                 .help("Edit channel")
                 .on_press(move |s: &mut App| s.open_channel_edit(id));
         }
-        if mobile() {
-            // A phone header has room for the name, not the topic.
-            title = title.min_w(0.0);
-            title
-        } else {
-            title
-                .child(el().w(1.0).h(24.0).fill(p.divider).ml(6.0).mr(6.0))
-                .child(
-                    text(channel.topic.clone())
-                        .font(theme::SMALL)
-                        .color(p.text_muted)
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .truncate(),
-                )
-        }
+        title
+            .child(el().w(1.0).h(24.0).fill(p.divider).ml(6.0).mr(6.0))
+            .child(
+                text(channel.topic.clone())
+                    .font(theme::SMALL)
+                    .color(p.text_muted)
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .truncate(),
+            )
     };
 
     let channel_id = channel.id;
@@ -993,41 +1121,20 @@ fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
                 }),
             );
     } else {
-        if mobile() {
-            tools = tools
-                .child(
-                    tool_button("search", &icons::SEARCH, p)
-                        .on_press(|s: &mut App| s.modal = Modal::Search),
-                )
-                .child(
-                    tool_button("threads", &icons::THREAD, p)
-                        .on_press(|s: &mut App| s.modal = Modal::Threads),
-                )
-                .child(
-                    tool_button("notifications", &icons::BELL, p)
-                        .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
-                )
-                .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
-                .child(
-                    tool_button("members", &icons::USERS, p)
-                        .on_press(|s: &mut App| s.members_drawer = !s.members_drawer),
-                );
-        } else {
-            tools = tools
-                .child(
-                    tool_button("threads", &icons::THREAD, p)
-                        .on_press(|s: &mut App| s.modal = Modal::Threads),
-                )
-                .child(
-                    tool_button("notifications", &icons::BELL, p)
-                        .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
-                )
-                .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
-                .child(
-                    tool_button("members", &icons::USERS, p)
-                        .on_press(|s: &mut App| s.show_members = !s.show_members),
-                );
-        }
+        tools = tools
+            .children((channel.kind != ChannelKind::Forum).then(|| {
+                tool_button("threads", &icons::THREAD, p)
+                    .on_press(|s: &mut App| s.modal = Modal::Threads)
+            }))
+            .child(
+                tool_button("notifications", &icons::BELL, p)
+                    .on_press(move |s: &mut App| s.open_channel_notifications(channel_id)),
+            )
+            .child(tool_button("pins", &icons::PIN, p).on_press(|s: &mut App| s.open_pins()))
+            .child(
+                tool_button("members", &icons::USERS, p)
+                    .on_press(|s: &mut App| s.show_members = !s.show_members),
+            );
     }
     if channel.kind == ChannelKind::Voice {
         tools = tools.child(
@@ -1035,61 +1142,45 @@ fn chat_header(s: &App, channel: &Channel, p: Palette, trailing: f32) -> El {
                 .on_press(|s: &mut App| s.voice_chat = !s.voice_chat),
         );
     }
-    if !mobile() {
-        tools = tools
-            .child(
-                row()
-                    .key("search")
-                    .w(144.0)
-                    .h(24.0)
-                    .radius(4.0)
-                    .fill(p.rail)
-                    .px(6.0)
-                    .gap(4.0)
-                    .center_y()
-                    .role("button")
-                    .label("Search messages")
-                    .help("Search messages")
-                    .hover(p.rail_hover)
-                    .on_press(|s: &mut App| s.modal = Modal::Search)
-                    .child(icon(&icons::SEARCH, 14.0).color(p.text_faint))
-                    .child(
-                        text("Search")
-                            .font(TextStyle::new(13.0, 400.0))
-                            .color(p.text_faint),
-                    ),
-            )
-            .child(tool_button("inbox", &icons::INBOX, p).on_press(|s: &mut App| s.open_inbox()))
-            .child(
-                tool_button("help", &icons::HELP, p)
-                    .on_press(|s: &mut App| s.toast("Runecord 0.1")),
-            );
-    }
+    tools = tools
+        .child(
+            row()
+                .key("search")
+                .w(144.0)
+                .h(24.0)
+                .radius(4.0)
+                .fill(p.rail)
+                .px(6.0)
+                .gap(4.0)
+                .center_y()
+                .role("button")
+                .label("Search messages")
+                .help("Search messages")
+                .hover(p.rail_hover)
+                .on_press(|s: &mut App| s.modal = Modal::Search)
+                .child(icon(&icons::SEARCH, 14.0).color(p.text_faint))
+                .child(
+                    text("Search")
+                        .font(TextStyle::new(13.0, 400.0))
+                        .color(p.text_faint),
+                ),
+        )
+        .child(tool_button("inbox", &icons::INBOX, p).on_press(|s: &mut App| s.open_inbox()))
+        .child(
+            tool_button("help", &icons::HELP, p).on_press(|s: &mut App| s.toast("Runecord 0.1")),
+        );
 
-    let mut header = row()
+    let header = row()
         .key("chat-header")
         .w_full()
-        .h(if mobile() { 56.0 } else { 50.0 })
-        .pl(if mobile() { 6.0 } else { 20.0 })
+        .h(50.0)
+        .pl(20.0)
         .pr(8.0 + trailing)
-        .gap(if mobile() { 4.0 } else { 10.0 })
+        .gap(10.0)
         .center_y()
         .fill(p.header)
         .border_sides([0.0, 0.0, 1.0, 0.0], p.divider_soft)
         .window_drag();
-    if mobile() {
-        header = header.child(
-            el().key("chat-back")
-                .size(40.0, 40.0)
-                .radius(6.0)
-                .center()
-                .role("button")
-                .label("Back to the channel list")
-                .hover(p.rail)
-                .on_press(|s: &mut App| s.close_mobile_chat())
-                .child(icon(&icons::CHEVRON_LEFT, 22.0).color(p.text_muted)),
-        );
-    }
     header.child(title_row).child(el().grow(1.0)).child(tools)
 }
 
@@ -1221,7 +1312,7 @@ pub(crate) fn intro(s: &App, channel: &Channel, p: Palette) -> El {
         .child(
             text(format!("Welcome to #{}!", channel.name))
                 .wrap()
-                .font(if mobile() { theme::HERO } else { theme::INTRO })
+                .font(theme::INTRO)
                 .color(p.text_bright),
         )
         .child(
@@ -1255,6 +1346,45 @@ enum MentionPiece {
     User(Id, String),
     Role(Id, String),
     Channel(Id, String),
+    /// `@everyone` or `@here`: plain-text words that ping the whole channel.
+    Mass(String),
+}
+
+/// Where `@everyone` or `@here` starts in `text`, with its length and spelling.
+/// Both are words, so a mention inside an email or a handle does not count.
+fn mass_mention_at(text: &str) -> Option<(usize, usize, &'static str)> {
+    let mut best: Option<(usize, usize, &'static str)> = None;
+    for word in ["@everyone", "@here"] {
+        let Some(at) = word_start(text, word) else {
+            continue;
+        };
+        if best.is_none_or(|(best_at, _, _)| at < best_at) {
+            best = Some((at, word.len(), word));
+        }
+    }
+    best
+}
+
+/// The first whole-word `word` in `text`, so `@everyone` inside `someone@everyone.dev`
+/// or `@everyones` is not a ping.
+fn word_start(text: &str, word: &'static str) -> Option<usize> {
+    let mut from = 0;
+    while let Some(found) = text[from..].find(word) {
+        let at = from + found;
+        let before_ok = text[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '@' && c != '_');
+        let after_ok = text[at + word.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        if before_ok && after_ok {
+            return Some(at);
+        }
+        from = at + word.len();
+    }
+    None
 }
 
 /// Adds a text run to a wrap row, honouring the inline Markdown a composer
@@ -1324,8 +1454,6 @@ fn expand_timestamps(content: &str) -> String {
                 "d" => local.format("%Y-%m-%d").to_string(),
                 "D" => local.format("%B %-d, %Y").to_string(),
                 "R" => {
-                    // `Utc::now` panics on wasm; the shared clock reads `Date.now`
-                    // there and `SystemTime` on desktop.
                     let delta = runecord_protocol::now_ms() / 1000 - seconds;
                     if delta >= 0 {
                         format!("{} ago", relative_label(delta))
@@ -1475,12 +1603,22 @@ fn message_body(s: &App, content: &str, p: Palette) -> El {
     loop {
         let user_at = rest.find("<@");
         let channel_at = rest.find("<#");
-        let start = match (user_at, channel_at) {
-            (Some(a), Some(b)) => a.min(b),
-            (Some(a), None) => a,
-            (None, Some(b)) => b,
-            (None, None) => break,
-        };
+        let mass = mass_mention_at(rest);
+        let start = [user_at, channel_at, mass.map(|mass| mass.0)]
+            .into_iter()
+            .flatten()
+            .min();
+        let Some(start) = start else { break };
+        if let Some((at, len, word)) = mass
+            && at == start
+        {
+            if at > 0 {
+                parts.push(MentionPiece::Text(rest[..at].to_string()));
+            }
+            parts.push(MentionPiece::Mass(word.to_string()));
+            rest = &rest[at + len..];
+            continue;
+        }
         let Some(close) = rest[start + 2..].find('>') else {
             break;
         };
@@ -1530,7 +1668,7 @@ fn message_body(s: &App, content: &str, p: Palette) -> El {
         parts.push(MentionPiece::Text(rest.to_string()));
     }
     let mut row_el = row().key("message-text").w_full().flex_wrap().gap(2.0);
-    for part in parts {
+    for (index, part) in parts.into_iter().enumerate() {
         match part {
             MentionPiece::Text(text_part) => {
                 row_el = push_inline_markdown(row_el, p, &text_part);
@@ -1578,11 +1716,7 @@ fn message_body(s: &App, content: &str, p: Palette) -> El {
                     .radius(3.0)
                     .fill(tint.alpha(0.2))
                     .center()
-                    .child(
-                        text(format!("@{label}"))
-                            .font(theme::BODY)
-                            .color(tint),
-                    );
+                    .child(text(format!("@{label}")).font(theme::BODY).color(tint));
                 if known {
                     pill = pill
                         .role("button")
@@ -1624,6 +1758,17 @@ fn message_body(s: &App, content: &str, p: Palette) -> El {
                         ),
                 );
             }
+            MentionPiece::Mass(word) => {
+                row_el = row_el.child(
+                    el().key(format!("mention-mass-{index}"))
+                        .h(21.0)
+                        .px(4.0)
+                        .radius(3.0)
+                        .fill(p.mention.alpha(0.32))
+                        .center()
+                        .child(text(word).font(theme::BODY).color(p.text_bright)),
+                );
+            }
         }
     }
     row_el
@@ -1643,8 +1788,7 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         .as_ref()
         .or_else(|| s.user(msg.author_id))
         .unwrap_or(&fallback);
-    let nameplate_color = theme::nameplate_colors(&author.nameplate)
-        .map(|(primary, _, _)| primary);
+    let nameplate_color = theme::nameplate_colors(&author.nameplate).map(|(primary, _, _)| primary);
     let name_color = if let Some(hook) = &msg.webhook {
         theme::color(&format!("#{:06x}", hook.color))
     } else if let Some(color) = nameplate_color {
@@ -1812,19 +1956,17 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         .channel(msg.channel_id)
         .map(|c| c.my_permissions)
         .unwrap_or(0);
-    let can_send = has(perms, perm::SEND_MESSAGES);
+    let can_send = s
+        .channel(msg.channel_id)
+        .is_some_and(|channel| s.can_send_in(channel));
     let can_react = has(perms, perm::ADD_REACTIONS);
-    let can_manage = has(perms, perm::MANAGE_MESSAGES);
     let row_msg_id = msg.id;
-    let row_author = msg.author_id;
-    let row_channel = msg.channel_id;
-    let row_content = msg.content.clone();
-    let row_preview = msg.preview();
     let row_label = format!("{}: {}", author.display_name, msg.preview());
     let compact = s.compact;
-    // Discord-style highlight: a message that mentions you (or a reply that
-    // pings you) gets a tinted row and a left accent bar.
+    // Discord-style highlight: a message that mentions you, pings everyone, or
+    // replies to you gets a tinted row and a left accent bar.
     let mentioned = msg.mentions.contains(&s.me.id)
+        || msg.mention_everyone
         || (msg.author_id != s.me.id
             && msg
                 .reply_to
@@ -1866,63 +2008,23 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         .label(row_label)
         .hover_group()
         .hover(p.chat_hover)
-        .on_secondary_press(move |s: &mut App, press, tx: &mut rune::Tx| {
-            if !rune::popup_menu_supported() {
-                s.modal = Modal::MessageMenu(row_msg_id);
-                return;
-            }
-            let mut menu = rune::PopupMenu::new()
-                .item(rune::PopupItem::new("copy", "Copy Text"))
-                .item(rune::PopupItem::new("copy-link", "Copy Message Link"))
-                .item(rune::PopupItem::new("copy-id", "Copy Message ID"))
-                .item(rune::PopupItem::new("reply", "Reply"))
-                .item(rune::PopupItem::new("forward", "Forward"))
-                .item(rune::PopupItem::new("pin", "Pin / Unpin"));
-            if s.channel(row_msg_id).is_some() {
-                menu = menu.item(rune::PopupItem::new("thread", "Create Thread"));
-            }
-            if row_author == s.me.id {
-                menu = menu.item(rune::PopupItem::new("edit", "Edit Message"));
-            }
-            if can_manage {
-                menu = menu
-                    .separator()
-                    .item(rune::PopupItem::new("delete", "Delete Message"));
-            }
-            let copy = row_content.clone();
-            let preview = row_preview.clone();
-            let channel = row_channel;
-            tx.popup_menu(
-                menu,
-                press,
-                move |s: &mut App, picked, tx: &mut rune::Tx| match picked {
-                    Some("copy") => tx.copy(copy.clone()),
-                    Some("copy-link") => {
-                        tx.copy(format!("runecord://channel/{channel}/{row_msg_id}"))
-                    }
-                    Some("copy-id") => tx.copy(row_msg_id.to_string()),
-                    Some("reply") => s.set_reply(row_msg_id, row_author, &preview),
-                    Some("forward") => s.open_forward(row_msg_id),
-                    Some("pin") => s.toggle_pin(row_msg_id),
-                    Some("thread") => {
-                        s.profile_edit = rune::TextEdit::new(plain_thread_name(&preview));
-                        s.modal = Modal::ThreadCreate {
-                            parent: channel,
-                            message: Some(row_msg_id),
-                        };
-                    }
-                    Some("edit") => s.open_edit(row_msg_id, &copy),
-                    Some("delete") => s.modal = Modal::ConfirmDelete(row_msg_id),
-                    _ => {}
+        .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
+            // The app draws its own menu: the native one follows the OS theme
+            // and looks nothing like the rest of the client.
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Message(row_msg_id),
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
                 },
-            );
+            });
         });
 
     let mid = msg.id;
     let author_id = msg.author_id;
     let preview = msg.preview();
     let toolbar = row()
-        .key("msg-actions")
+        .key(format!("msg-actions-{mid}"))
         .pin(None, Some(2.0), Some(16.0), None)
         .h(30.0)
         .w(96.0)
@@ -1946,7 +2048,12 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
             &icons::MORE,
             "More actions",
             p,
-            move |s: &mut App| s.modal = Modal::MessageMenu(mid),
+            move |s: &mut App| {
+                s.context_menu = Some(crate::app::ContextMenu {
+                    kind: crate::app::ContextMenuKind::Message(mid),
+                    anchor: crate::app::ContextMenuAnchor::Element(format!("msg-actions-{mid}")),
+                });
+            },
         ));
 
     let row_el = if grouped {
@@ -1964,12 +2071,7 @@ fn message_row(s: &App, msg: &Message, grouped: bool, p: Palette, day: Option<St
         }
         row_el.child(avatar_el).child(content)
     };
-    // A phone has no hover: the long-press menu carries these actions.
-    let row_el = if mobile() {
-        row_el
-    } else {
-        row_el.child(toolbar)
-    };
+    let row_el = row_el.child(toolbar);
     if let Some(day) = day {
         col()
             .w_full()
@@ -2204,70 +2306,46 @@ pub(crate) fn bot_tag(p: Palette) -> El {
         )
 }
 
-fn thread_tag_bar(s: &App, channel: &Channel, p: Palette) -> Option<El> {
-    let info = channel.thread.as_ref()?;
-    let tags: Vec<runecord_protocol::ForumTag> = s
-        .forum_tags
-        .iter()
-        .filter(|tag| tag.channel_id == info.parent_id)
-        .cloned()
-        .collect();
-    if tags.is_empty() {
-        return None;
-    }
-    let thread = channel.id;
-    let mut chips = row()
-        .key("thread-tags")
-        .w_full()
-        .px(20.0)
-        .pb(6.0)
-        .gap(6.0)
-        .flex_wrap();
-    for tag in tags {
-        let id = tag.id;
-        let selected = info.tags.contains(&id);
-        chips = chips.child(
-            el().key(format!("thread-tag-edit-{id}"))
-                .h(24.0)
-                .px(9.0)
-                .radius(12.0)
-                .center()
-                .role("checkbox")
-                .label(format!("Toggle tag {}", tag.name))
-                .checked(selected)
-                .fill(if selected { p.accent } else { p.input })
-                .hover(p.card_hover)
-                .on_press(move |s: &mut App| {
-                    let mut next = s
-                        .channel(thread)
-                        .and_then(|channel| channel.thread.as_ref().map(|info| info.tags.clone()))
-                        .unwrap_or_default();
-                    if let Some(index) = next.iter().position(|known| *known == id) {
-                        next.remove(index);
-                    } else {
-                        next.push(id);
-                    }
-                    s.send(crate::net::Command::SetThreadTags { thread, tags: next });
-                })
-                .child(
-                    text(format!("{}{}", tag.emoji, tag.name))
-                        .font(theme::TINY)
-                        .color(if selected { Color::WHITE } else { p.text_muted }),
-                ),
-        );
-    }
-    Some(chips)
+/// A tag chip in the forum filter bar. Chips are checkboxes, so picking more
+/// than one narrows the list to posts carrying all of them.
+fn forum_tag_chip(tag: &runecord_protocol::ForumTag, selected: bool, p: Palette) -> El {
+    let id = tag.id;
+    let tint = theme::avatar_color(id.rem_euclid(10) as u32);
+    el().key(format!("forum-tag-{id}"))
+        .h(26.0)
+        .px(10.0)
+        .radius(13.0)
+        .center()
+        .role("checkbox")
+        .label(format!("Filter by {}", tag.name))
+        .checked(selected)
+        .fill(if selected { tint.alpha(0.3) } else { p.input })
+        .hover(if selected {
+            tint.alpha(0.4)
+        } else {
+            p.card_hover
+        })
+        .on_press(move |s: &mut App| {
+            if !s.forum_tag_filter.remove(&id) {
+                s.forum_tag_filter.insert(id);
+            }
+        })
+        .child(
+            text(format!("{}{}", tag.emoji, tag.name))
+                .font(theme::TINY)
+                .color(if selected {
+                    p.text_bright
+                } else {
+                    p.text_muted
+                }),
+        )
 }
 
-fn forum_toolbar(
-    s: &App,
-    parent: Id,
-    tags: &[runecord_protocol::ForumTag],
-    count: usize,
-    p: Palette,
-) -> El {
+/// Sort and layout controls sit to the right of the tag filters, as they do on
+/// a Discord forum channel.
+fn forum_toolbar(s: &App, tags: &[runecord_protocol::ForumTag], p: Palette) -> El {
+    let all_selected = s.forum_tag_filter.is_empty();
     let mut chips = row().gap(6.0).flex_wrap().grow(1.0).min_w(0.0);
-    let all_selected = s.forum_tag_filter.is_none();
     chips = chips.child(
         el().key("forum-tag-all")
             .h(26.0)
@@ -2278,44 +2356,21 @@ fn forum_toolbar(
             .label("All posts")
             .checked(all_selected)
             .fill(if all_selected { p.accent } else { p.input })
-            .hover(p.card_hover)
-            .on_press(|s: &mut App| s.forum_tag_filter = None)
-            .child(
-                text(format!("All {count}"))
-                    .font(theme::TINY)
-                    .color(if all_selected {
-                        Color::WHITE
-                    } else {
-                        p.text_muted
-                    }),
-            ),
+            .hover(if all_selected {
+                p.accent_hover
+            } else {
+                p.card_hover
+            })
+            .on_press(|s: &mut App| s.forum_tag_filter.clear())
+            .child(text("All").font(theme::TINY).color(if all_selected {
+                Color::WHITE
+            } else {
+                p.text_muted
+            })),
     );
     for tag in tags {
-        let id = tag.id;
-        let selected = s.forum_tag_filter == Some(id);
-        chips = chips.child(
-            el().key(format!("forum-tag-{id}"))
-                .h(26.0)
-                .px(10.0)
-                .radius(13.0)
-                .center()
-                .role("radio")
-                .label(format!("Filter by {}", tag.name))
-                .checked(selected)
-                .fill(if selected { p.accent } else { p.input })
-                .hover(p.card_hover)
-                .on_press(move |s: &mut App| {
-                    s.forum_tag_filter = (s.forum_tag_filter != Some(id)).then_some(id);
-                })
-                .child(
-                    text(format!("{}{}", tag.emoji, tag.name))
-                        .font(theme::TINY)
-                        .color(if selected { Color::WHITE } else { p.text_muted }),
-                ),
-        );
+        chips = chips.child(forum_tag_chip(tag, s.forum_tag_filter.contains(&tag.id), p));
     }
-    let _ = parent;
-
     row()
         .key("forum-toolbar")
         .w_full()
@@ -2327,43 +2382,375 @@ fn forum_toolbar(
         .child(
             el().key("forum-sort")
                 .h(26.0)
-                .px(10.0)
+                .px(8.0)
                 .radius(4.0)
-                .center()
+                .gap(4.0)
+                .center_y()
                 .role("button")
-                .label("Toggle sort order")
+                .label("Sort posts")
+                .help("Sort posts")
                 .fill(p.input)
                 .hover(p.input_hover)
                 .on_press(|s: &mut App| s.forum_sort_new = !s.forum_sort_new)
                 .child(
                     text(if s.forum_sort_new {
-                        "Newest"
+                        "Creation Date"
                     } else {
-                        "Latest activity"
+                        "Latest Activity"
                     })
                     .font(theme::TINY)
                     .color(p.text_muted),
-                ),
+                )
+                .child(icon(&icons::CHEVRON_DOWN, 12.0).color(p.text_faint)),
         )
         .child(
             el().key("forum-layout")
                 .h(26.0)
-                .px(10.0)
+                .px(8.0)
                 .radius(4.0)
-                .center()
+                .gap(4.0)
+                .center_y()
                 .role("button")
-                .label("Toggle forum layout")
+                .label("Forum layout")
+                .help("Switch between gallery and list view")
                 .fill(p.input)
                 .hover(p.input_hover)
                 .on_press(|s: &mut App| s.forum_list_layout = !s.forum_list_layout)
                 .child(
-                    text(if s.forum_list_layout { "List" } else { "Grid" })
-                        .font(theme::TINY)
-                        .color(p.text_muted),
-                ),
+                    text(if s.forum_list_layout {
+                        "List"
+                    } else {
+                        "Gallery"
+                    })
+                    .font(theme::TINY)
+                    .color(p.text_muted),
+                )
+                .child(icon(&icons::CHEVRON_DOWN, 12.0).color(p.text_faint)),
         )
 }
 
+fn forum_more_button(thread: Id, p: Palette) -> El {
+    el().key(format!("forum-actions-{thread}"))
+        .size(24.0, 24.0)
+        .radius(4.0)
+        .center()
+        .role("button")
+        .label("Post actions")
+        .help("Post actions")
+        .hover(p.rail)
+        .group_opacity(0.0, 1.0)
+        .on_press(move |s: &mut App| {
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Thread(thread),
+                anchor: crate::app::ContextMenuAnchor::Element(format!("forum-actions-{thread}")),
+            });
+        })
+        .child(icon(&icons::MORE, 16.0).color(p.text_muted))
+}
+
+/// A gallery tile: title, tags, preview and the author/message footer.
+fn forum_post_card(
+    s: &App,
+    thread: &Channel,
+    tags: &[runecord_protocol::ForumTag],
+    p: Palette,
+) -> El {
+    let id = thread.id;
+    let Some(info) = thread.thread.clone() else {
+        return el();
+    };
+    let archived = info.archived;
+    let unread = s.unread.get(&id).copied().unwrap_or(0) > 0;
+    let applied: Vec<runecord_protocol::ForumTag> = tags
+        .iter()
+        .filter(|tag| info.tags.contains(&tag.id))
+        .cloned()
+        .collect();
+    let preview = s
+        .messages
+        .get(&id)
+        .and_then(|messages| messages.first())
+        .map(|message| message.preview())
+        .filter(|preview| !preview.is_empty())
+        .or_else(|| Some(info.preview.clone()).filter(|preview| !preview.is_empty()))
+        .unwrap_or_else(|| "No messages yet.".to_string());
+    let owner = thread.owner_id.and_then(|owner| s.user(owner)).cloned();
+    let mut tag_row = row().gap(4.0).flex_wrap();
+    for tag in &applied {
+        tag_row = tag_row.child(forum_tag_pill(tag, p));
+    }
+    let mut card = col()
+        .key(format!("forum-{id}"))
+        .w(300.0)
+        .min_h(168.0)
+        .radius(8.0)
+        .fill(p.card)
+        .border(1.0, p.divider)
+        .padding(14.0)
+        .gap(8.0)
+        .role("button")
+        .label(format!("Open post {}", thread.name))
+        .hover(p.card_hover)
+        .hover_group()
+        .on_press(move |s: &mut App| s.open_thread(id))
+        .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Thread(id),
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
+                },
+            });
+        })
+        .child(
+            row()
+                .w_full()
+                .gap(6.0)
+                .center_y()
+                .children(unread.then(|| el().size(8.0, 8.0).radius(4.0).fill(p.accent)))
+                .child(
+                    icon(
+                        if archived {
+                            &icons::LOCK
+                        } else {
+                            &icons::THREAD
+                        },
+                        16.0,
+                    )
+                    .color(p.text_faint),
+                )
+                .child(
+                    text(thread.name.clone())
+                        .font(theme::BODY_BOLD)
+                        .color(if archived {
+                            p.text_muted
+                        } else {
+                            p.text_bright
+                        })
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .max_lines(2),
+                )
+                .child(forum_more_button(id, p)),
+        );
+    if !applied.is_empty() {
+        card = card.child(tag_row);
+    }
+    card = card.child(
+        text(preview)
+            .font(theme::SMALL)
+            .color(p.text_muted)
+            .max_lines(3)
+            .grow(1.0)
+            .min_w(0.0),
+    );
+    let mut footer = row().w_full().gap(6.0).center_y();
+    match owner {
+        Some(owner) => {
+            footer = footer
+                .child(avatar_status(&owner, 20.0, p, p.card, false))
+                .child(
+                    text(owner.display_name.clone())
+                        .font(theme::TINY)
+                        .color(p.text_faint)
+                        .truncate()
+                        .min_w(0.0)
+                        .grow(1.0),
+                );
+        }
+        None => footer = footer.child(el().grow(1.0)),
+    }
+    footer = footer
+        .child(icon(&icons::CHAT, 12.0).color(p.text_faint))
+        .child(
+            text(info.message_count.to_string())
+                .font(theme::TINY)
+                .color(p.text_faint),
+        );
+    card.child(footer)
+}
+
+/// The list-view row: a wide row with the title, tags, preview and activity on
+/// the right, which is easier to scan in text-heavy forums.
+fn forum_post_row(
+    s: &App,
+    thread: &Channel,
+    tags: &[runecord_protocol::ForumTag],
+    p: Palette,
+) -> El {
+    let id = thread.id;
+    let Some(info) = thread.thread.clone() else {
+        return el();
+    };
+    let archived = info.archived;
+    let unread = s.unread.get(&id).copied().unwrap_or(0) > 0;
+    let applied: Vec<runecord_protocol::ForumTag> = tags
+        .iter()
+        .filter(|tag| info.tags.contains(&tag.id))
+        .cloned()
+        .collect();
+    let preview = s
+        .messages
+        .get(&id)
+        .and_then(|messages| messages.first())
+        .map(|message| message.preview())
+        .filter(|preview| !preview.is_empty())
+        .or_else(|| Some(info.preview.clone()).filter(|preview| !preview.is_empty()))
+        .unwrap_or_default();
+    let owner = thread.owner_id.and_then(|owner| s.user(owner)).cloned();
+    let mut tag_row = row().gap(4.0).center_y();
+    for tag in &applied {
+        tag_row = tag_row.child(forum_tag_pill(tag, p));
+    }
+    row()
+        .key(format!("forum-row-{id}"))
+        .w_full()
+        .min_h(64.0)
+        .px(12.0)
+        .py(10.0)
+        .radius(8.0)
+        .gap(12.0)
+        .center_y()
+        .hover(p.card_hover)
+        .hover_group()
+        .role("button")
+        .label(format!("Open post {}", thread.name))
+        .on_press(move |s: &mut App| s.open_thread(id))
+        .on_secondary_press(move |s: &mut App, press, _: &mut rune::Tx| {
+            s.context_menu = Some(crate::app::ContextMenu {
+                kind: crate::app::ContextMenuKind::Thread(id),
+                anchor: crate::app::ContextMenuAnchor::Pointer {
+                    x: press.x,
+                    y: press.y,
+                },
+            });
+        })
+        .child(
+            el().size(38.0, 38.0)
+                .radius(19.0)
+                .center()
+                .fill(p.input)
+                .child(
+                    icon(
+                        if archived {
+                            &icons::LOCK
+                        } else {
+                            &icons::THREAD
+                        },
+                        18.0,
+                    )
+                    .color(p.text_faint),
+                ),
+        )
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(4.0)
+                .child(
+                    row()
+                        .gap(6.0)
+                        .center_y()
+                        .children(unread.then(|| el().size(8.0, 8.0).radius(4.0).fill(p.accent)))
+                        .child(
+                            text(thread.name.clone())
+                                .font(theme::BODY_BOLD)
+                                .color(if archived {
+                                    p.text_muted
+                                } else {
+                                    p.text_bright
+                                })
+                                .truncate(),
+                        )
+                        .children(archived.then(|| {
+                            text("CLOSED")
+                                .font(theme::TINY)
+                                .color(p.yellow)
+                                .border(1.0, p.yellow)
+                                .radius(4.0)
+                                .px(4.0)
+                        }))
+                        .child(tag_row),
+                )
+                .child(
+                    text(preview)
+                        .font(theme::SMALL)
+                        .color(p.text_muted)
+                        .truncate(),
+                ),
+        )
+        .child(
+            col()
+                .items_end()
+                .gap(3.0)
+                .child(match owner {
+                    Some(owner) => row()
+                        .gap(5.0)
+                        .center_y()
+                        .child(avatar_status(&owner, 16.0, p, p.chat, false))
+                        .child(
+                            text(owner.display_name.clone())
+                                .font(theme::TINY)
+                                .color(p.text_faint),
+                        ),
+                    None => row(),
+                })
+                .child(
+                    row()
+                        .gap(4.0)
+                        .center_y()
+                        .child(icon(&icons::CHAT, 12.0).color(p.text_faint))
+                        .child(
+                            text(format!(
+                                "{} message{}",
+                                info.message_count,
+                                if info.message_count == 1 { "" } else { "s" }
+                            ))
+                            .font(theme::TINY)
+                            .color(p.text_faint),
+                        ),
+                ),
+        )
+        .child(forum_more_button(id, p))
+}
+
+fn forum_post_grid(
+    s: &App,
+    threads: &[&Channel],
+    tags: &[runecord_protocol::ForumTag],
+    p: Palette,
+) -> El {
+    if s.forum_list_layout {
+        let mut list = col().w_full().gap(4.0);
+        for thread in threads {
+            list = list.child(forum_post_row(s, thread, tags, p));
+        }
+        list
+    } else {
+        let mut grid = row().w_full().gap(12.0).flex_wrap();
+        for thread in threads {
+            grid = grid.child(forum_post_card(s, thread, tags, p));
+        }
+        grid
+    }
+}
+
+fn forum_section_header(label: &str, count: usize, p: Palette) -> El {
+    row()
+        .w_full()
+        .h(38.0)
+        .gap(8.0)
+        .center_y()
+        .child(text(label).font(theme::SECTION).color(p.text_muted))
+        .child(
+            text(count.to_string())
+                .font(theme::TINY)
+                .color(p.text_faint),
+        )
+}
+
+/// A forum channel: tag filters and sort controls, then active posts and the
+/// older (closed) ones, rendered as gallery tiles or list rows.
 pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> El {
     let parent = channel.id;
     let tags: Vec<runecord_protocol::ForumTag> = s
@@ -2372,164 +2759,102 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
         .filter(|tag| tag.channel_id == parent)
         .cloned()
         .collect();
-    let mut threads: Vec<&Channel> = s
-        .guild_channels(s.active_guild)
-        .iter()
-        .filter(|thread| {
-            thread.kind == ChannelKind::Thread
-                && thread.thread.as_ref().map(|t| t.parent_id) == Some(parent)
-        })
-        .collect();
-    if let Some(filter) = s.forum_tag_filter {
-        threads.retain(|thread| {
-            thread
-                .thread
-                .as_ref()
-                .is_some_and(|info| info.tags.contains(&filter))
-        });
-    }
+    let mut threads: Vec<&Channel> =
+        s.guild_channels(s.active_guild)
+            .iter()
+            .filter(|thread| {
+                thread.kind == ChannelKind::Thread
+                    && thread.thread.as_ref().map(|info| info.parent_id) == Some(parent)
+            })
+            .filter(|thread| {
+                thread.thread.as_ref().is_some_and(|info| {
+                    s.forum_tag_filter.iter().all(|tag| info.tags.contains(tag))
+                })
+            })
+            .collect();
     if s.forum_sort_new {
         threads.sort_by_key(|thread| std::cmp::Reverse(thread.id));
     } else {
         threads
             .sort_by_key(|thread| std::cmp::Reverse(thread.last_message_id.unwrap_or(thread.id)));
     }
+    let (active, older): (Vec<&Channel>, Vec<&Channel>) = threads
+        .into_iter()
+        .partition(|thread| !thread.thread.as_ref().is_some_and(|info| info.archived));
+    let can_post = s.can_start_thread(channel);
+    let mut body = col().w_full().gap(12.0).pb(24.0);
 
-    let mut cards = if s.forum_list_layout {
-        col().w_full().gap(8.0)
-    } else {
-        row().w_full().gap(12.0).flex_wrap()
-    };
-    let mut count = 0;
-    for thread in threads {
-        count += 1;
-        let id = thread.id;
-        let messages = s.messages.get(&id).map(Vec::as_slice).unwrap_or(&[]);
-        let preview = messages
-            .first()
-            .map(|message| message.preview())
-            .filter(|preview| !preview.is_empty())
-            .or_else(|| {
-                thread
-                    .thread
-                    .as_ref()
-                    .map(|info| info.preview.clone())
-                    .filter(|preview| !preview.is_empty())
-            })
-            .unwrap_or_else(|| "No messages yet.".to_string());
-        let message_count = thread
-            .thread
-            .as_ref()
-            .map(|info| info.message_count)
-            .unwrap_or(0);
-        let owner = thread
-            .owner_id
-            .and_then(|owner| s.user(owner))
-            .map(|user| user.display_name.clone())
-            .unwrap_or_else(|| "Unknown".to_string());
-        let post_tags: Vec<runecord_protocol::ForumTag> = thread
-            .thread
-            .as_ref()
-            .map(|info| {
-                tags.iter()
-                    .filter(|tag| info.tags.contains(&tag.id))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut tag_chips = row().gap(4.0).flex_wrap();
-        for tag in &post_tags {
-            tag_chips = tag_chips.child(
-                el().h(20.0)
-                    .px(6.0)
-                    .radius(10.0)
+    body = body.child(
+        row()
+            .w_full()
+            .gap(12.0)
+            .center_y()
+            .child(forum_section_header("POSTS", active.len(), p).grow(1.0))
+            .children(can_post.then(|| {
+                let parent = channel.id;
+                el().key("forum-new-post")
+                    .h(32.0)
+                    .px(12.0)
+                    .radius(4.0)
+                    .gap(6.0)
                     .center()
-                    .fill(p.input)
-                    .child(
-                        text(format!("{}{}", tag.emoji, tag.name))
-                            .font(theme::TINY)
-                            .color(p.text_bright),
-                    ),
-            );
-        }
-        cards = cards.child(
-            col()
-                .key(format!("forum-{}", thread.id))
-                .w(300.0)
-                .h(160.0)
-                .radius(8.0)
-                .fill(p.sidebar)
-                .border(1.0, p.divider)
-                .padding(14.0)
-                .gap(8.0)
-                .hover(p.card_hover)
-                .role("button")
-                .label(format!("Open post {}", thread.name))
-                .motion(motion::SNAPPY)
-                .on_press(move |s: &mut App| s.open_thread(id))
-                .child(
-                    row()
-                        .gap(8.0)
-                        .center_y()
-                        .child(icon(&icons::THREAD, 18.0).color(p.text_faint))
-                        .child(
-                            text(thread.name.clone())
-                                .font(theme::BODY_BOLD)
-                                .color(p.text_bright)
-                                .grow(1.0)
-                                .min_w(0.0)
-                                .max_lines(2),
-                        ),
-                )
-                .children((!post_tags.is_empty()).then_some(tag_chips))
-                .child(
-                    text(preview)
-                        .font(theme::SMALL)
-                        .color(p.text_muted)
-                        .max_lines(2)
-                        .grow(1.0)
-                        .min_w(0.0),
-                )
-                .child(
-                    row()
-                        .w_full()
-                        .gap(6.0)
-                        .center_y()
-                        .child(
-                            text(owner)
-                                .font(theme::TINY)
-                                .color(p.text_faint)
-                                .grow(1.0)
-                                .truncate(),
-                        )
-                        .child(icon(&icons::CHAT, 12.0).color(p.text_faint))
-                        .child(
-                            text(message_count.to_string())
-                                .font(theme::TINY)
-                                .color(p.text_faint),
-                        ),
-                ),
-        );
-    }
+                    .fill(p.accent)
+                    .hover(p.accent_hover)
+                    .role("button")
+                    .label("Create a post")
+                    .on_press(move |s: &mut App| {
+                        s.profile_edit.clear();
+                        s.thread_body.clear();
+                        s.thread_tag_ids.clear();
+                        s.forum_guidelines_ok = s
+                            .channel(parent)
+                            .is_none_or(|channel| channel.topic.trim().is_empty());
+                        s.modal = Modal::ThreadCreate {
+                            parent,
+                            message: None,
+                        };
+                    })
+                    .child(icon(&icons::PLUS, 16.0).color(Color::WHITE))
+                    .child(text("New Post").font(theme::SMALL_MED).color(Color::WHITE))
+            })),
+    );
 
-    let mut body = col().w_full().grow(1.0).min_h(0.0).gap(12.0);
-    if count == 0 {
+    if active.is_empty() && older.is_empty() {
         body = body.child(
             col()
                 .w_full()
-                .py(48.0)
+                .py(40.0)
                 .items_center()
                 .gap(8.0)
                 .child(icon(&icons::FORUM, 48.0).color(p.text_faint))
-                .child(text("No posts yet").font(theme::BODY).color(p.text_muted))
                 .child(
-                    text("Start the first conversation.")
-                        .font(theme::SMALL)
-                        .color(p.text_faint),
+                    text(if s.forum_tag_filter.is_empty() {
+                        "No posts yet"
+                    } else {
+                        "No posts match these tags"
+                    })
+                    .font(theme::BODY)
+                    .color(p.text_muted),
+                )
+                .child(
+                    text(if s.forum_tag_filter.is_empty() {
+                        "Start the first conversation."
+                    } else {
+                        "Clear a tag filter to see more posts."
+                    })
+                    .font(theme::SMALL)
+                    .color(p.text_faint),
                 ),
         );
-    } else {
-        body = body.child(cards);
+    } else if !active.is_empty() {
+        body = body.child(forum_post_grid(s, &active, &tags, p));
+    }
+
+    if !older.is_empty() {
+        body = body
+            .child(el().h(1.0).w_full().fill(p.divider_soft).my(6.0))
+            .child(forum_section_header("OLDER POSTS", older.len(), p))
+            .child(forum_post_grid(s, &older, &tags, p));
     }
 
     col()
@@ -2539,49 +2864,13 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
         .h_full()
         .fill(p.chat)
         .child(header)
-        .child(forum_toolbar(s, parent, &tags, count, p))
-        .child(
-            row()
-                .w_full()
-                .h(52.0)
-                .px(24.0)
-                .center_y()
-                .gap(12.0)
-                .child(
-                    text(format!("POSTS - {count}"))
-                        .font(theme::SECTION)
-                        .color(p.text_muted)
-                        .grow(1.0),
-                )
-                .child(
-                    el().key("forum-new-post")
-                        .h(32.0)
-                        .px(12.0)
-                        .radius(4.0)
-                        .gap(6.0)
-                        .center()
-                        .fill(p.accent)
-                        .hover(p.accent_hover)
-                        .role("button")
-                        .label("Create a post")
-                        .on_press(move |s: &mut App| {
-                            s.profile_edit.clear();
-                            s.thread_body.clear();
-                            s.modal = Modal::ThreadCreate {
-                                parent,
-                                message: None,
-                            };
-                        })
-                        .child(icon(&icons::PLUS, 16.0).color(Color::WHITE))
-                        .child(text("New Post").font(theme::SMALL_MED).color(Color::WHITE)),
-                ),
-        )
+        .child(forum_toolbar(s, &tags, p))
         .child(
             col()
                 .grow(1.0)
                 .min_h(0.0)
                 .px(24.0)
-                .pb(24.0)
+                .pt(8.0)
                 .scroll(ScrollSpec {
                     stick_bottom: false,
                 })
@@ -2591,7 +2880,7 @@ pub(crate) fn forum_view(s: &App, channel: &Channel, p: Palette, header: El) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::video_tile_size;
+    use super::{mass_mention_at, video_tile_size};
 
     #[test]
     fn video_tiles_shrink_as_the_call_grows() {
@@ -2606,5 +2895,15 @@ mod tests {
         let (split_w, split_h) = video_tile_size(1, true);
         assert!(split_w < one_w);
         assert!((split_w / split_h - 16.0 / 9.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn mass_mentions_match_whole_words() {
+        assert_eq!(mass_mention_at("@everyone hi"), Some((0, 9, "@everyone")));
+        assert_eq!(mass_mention_at("hi @here"), Some((3, 5, "@here")));
+        // Part of an address or a longer word is not a ping.
+        assert!(mass_mention_at("email@everyone.com").is_none());
+        assert!(mass_mention_at("@everyones").is_none());
+        assert!(mass_mention_at("@everyone_").is_none());
     }
 }

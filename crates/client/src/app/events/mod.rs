@@ -25,7 +25,15 @@ impl App {
 
     pub fn poll(&mut self, t: f64, tx: &mut Tx) -> bool {
         self.clock = t;
+        // A staged build proves it started here, before the supervisor gives up
+        // on it and reopens the previous one.
+        crate::aiedit::mark_ready();
         let mut changed = self.tick_animations(tx);
+        if let Some(note) = crate::aiedit::startup_note() {
+            self.ui_edit.stage = crate::aiedit::Stage::Failed(note.clone());
+            self.toast(note);
+            changed = true;
+        }
         if let Some(info) = crate::server_info::take()
             && info.signup != self.signup_mode
         {
@@ -44,6 +52,29 @@ impl App {
             }
             self.update_status = status;
             changed = true;
+        }
+        for event in crate::aiedit::take() {
+            match event {
+                crate::aiedit::Event::Stage(stage) => {
+                    if matches!(stage, crate::aiedit::Stage::Staged(_)) {
+                        self.ui_edit.history = crate::aiedit::versions();
+                    }
+                    self.ui_edit.stage = stage;
+                    changed = true;
+                }
+                crate::aiedit::Event::Line(line) => {
+                    self.ui_edit.detail.push(line);
+                    if self.ui_edit.detail.len() > 12 {
+                        self.ui_edit.detail.remove(0);
+                    }
+                    changed = true;
+                }
+                crate::aiedit::Event::Brief { text, goal } => {
+                    self.ui_edit.brief = Some(text);
+                    self.ui_edit.brief_for = goal;
+                    changed = true;
+                }
+            }
         }
         if self.presence_auto && self.clock - self.last_presence_scan >= 15.0 {
             self.last_presence_scan = self.clock;
@@ -161,11 +192,6 @@ impl App {
         if self.clock - self.last_maintenance >= 5.0 {
             changed |= self.maintenance();
         }
-        // A browser event loop parks on `ControlFlow::Wait`, and the waker that
-        // `Shared::emit` calls does not resume it, so the web build keeps a
-        // frame coming. 33 ms matches the client's own animation cadence.
-        #[cfg(target_arch = "wasm32")]
-        tx.wake_after(std::time::Duration::from_millis(33));
         self.maybe_save_cache();
         if let Some(toast) = &self.toast
             && toast.until < t

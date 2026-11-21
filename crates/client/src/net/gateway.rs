@@ -2,8 +2,7 @@
 
 use super::*;
 
-/// Maps one gateway event onto the client's `NetEvent` boundary. Shared by the
-/// desktop socket and the browser's WebSocket so both behave identically.
+/// Maps one gateway event onto the client's `NetEvent` boundary.
 pub(crate) fn dispatch_event(shared: &Arc<Shared>, ev: GatewayEvent) {
     match ev {
         GatewayEvent::Ready(b) => {
@@ -76,7 +75,6 @@ pub(crate) fn dispatch_event(shared: &Arc<Shared>, ev: GatewayEvent) {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn ws_worker(shared: Arc<Shared>) {
     let mut connected = false;
     let mut failed = false;
@@ -159,9 +157,4 @@ pub(crate) fn ws_worker(shared: Arc<Shared>) {
             }
         }
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn ws_worker(shared: Arc<Shared>) {
-    crate::net::web::gateway_worker(shared);
 }
