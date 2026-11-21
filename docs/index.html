@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Runecord â€” Chat that runs on your machine</title>
-  <meta name="description" content="Runecord is a self-hosted, GPU-native chat client with servers, channels, voice, video and DMs. Built in Rust on Rune. Your machine, your data, your rules.">
+  <title>Runecord — Chat that runs on your machine</title>
+  <meta name="description" content="Runecord is a self-hosted, GPU-native chat client with servers, channels, voice, video, DMs and a UI you can rewrite in plain language. Built in Rust on Rune. Your machine, your data, your rules.">
   <meta name="theme-color" content="#020617">
   <link rel="canonical" href="https://crauxzahard.github.io/Runecord/">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Runecord â€” Chat that runs on your machine">
-  <meta property="og:description" content="A self-hosted, GPU-native chat client with servers, channels, voice and DMs. Built in Rust on Rune.">
+  <meta property="og:title" content="Runecord — Chat that runs on your machine">
+  <meta property="og:description" content="A self-hosted, GPU-native chat client with servers, channels, voice, DMs and a UI you can rewrite in plain language. Built in Rust on Rune.">
   <meta property="og:url" content="https://crauxzahard.github.io/Runecord/">
   <meta property="og:image" content="https://crauxzahard.github.io/Runecord/assets/img/og.png">
   <meta property="og:image:width" content="1200">
@@ -78,6 +78,7 @@
         <a href="#features">FEATURES</a>
         <a href="#voice">VOICE</a>
         <a href="#community">COMMUNITY</a>
+        <a href="#customize">CUSTOMIZE</a>
         <a href="#download">DOWNLOAD</a>
         <a href="../Runecord-backend/">DEVELOPERS</a>
         <a class="nav-icon" href="https://github.com/CrauxZahard/Runecord" target="_blank" rel="noopener" aria-label="Runecord on GitHub">
@@ -134,14 +135,14 @@
 
         <figure class="hero-figure">
           <div class="figure-meta">
-            <span>FIG. 01 â€” RUNE LOUNGE</span>
-            <span>DESKTOP CLIENT / 2720 Ã— 1720</span>
+            <span>FIG. 01 — RUNE LOUNGE</span>
+            <span>DESKTOP CLIENT / 2720 × 1720</span>
           </div>
           <div class="screen">
             <div class="screen-bar" aria-hidden="true">
               <span class="traffic"><i></i><i></i><i></i></span>
               <span class="screen-title">RUNECORD / RUNE LOUNGE</span>
-              <span class="screen-size">1440 Ã— 900</span>
+              <span class="screen-size">1440 × 900</span>
             </div>
             <img src="assets/img/screens/hero-1600.jpg" srcset="assets/img/screens/hero-800.jpg 800w, assets/img/screens/hero-1600.jpg 1600w" sizes="(max-width: 980px) 94vw, 660px" width="1600" height="1012" alt="The Runecord desktop client showing a busy chat channel with messages, reactions and a member list">
           </div>
@@ -154,7 +155,7 @@
       </div>
 
       <div class="wrap ticker" aria-label="Product capabilities">
-        <span>SERVERS</span><span>CHANNELS</span><span>THREADS</span><span>VOICE</span><span>VIDEO</span><span>ROLES</span><span>DMS</span><span>SEARCH</span><span>EVENTS</span><span>WEBHOOKS</span>
+        <span>SERVERS</span><span>CHANNELS</span><span>THREADS</span><span>VOICE</span><span>VIDEO</span><span>ROLES</span><span>DMS</span><span>SEARCH</span><span>EVENTS</span><span>CUSTOM UI</span>
       </div>
     </section>
 
@@ -163,7 +164,7 @@
         <header class="section-head">
           <div class="sec-label"><span>[ 02 ]</span> CAPABILITIES</div>
           <div class="sec-copy">
-            <h2>Six things it does properly.</h2>
+            <h2>Seven things it does properly.</h2>
             <p>These are the parts that decide whether a chat client is livable after the first week.</p>
           </div>
         </header>
@@ -209,6 +210,13 @@
             <h3>Self-hosted</h3>
             <p>Encrypted SQLite, hashed tokens and zero cloud dependencies.</p>
             <span class="index-tag">STORAGE</span>
+            <svg class="icon index-arrow"><use href="#i-up"/></svg>
+          </a>
+          <a class="index-row reveal" href="#customize">
+            <span class="index-num">07</span>
+            <h3>Yours to redraw</h3>
+            <p>Describe a layout or theme change; the client patches its own view layer and builds a new copy.</p>
+            <span class="index-tag">PREVIEW</span>
             <svg class="icon index-arrow"><use href="#i-up"/></svg>
           </a>
         </div>
@@ -296,6 +304,106 @@
       </div>
     </section>
 
+    <section class="section studio" id="customize">
+      <div class="wrap">
+        <header class="studio-head">
+          <div class="sec-label"><span>[ 06 ]</span> MAKE IT YOURS · PREVIEW</div>
+          <div class="sec-copy">
+            <h2>Don't like the interface? Rewrite it.</h2>
+            <p>Runecord's UI is Rust source, not a fixed skin. Settings → Appearance → <strong>Edit your own UI</strong> turns a plain-language request into a patched view layer, compiles a new build beside the one you are using, and waits for you to restart. The shipped UI stays runnable until the new one proves it starts.</p>
+          </div>
+        </header>
+
+        <div class="studio-intro">
+          <ul class="bullets">
+            <li>Layout, density, type, colour and icons are all editable source.</li>
+            <li>Bring your own OpenAI-compatible key; on Windows it is sealed with DPAPI.</li>
+            <li>Requests, reference images and the UI files it reads go to that provider, and your key is billed there. One edit is capped at 12 model calls.</li>
+            <li>Only the view layer is writable, so networking, storage and secrets stay out of reach.</li>
+            <li>Switch versions, undo the last change, or reset to the UI that shipped.</li>
+            <li><strong>Preview:</strong> needs the UI source tree and Rust toolchain; a packaged build without the source bundle shows a disabled card.</li>
+          </ul>
+          <div class="studio-prompt terminal" aria-label="Example UI requests">
+            <div class="term-bar" aria-hidden="true">
+              <span class="traffic"><i></i><i></i><i></i></span>
+              <span class="term-title">edit your own ui</span>
+            </div>
+            <div class="prompt-lines">
+              <p class="prompt-line"><b>&gt;</b> move the channel sidebar to the right</p>
+              <p class="prompt-line"><b>&gt;</b> put the server rail at the bottom</p>
+              <p class="prompt-line"><b>&gt;</b> add a mascot in the corner</p>
+              <p class="prompt-line"><b>&gt;</b> playful, rounded icons</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="studio-grid">
+          <figure class="studio-shot reveal">
+            <div class="screen">
+              <div class="screen-bar" aria-hidden="true">
+                <span class="traffic"><i></i><i></i><i></i></span>
+                <span class="screen-title"># GENERAL / CUSTOM LAYOUT</span>
+                <span class="screen-size">RAIL ON TOP</span>
+              </div>
+              <div class="studio-frame">
+                <img src="assets/img/screens/custom-rail-1600.jpg" srcset="assets/img/screens/custom-rail-800.jpg 800w, assets/img/screens/custom-rail-1600.jpg 1600w" sizes="(max-width: 760px) 94vw, 560px" width="1600" height="947" loading="lazy" alt="A Runecord window with the server rail along the top, channels in a horizontal strip and a purple gradient title bar">
+              </div>
+            </div>
+            <figcaption><span>FIG. 05</span><span>RAIL ON TOP / CHANNELS IN A STRIP</span></figcaption>
+          </figure>
+
+          <figure class="studio-shot reveal">
+            <div class="screen">
+              <div class="screen-bar" aria-hidden="true">
+                <span class="traffic"><i></i><i></i><i></i></span>
+                <span class="screen-title"># GENERAL / LIGHT PINK</span>
+                <span class="screen-size">SIDEBAR RIGHT</span>
+              </div>
+              <div class="studio-frame">
+                <img src="assets/img/screens/custom-pink-1600.jpg" srcset="assets/img/screens/custom-pink-800.jpg 800w, assets/img/screens/custom-pink-1600.jpg 1600w" sizes="(max-width: 760px) 94vw, 560px" width="1600" height="947" loading="lazy" alt="A pink Runecord window with the channel list moved to the right of the chat and a light theme">
+              </div>
+            </div>
+            <figcaption><span>FIG. 06</span><span>PINK THEME / SIDEBAR ON THE RIGHT</span></figcaption>
+          </figure>
+
+          <figure class="studio-shot reveal">
+            <div class="screen">
+              <div class="screen-bar" aria-hidden="true">
+                <span class="traffic"><i></i><i></i><i></i></span>
+                <span class="screen-title">RUNE LOUNGE / WARM</span>
+                <span class="screen-size">TOP RAIL</span>
+              </div>
+              <div class="studio-frame">
+                <img src="assets/img/screens/custom-warm-1600.jpg" srcset="assets/img/screens/custom-warm-800.jpg 800w, assets/img/screens/custom-warm-1600.jpg 1600w" sizes="(max-width: 760px) 94vw, 560px" width="1600" height="947" loading="lazy" alt="A Runecord window with a top server rail, a horizontal channel strip and a warm orange accent">
+              </div>
+            </div>
+            <figcaption><span>FIG. 07</span><span>TOP RAIL / WARM ACCENT</span></figcaption>
+          </figure>
+
+          <figure class="studio-shot reveal">
+            <div class="screen">
+              <div class="screen-bar" aria-hidden="true">
+                <span class="traffic"><i></i><i></i><i></i></span>
+                <span class="screen-title">SETTINGS / APPEARANCE</span>
+                <span class="screen-size">THE EDITOR CARD</span>
+              </div>
+              <div class="studio-frame">
+                <img src="assets/img/screens/custom-editor-1600.jpg" srcset="assets/img/screens/custom-editor-800.jpg 800w, assets/img/screens/custom-editor-1600.jpg 1600w" sizes="(max-width: 760px) 94vw, 560px" width="1600" height="988" loading="lazy" alt="The Edit your own UI preview card in Runecord settings, with a prompt, reference-image control, prompt chips, the provider cost note and the build buttons">
+              </div>
+            </div>
+            <figcaption><span>FIG. 08</span><span>SETTINGS → APPEARANCE / THE PREVIEW CARD</span></figcaption>
+          </figure>
+        </div>
+
+        <div class="studio-steps">
+          <div class="studio-step"><span class="n">01 / DESCRIBE</span><b>Say what you want</b><p>Plain words, a prompt chip, or a reference image.</p></div>
+          <div class="studio-step"><span class="n">02 / REVIEW</span><b>See the plan</b><p>An optional brief names the files, the placement and the look.</p></div>
+          <div class="studio-step"><span class="n">03 / BUILD</span><b>Let it compile</b><p>Only the view layer is writable; the result is a new binary beside the running one.</p></div>
+          <div class="studio-step"><span class="n">04 / RESTART</span><b>Switch or roll back</b><p>A ready marker promotes the build. If it never appears, the previous one reopens.</p></div>
+        </div>
+      </div>
+    </section>
+
     <section class="manifesto" aria-label="Runecord at a glance">
       <div class="wrap manifesto-grid">
         <div class="manifesto-item reveal"><strong>~09</strong><span>MB CLIENT MEMORY</span></div>
@@ -308,7 +416,7 @@
     <section class="section local" id="local">
       <div class="wrap local-grid">
         <div class="local-copy reveal">
-          <div class="sec-label"><span>[ 06 ]</span> LOCAL-FIRST</div>
+          <div class="sec-label"><span>[ 07 ]</span> LOCAL-FIRST</div>
           <h2>The server is yours.<br>So is the database.</h2>
           <p>Runecord stores its database and uploads in a folder you control. The database and CDN files are sealed with AES-256-GCM; session and bot tokens are stored as hashes.</p>
           <ul class="bullets">
@@ -320,7 +428,7 @@
 
         <div class="local-panel reveal">
           <div class="flow" aria-label="Data flow">
-            <span>CLIENT</span><i>â†’</i><span>LOCAL API</span><i>â†’</i><span>AES-256 DB</span>
+            <span>CLIENT</span><i>→</i><span>LOCAL API</span><i>→</i><span>AES-256 DB</span>
           </div>
           <div class="terminal">
             <div class="term-bar" aria-hidden="true">
@@ -344,7 +452,7 @@
     <section class="download" id="download">
       <div class="wrap">
         <header class="download-head">
-          <div class="sec-label"><span>[ 07 ]</span> DOWNLOADS</div>
+          <div class="sec-label"><span>[ 08 ]</span> DOWNLOADS</div>
           <div class="download-copy">
             <h2>Download Runecord 0.1.0.</h2>
             <p>A signed Windows installer, a portable executable and a Linux tarball. Every build is also reproducible from source with <code>build.bat</code>.</p>
@@ -391,7 +499,7 @@
     <section class="section faq" id="faq">
       <div class="wrap faq-layout">
         <div class="faq-aside reveal">
-          <div class="sec-label"><span>[ 08 ]</span> ANSWERS</div>
+          <div class="sec-label"><span>[ 09 ]</span> ANSWERS</div>
           <h2>Read this first.</h2>
           <p>Still curious? The source and the developer docs are open.</p>
           <a class="link-arrow" href="../Runecord-backend/">DEVELOPER PORTAL <svg class="icon"><use href="#i-up"/></svg></a>
@@ -422,6 +530,10 @@
             <summary><span class="faq-num">06</span> How do I install it?<span class="faq-plus" aria-hidden="true"></span></summary>
             <div class="faq-body"><p>Download the Windows installer or the Linux tarball from the latest GitHub release. The Linux archive contains <code>install.sh</code>; the Windows installer is per-user and needs no admin rights. To build from source, run <code>build.bat</code> and take the artifacts from <code>dist/</code>.</p></div>
           </details>
+          <details class="faq-item reveal">
+            <summary><span class="faq-num">07</span> Can I change how it looks?<span class="faq-plus" aria-hidden="true"></span></summary>
+            <div class="faq-body"><p>Yes, as a preview. <strong>Settings → Appearance → Edit your own UI</strong> takes a plain-language request, patches the view layer and builds a new copy beside the running app. Bring an OpenAI-compatible key; on Windows it is sealed with DPAPI, and elsewhere the file is 0600. Requests, reference images and the UI files it reads go to that provider and are billed there. The editor needs the UI source tree and Rust toolchain, so a packaged build without the source bundle shows a disabled card. If the new build does not start, Runecord reopens the previous one, and you can switch versions or reset to the shipped UI at any time.</p></div>
+          </details>
         </div>
       </div>
     </section>
@@ -429,7 +541,7 @@
     <section class="cta">
       <div class="wrap cta-grid">
         <div class="cta-copy reveal">
-          <div class="sec-label light"><span>[ 09 ]</span> TAKE IT</div>
+          <div class="sec-label light"><span>[ 10 ]</span> TAKE IT</div>
           <h2>RUN IT LOCALLY.<br>READ THE SOURCE.</h2>
         </div>
         <div class="cta-actions reveal">
@@ -456,6 +568,7 @@
         <a href="#features">Features</a>
         <a href="#voice">Voice &amp; video</a>
         <a href="#community">Communities</a>
+        <a href="#customize">Custom UI</a>
         <a href="#download">Download</a>
       </div>
       <div class="foot-col">
@@ -474,7 +587,7 @@
       </div>
     </div>
     <div class="wrap foot-base">
-      <span>Â© <span id="year">2026</span> RUNECORD</span>
+      <span>© <span id="year">2026</span> RUNECORD</span>
       <span>BUILT WITH RUST + RUNE / SELF-HOSTED</span>
     </div>
   </footer>

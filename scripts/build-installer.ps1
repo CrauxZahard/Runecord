@@ -1,16 +1,22 @@
 # Builds and signs the Windows release: app exe, then the per-user installer.
 #
-# Self-signed by default: the certificate is created once under
-# %LOCALAPPDATA%\Runecord\signing and reused. A real certificate can be supplied
-# with -Pfx and -PfxPassword; the pipeline is otherwise identical.
+# Self-signed by default for local testing: the certificate is created once
+# under %LOCALAPPDATA%\Runecord\signing and reused. A release build must pass a
+# CA-issued certificate with -Pfx and -RequireTrusted; the gate fails if the
+# signature is not trusted on this machine.
 #
-#   scripts\build-installer.ps1 [-SkipBuild] [-Pfx path] [-PfxPassword value]
+#   scripts\build-installer.ps1 [-SkipBuild] [-Pfx path] [-PfxPassword value] [-RequireTrusted]
 param(
     [switch]$SkipBuild,
     [string]$Pfx = "",
-    [string]$PfxPassword = "runecord-selfsigned"
+    [string]$PfxPassword = "runecord-selfsigned",
+    [switch]$RequireTrusted
 )
 $ErrorActionPreference = "Stop"
+
+if ($RequireTrusted -and -not $Pfx) {
+    throw "A trusted release needs -Pfx with a CA-issued certificate. Self-signed is for local testing only."
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root "dist"
@@ -128,6 +134,13 @@ function Sign-Artifact {
         if ($check.SignerCertificate) {
             Write-Output ("signed {0}: {1} by {2}" -f `
                 (Split-Path -Leaf $Path), $check.Status, $check.SignerCertificate.Subject)
+            if ($RequireTrusted -and $check.Status -ne "Valid") {
+                throw ("{0} is signed but not trusted ({1}). Use a CA-issued PFX, or drop -RequireTrusted for a preview build." -f `
+                    (Split-Path -Leaf $Path), $check.Status)
+            }
+            if (-not $RequireTrusted -and $check.Status -ne "Valid") {
+                Write-Warning "self-signed: SmartScreen will warn on first launch. Use -Pfx with a CA-issued certificate for a release."
+            }
             return
         }
         Start-Sleep -Milliseconds 800
