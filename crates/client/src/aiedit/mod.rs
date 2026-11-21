@@ -22,6 +22,7 @@ mod source;
 mod tests;
 
 pub use attach::Attachment;
+pub use install::{keep_current_version, outdated_current};
 pub use provider::Image;
 
 use std::sync::Mutex;
@@ -172,11 +173,14 @@ pub struct UiEdit {
     /// True after the first press of "Delete saved UI files", so the second
     /// press is the confirmation. Deletion cannot be undone.
     pub delete_armed: bool,
+    /// The app version the user acknowledged for an older custom UI.
+    pub kept_app_version: String,
 }
 
 impl Default for UiEdit {
     fn default() -> Self {
         let provider = install::load_provider();
+        let state = install::state();
         let base_url = provider
             .as_ref()
             .map(|provider| provider.base_url.clone())
@@ -202,6 +206,7 @@ impl Default for UiEdit {
             brief: None,
             brief_for: String::new(),
             delete_armed: false,
+            kept_app_version: state.kept_app_version,
         }
     }
 }
@@ -210,14 +215,31 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 
 /// Model calls per session, across briefing, planning, file requests and repairs.
-const MAX_STEPS: usize = 12;
+pub(crate) const MAX_STEPS: usize = 12;
 /// Rounds of "send me these files" before the session is abandoned. A
 /// structural redesign needs the shell modules too, not just the tokens.
-const MAX_FILE_ROUNDS: usize = 5;
+pub(crate) const MAX_FILE_ROUNDS: usize = 5;
 /// Compiler-error repairs after the first failed build.
-const MAX_REPAIRS: usize = 3;
+pub(crate) const MAX_REPAIRS: usize = 3;
 /// Plan-only turns before the session is abandoned.
-const MAX_IDLE: usize = 2;
+pub(crate) const MAX_IDLE: usize = 2;
+
+/// The app version a build is measured against, for the update warning.
+pub(crate) fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// Whether the UI source tree is present. A packaged install without the
+/// one-time source bundle cannot build anything, so the card says so instead of
+/// offering a button that is guaranteed to fail.
+pub fn source_available() -> bool {
+    install::source_root().is_ok()
+}
+
+/// The reason the editor cannot run, when the source tree is missing.
+pub fn source_error() -> Option<String> {
+    install::source_root().err()
+}
 
 /// Whether an edit is running, so the card can say so instead of looking idle.
 pub fn busy() -> bool {
@@ -292,6 +314,7 @@ pub fn start(
     if goal.is_empty() {
         return Err("Describe the change you want first.".into());
     }
+    install::source_root()?;
     if BUSY.swap(true, Ordering::SeqCst) {
         return Err("An edit is already running.".into());
     }
@@ -432,6 +455,7 @@ pub fn rebuild(name: &str) -> Result<(), String> {
             "{name} has no source snapshot, so it cannot be rebuilt. Use Reset to default UI."
         ));
     }
+    install::source_root()?;
     if BUSY.swap(true, Ordering::SeqCst) {
         return Err("An edit is already running.".into());
     }
@@ -882,6 +906,19 @@ impl crate::app::App {
         result
     }
 
+    /// Acknowledge an older custom UI for this app version. The warning returns
+    /// only after the app itself updates again.
+    pub fn ui_edit_keep_current(&mut self) {
+        match install::keep_current_version() {
+            Ok(()) => {
+                self.ui_edit.kept_app_version = app_version().to_string();
+                self.ui_edit.history = install::versions();
+                self.toast("Keeping this UI for this app version.");
+            }
+            Err(error) => self.ui_edit.stage = Stage::Failed(error),
+        }
+    }
+
     /// Undo the last edit only, leaving earlier ones in place.
     pub fn ui_edit_undo(&mut self) -> Result<(), String> {
         let restored = install::restore_latest_backup()?;
@@ -940,6 +977,7 @@ impl crate::app::App {
         match install::delete_custom_ui() {
             Ok(report) => {
                 self.ui_edit.history = install::versions();
+                self.ui_edit.kept_app_version.clear();
                 self.ui_edit.stage = Stage::Idle;
                 self.ui_edit.delete_armed = false;
                 let freed = report.freed as f64 / (1024.0 * 1024.0);

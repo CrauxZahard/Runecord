@@ -194,6 +194,7 @@ pub(crate) fn appearance_tab(s: &App, p: Palette) -> El {
 fn ai_edit_card(s: &App, p: Palette) -> El {
     let ui = &s.ui_edit;
     let running = crate::aiedit::busy();
+    let available = crate::aiedit::source_available();
     let can_undo = ui.history.iter().any(|version| version.name != "base");
 
     // A quiet, bordered button: secondary actions should not compete with the
@@ -306,11 +307,66 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 .color(p.text_muted)
                 .grow(1.0),
         );
+    header = header.child(pill(p.accent, "Preview"));
     if let Some(badge) = badge {
         header = header.child(badge);
     }
 
     let divider = || el().w_full().h(1.0).fill(p.divider_soft);
+
+    if !available {
+        let note = crate::aiedit::source_error()
+            .unwrap_or_else(|| "The UI source tree is not installed.".to_string());
+        return col()
+            .key("ai-edit")
+            .w_full()
+            .radius(10.0)
+            .clip_rounded(10.0)
+            .fill(p.card)
+            .child(
+                col()
+                    .w_full()
+                    .padding(18.0)
+                    .pb(16.0)
+                    .gap(10.0)
+                    .child(header.child(pill(p.yellow, "No source")))
+                    .child(
+                        text("This build cannot run the editor: the UI source tree is not installed. Nothing is sent to a provider.")
+                            .wrap()
+                            .font(theme::SMALL)
+                            .color(p.text_muted),
+                    ),
+            )
+            .child(divider())
+            .child(
+                col()
+                    .w_full()
+                    .padding(18.0)
+                    .gap(8.0)
+                    .child(
+                        row()
+                            .w_full()
+                            .gap(8.0)
+                            .center_y()
+                            .child(icon(&icons::CLOCK, 14.0).color(p.yellow).a11y_hidden())
+                            .child(
+                                text("THE ONE-TIME SOURCE DOWNLOAD IS NOT PART OF THIS PREVIEW")
+                                    .font(theme::LABEL)
+                                    .color(p.yellow)
+                                    .grow(1.0)
+                                    .min_w(0.0)
+                                    .wrap(),
+                            ),
+                    )
+                    .child(text(note).wrap().font(theme::SMALL).color(p.text_muted))
+                    .child(
+                        text("Use a development checkout, or install the UI source and Rust toolchain bundle, to enable Generate. The rest of the app is unaffected.")
+                            .wrap()
+                            .font(theme::TINY)
+                            .color(p.text_faint),
+                    ),
+            );
+    }
 
     let mut card = col()
         .key("ai-edit")
@@ -412,6 +468,28 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 .child(chip("ai-chip-members", "Hide the member list", p))
                 .child(chip("ai-chip-mascot", "Add a mascot in the corner", p))
                 .child(chip("ai-chip-playful", "Playful, rounded icons", p)),
+        )
+        .child(
+            row()
+                .w_full()
+                .gap(8.0)
+                .padding(9.0)
+                .radius(6.0)
+                .fill(p.code_bg)
+                .border(1.0, p.divider_soft)
+                .child(icon(&icons::LOCK, 12.0).color(p.text_faint).a11y_hidden())
+                .child(
+                    text(format!(
+                        "Your request, reference images and the UI files the editor reads go to the provider above. That provider bills your key. One edit is capped at {} model calls and {} repairs.",
+                        crate::aiedit::MAX_STEPS,
+                        crate::aiedit::MAX_REPAIRS
+                    ))
+                    .wrap()
+                    .font(theme::TINY)
+                    .color(p.text_faint)
+                    .grow(1.0)
+                    .min_w(0.0),
+                ),
         )
         .child({
             let label = if running {
@@ -757,9 +835,81 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     .help_when_truncated(store),
             );
 
-            if ui.history.len() > 1 {
+            let app = crate::aiedit::app_version();
+            let outdated = if ui.kept_app_version == app {
+                None
+            } else {
+                ui.history
+                    .iter()
+                    .find(|version| version.current)
+                    .and_then(|version| {
+                        let built = version.app_version.trim();
+                        (!built.is_empty() && built != app).then(|| built.to_string())
+                    })
+            };
+            if let Some(built) = outdated {
+                let current = ui
+                    .history
+                    .iter()
+                    .find(|version| version.current && version.source)
+                    .map(|version| version.name.clone());
+                let mut actions = row().w_full().gap(8.0).center_y();
+                actions = actions.child(
+                    ghost("ai-keep-old", "Keep for now", 30.0)
+                        .on_press(|s: &mut App| s.ui_edit_keep_current()),
+                );
+                if let Some(name) = current {
+                    actions = actions.child(
+                        ghost("ai-rebuild-old", "Rebuild", 30.0)
+                            .on_press(move |s: &mut App| s.ui_edit_rebuild(&name)),
+                    );
+                }
+                actions = actions.child(
+                    ghost("ai-reset-old", "Reset to default", 30.0).on_press_tx(
+                        |s: &mut App, tx: &mut rune::Tx| match s.ui_edit_reset() {
+                            Ok(()) => tx.quit(),
+                            Err(error) => s.ui_edit.stage = crate::aiedit::Stage::Failed(error),
+                        },
+                    ),
+                );
+                versions = versions.child(
+                    col()
+                        .w_full()
+                        .gap(8.0)
+                        .padding(12.0)
+                        .radius(6.0)
+                        .fill(p.yellow.alpha(0.08))
+                        .border(1.0, p.yellow.alpha(0.30))
+                        .child(
+                            row()
+                                .w_full()
+                                .gap(8.0)
+                                .center_y()
+                                .child(icon(&icons::CLOCK, 14.0).color(p.yellow).a11y_hidden())
+                                .child(
+                                    text(format!(
+                                        "This UI was built for Runecord {built}; this app is {app}."
+                                    ))
+                                    .font(theme::SMALL_MED)
+                                    .color(p.text_bright)
+                                    .grow(1.0)
+                                    .min_w(0.0)
+                                    .wrap(),
+                                ),
+                        )
+                        .child(
+                            text("Rebuild it against the current app, or reset to the shipped UI. Keeping it leaves the old build running and stops this warning until the app changes again.")
+                                .wrap()
+                                .font(theme::TINY)
+                                .color(p.text_muted),
+                        )
+                        .child(actions),
+                );
+            }
+
+            if ui.history.iter().any(|version| version.name != "base") {
                 let mut list = col().w_full().gap(2.0);
-                for version in ui.history.iter().take(4) {
+                for version in ui.history.iter() {
                     let mut entry = row()
                         .w_full()
                         .h(34.0)
@@ -841,29 +991,6 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                                     )
                             )
                             .child(row().w(46.0).justify_end().child(state)),
-                    );
-                }
-                let hidden = ui
-                    .history
-                    .iter()
-                    .skip(4)
-                    .filter(|version| version.name != "base")
-                    .count();
-                if hidden == 1 {
-                    list = list.child(
-                        text("1 earlier version is in the source history.")
-                            .font(theme::TINY)
-                            .color(p.text_faint)
-                            .padding(8.0),
-                    );
-                } else if hidden > 1 {
-                    list = list.child(
-                        text(format!(
-                            "{hidden} earlier versions are in the source history."
-                        ))
-                        .font(theme::TINY)
-                        .color(p.text_faint)
-                        .padding(8.0),
                     );
                 }
                 if ui
@@ -1029,10 +1156,14 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                         .center_y()
                         .child(icon(&icons::LOCK, 12.0).color(p.text_faint).a11y_hidden())
                         .child(
-                            text("Encrypted for this Windows account and never written to provider.json.")
-                                .wrap()
-                                .font(theme::TINY)
-                                .color(p.text_faint),
+                            text(if cfg!(windows) {
+                                "Sealed with DPAPI for this Windows account; never written to provider.json."
+                            } else {
+                                "Stored in aiedit/.env with 0600 permissions; never written to provider.json."
+                            })
+                            .wrap()
+                            .font(theme::TINY)
+                            .color(p.text_faint),
                         ),
                 ),
         );

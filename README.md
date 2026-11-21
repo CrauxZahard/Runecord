@@ -51,6 +51,26 @@ The Windows files use a self-signed certificate. SmartScreen may warn.
 - Moderation: timeout, kick, ban, appeals, prune, and audit log.
 - Events, AutoMod, onboarding, templates, and integrations.
 - Inbox, notifications, and accessibility through AccessKit.
+- Custom UI: describe a layout or theme change and the client rebuilds its own
+  view layer.
+
+## Custom UI
+
+Settings > Appearance > Edit your own UI takes a plain-language request and
+patches the view layer (`crates/client/src/ui`, `crates/ui/src`) before
+rebuilding the client. Bring an OpenAI-compatible base URL, model and key; on
+Windows the key is DPAPI-sealed in `aiedit\.env`, and elsewhere the file is 0600.
+
+The editor is a preview. It needs the UI source tree and Rust toolchain; a
+packaged install without the source bundle shows a disabled card instead of a
+button that cannot work. Requests, reference images and the UI files it reads
+go to the configured provider, and that provider bills the key. One edit is
+capped at 12 model calls and 3 repairs.
+
+The app builds beside the running binary and keeps the current and last-good
+executables plus a source snapshot per version. A restart supervisor waits for
+the new build's ready marker and reopens the previous build if it never appears.
+See `docs/DECISIONS.md` (section 22) and `docs/plans/ai-ui-editor.md`.
 
 ## Limits
 
@@ -65,6 +85,7 @@ The Windows files use a self-signed certificate. SmartScreen may warn.
 - Set the backend URL in Settings > Application. The client checks `/api/version` first.
 - Data lives in `%APPDATA%\Runecord` on Windows. On Linux it lives in `~/.local/share/runecord`.
 - Back up `server\key.bin` with the database. Backups run every 24 hours. The newest 7 remain.
+- Custom UI builds and provider settings live in `%APPDATA%\Runecord\aiedit`.
 - Reset a password with `Runecord.exe --reset-password USER`.
 
 ## Self-hosting
@@ -89,7 +110,7 @@ cargo test --workspace
 cargo build --workspace
 ```
 
-Read `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and `BENCHMARKS.md` for details.
+Read `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/RELEASING.md` and `BENCHMARKS.md` for details.
 
 ## Build
 

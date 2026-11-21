@@ -25,13 +25,25 @@ save an OpenAI-compatible key, ask for "move the channel sidebar to the right of
 the chat", wait for the build, press **Restart the application**. Builds land in
 `%APPDATA%\Runecord\aiedit\`.
 
-The card also keeps a short version history: each build stores its goal, the
-files it changed and the source backup it came from, and **Use** switches back to
-it (restoring that build's source first). **Undo last change** reverts only the
-newest edit; **Reset to default UI** replays every backup and reopens the
-original build. Five builds are kept, and each one is a full 88 MB executable, so
-older ones are pruned. The provider URL and model persist in
-`aiedit\provider.json`; only the key is sealed with DPAPI, in `aiedit\.env`.
+The card keeps the full source-backed history in a list: each build stores its
+goal, the files it changed and the source snapshot, and **Use** switches back to
+it (restoring that source first). **Undo last change** reverts only the newest
+edit; **Reset to default UI** replays every backup and reopens the original
+build. Only the current and last-good binaries stay on disk (plus a pending one
+during a restart); older versions keep a source snapshot and rebuild on demand.
+When a build's recorded `app_version` differs from the running app, the card
+warns and offers **Keep for now**, **Rebuild**, or **Reset**; keeping silences
+that warning until the next app update.
+
+The editor is labelled Preview. Without a UI source tree the Appearance card
+shows a **No source** notice and does not offer Generate; nothing is sent to a
+provider. The prompt area also states that the request, reference images and
+the UI files the editor reads go to the configured provider, that the provider
+bills the user's key, and that one edit is capped at 12 model calls and 3
+repairs.
+
+The provider URL and model persist in `aiedit\provider.json`; on Windows the key
+is a DPAPI-sealed blob in `aiedit\.env`, elsewhere a 0600 file.
 
 Cartridge-free defaults: the card now ships pointing at opencode's Go gateway
 (`https://opencode.ai/inference/go/openai/v1`) with `deepseek-v4.1-flash`, and
@@ -83,10 +95,11 @@ failed build rolls the files back, then hands the compiler output back to the
 model with the list of files in the failed patch; after the third repair the
 error is shown and the tree is left compiling.
 
-### Storage: two binaries, full source history
+### Storage: runnable binaries, full source history
 
-Only the installed app, `current` and `last_good` stay as executables. Every
-version records a full-tree source snapshot in `aiedit\source`:
+Only the installed app, `current`, `last_good` and (between staging and restart)
+`pending` stay as executables. Every version records a full-tree source snapshot in
+`aiedit\source`:
 
 ```text
 source\objects\<sha256>          one copy of each distinct UI file
@@ -115,7 +128,8 @@ The source manifests are never pruned by that pass.
 
 Not built yet: the one-time toolchain and source download for packaged installs
 (`source_root()` currently finds a sibling checkout or `%APPDATA%\runecord\aiedit\src`);
-a diff preview before writing.
+the card detects a missing source tree and disables Generate. A diff preview
+before writing is also still open.
 
 
 ## What the feature is
@@ -261,11 +275,12 @@ The system prompt saying "do not change app logic" is useful but not the
 boundary; the writable tree is the boundary. Keep the sentence anyway, because
 it improves output.
 
-Key handling: a `.env` beside the editor's state (`aiedit\.env`), holding a
-DPAPI-sealed blob under `RUNECORD_AI_KEY_DPAPI` — never the raw key, never a
-JSON file. A hand-written plaintext `RUNECORD_AI_KEY=` line is accepted when
-reading, but the app only writes the sealed form. Saving reads the file back and
-compares before the card says "Saved".
+Key handling: a `.env` beside the editor's state (`aiedit\.env`). On Windows it
+holds a DPAPI-sealed blob under `RUNECORD_AI_KEY_DPAPI`; elsewhere it is a 0600
+file. The app never writes the key to a JSON file. A hand-written plaintext
+`RUNECORD_AI_KEY=` line is accepted when reading; the app only writes the sealed
+form on Windows. Saving reads the file back and compares before the card says
+"Saved".
 
 ## Phases
 

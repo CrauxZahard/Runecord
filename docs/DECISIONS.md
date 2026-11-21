@@ -346,9 +346,10 @@ and the parent that registers it. A failed build restores the previous files
 automatically, so the tree still compiles. The cost is that an edit rebuilds the
 whole `runecord` crate (1-3 minutes warm): the `crates/ui` crate exists for
 tokens today, and moving screens into it is what will shorten that build, not
-the allowlist. The key lives in `aiedit\.env` as a DPAPI-sealed blob, so it is
-bound to the signed-in account and never written in the clear; saving verifies
-the file reads back before the card reports success.
+the allowlist. The key lives in `aiedit\.env`: a DPAPI-sealed blob on Windows,
+bound to the signed-in account, and a 0600 file elsewhere. The app never writes
+the key to a JSON file; saving verifies the file reads back before the card
+reports success.
 
 Requests are expanded before patching: `aiedit/brief.rs` turns the goal and any
 reference images into a structured brief, and the orchestrator receives both. A
@@ -363,11 +364,22 @@ three repairs. The caps live in `aiedit/mod.rs` (`MAX_STEPS`,
 `MAX_FILE_ROUNDS`, `MAX_REPAIRS`, `MAX_IDLE`) so a looping model cannot spin
 forever or exhaust the user's budget.
 
+The card is explicit about availability and age. Without a source tree it
+replaces Generate with a No source notice, so a packaged install cannot offer a
+button that always fails. A current build whose recorded `app_version` differs
+from the running app shows Keep / Rebuild / Reset; keeping silences it only for
+that app version. The version list renders every source-backed version instead
+of a fixed four, so a long history stays reachable. The prompt area discloses
+that requests, reference images and the UI files the editor reads go to the
+configured provider, that the key is billed there, and that an edit is capped at
+12 model calls and 3 repairs.
+
 Each staged build records the goal, its files and the source manifest, so the
 card can list versions and switch between them; switching restores that build's
 source first, keeping the tree and the running UI in step. Only the installed
-app, `current` and `last_good` stay on disk as executables: a promoted build
-turns the old current into last-good and deletes the old last-good. Older
+app, `current`, `last_good` and a staged `pending` build stay on disk as
+executables: a promoted build turns the old current into last-good and deletes
+the old last-good. Older
 versions keep their source manifest and show **Rebuild** instead of **Use**;
 rebuilding takes the same 1-3 minute build but frees roughly 93 MB per retired
 executable. Source snapshots are about 1 MB for the whole UI, and unchanged files
