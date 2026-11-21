@@ -169,6 +169,9 @@ pub struct UiEdit {
     /// generated. Reused only while the request is unchanged.
     pub brief: Option<String>,
     pub brief_for: String,
+    /// True after the first press of "Delete saved UI files", so the second
+    /// press is the confirmation. Deletion cannot be undone.
+    pub delete_armed: bool,
 }
 
 impl Default for UiEdit {
@@ -198,6 +201,7 @@ impl Default for UiEdit {
             attachments: Vec::new(),
             brief: None,
             brief_for: String::new(),
+            delete_armed: false,
         }
     }
 }
@@ -223,6 +227,11 @@ pub fn busy() -> bool {
 /// Staged builds, newest first.
 pub fn versions() -> Vec<install::Version> {
     install::versions()
+}
+
+/// The folder holding the saved custom UI files, for the settings card.
+pub fn store_dir() -> String {
+    install::store_dir()
 }
 
 /// Drains the progress queue. Called from the poll loop, on the UI thread.
@@ -917,5 +926,36 @@ impl crate::app::App {
         self.ui_edit.stage = Stage::Idle;
         self.toast(format!("Restored {restored} file(s); restarting"));
         result
+    }
+
+    /// Delete the stored custom UI builds, source copies and rollback files.
+    ///
+    /// The provider settings and the key stay; they are separate files. The app
+    /// keeps running the built-in UI afterwards.
+    pub fn ui_edit_delete_files(&mut self) {
+        if busy() {
+            self.toast("Wait for the current build to finish.");
+            return;
+        }
+        match install::delete_custom_ui() {
+            Ok(report) => {
+                self.ui_edit.history = install::versions();
+                self.ui_edit.stage = Stage::Idle;
+                self.ui_edit.delete_armed = false;
+                let freed = report.freed as f64 / (1024.0 * 1024.0);
+                if report.builds == 0 {
+                    self.toast(format!("Deleted the saved UI files ({freed:.1} MB)"));
+                } else {
+                    self.toast(format!(
+                        "Deleted {} build(s) and their source copies ({freed:.1} MB)",
+                        report.builds
+                    ));
+                }
+            }
+            Err(error) => {
+                self.ui_edit.delete_armed = false;
+                self.ui_edit.stage = Stage::Failed(error);
+            }
+        }
     }
 }

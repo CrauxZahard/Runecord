@@ -311,6 +311,30 @@ fn prepare_and_clean_hybrid_store() {
 }
 
 #[test]
+fn deleting_ui_files_clears_builds_snapshots_and_rollbacks() {
+    let dir = std::env::temp_dir().join(format!("runecord-aiedit-delete-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for folder in ["versions/ui-1", "source/versions/ui-1", "backup/1"] {
+        let path = dir.join(folder);
+        std::fs::create_dir_all(&path).expect("create a store folder");
+        std::fs::write(path.join("file.txt"), b"edit").expect("write a stored file");
+    }
+    std::fs::write(dir.join("provider.json"), b"{}").expect("write provider settings");
+
+    let freed = install::delete_ui_files(&dir).expect("delete the ui files");
+
+    assert!(freed > 0, "the report counts the bytes freed");
+    assert!(!dir.join("versions").exists(), "builds are gone");
+    assert!(!dir.join("source").exists(), "source copies are gone");
+    assert!(!dir.join("backup").exists(), "rollbacks are gone");
+    assert!(
+        dir.join("provider.json").exists(),
+        "provider settings are not UI files and stay"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn the_swap_only_reorders_the_shell() {
     let shell = "        .child(rail(s, p))\n        .child(sidebar(s, p))\n        .child(resize_handle(\n            \"sidebar-resize\",\n            1.0,\n            180.0,\n            460.0,\n            |s: &mut App| &mut s.sidebar_width,\n            p,\n        ))\n        .child(chat(s, cx, p));";
     let swapped = swap_shell(shell);

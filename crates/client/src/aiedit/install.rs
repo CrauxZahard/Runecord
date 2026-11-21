@@ -353,6 +353,79 @@ pub fn prune_now() {
     prune_binaries();
 }
 
+/// What a delete removed.
+#[derive(Clone, Debug, Default)]
+pub struct DeleteReport {
+    /// Bytes freed on disk.
+    pub freed: u64,
+    /// How many build folders were removed.
+    pub builds: usize,
+}
+
+/// The folder that holds the editor's custom UI files, shown in Settings so the
+/// same files can be found outside the app.
+pub fn store_dir() -> String {
+    root()
+        .map(|dir| dir.display().to_string())
+        .unwrap_or_else(|_| "%APPDATA%\\Runecord\\aiedit".to_string())
+}
+
+/// Deletes every saved custom UI build, source snapshot and rollback copy.
+///
+/// Provider settings and the API key live in their own files and stay. Windows
+/// cannot delete a running executable, so a build that is in use has to be left
+/// with "Reset to default UI" first.
+pub fn delete_custom_ui() -> Result<DeleteReport, String> {
+    let dir = root()?;
+    if let Ok(me) = std::env::current_exe()
+        && is_version_exe(&me)
+    {
+        return Err(
+            "This window is the stored UI build. Reset to the default UI first, then delete the files."
+                .into(),
+        );
+    }
+    let builds = std::fs::read_dir(dir.join("versions"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+                .count()
+        })
+        .unwrap_or(0);
+    let freed = delete_ui_files(&dir)?;
+    let mut state = state();
+    state.current.clear();
+    state.last_good.clear();
+    state.pending = None;
+    save_state(&state)?;
+    Ok(DeleteReport { freed, builds })
+}
+
+/// Removes the three UI folders under `dir` and reports the bytes freed.
+pub(super) fn delete_ui_files(dir: &Path) -> Result<u64, String> {
+    let mut freed = 0;
+    for folder in ["versions", "source", "backup"] {
+        let path = dir.join(folder);
+        if !path.exists() {
+            continue;
+        }
+        freed += dir_size(&path);
+        std::fs::remove_dir_all(&path)
+            .map_err(|error| format!("Could not delete {}: {error}", path.display()))?;
+    }
+    // Ready flags belong to the restart helper, not to a build.
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("ready-") && name.ends_with(".flag") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    Ok(freed)
+}
+
 /// Whether a version can be rebuilt from its source snapshot.
 pub fn has_source(name: &str) -> bool {
     super::source::exists(name)

@@ -746,6 +746,17 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     ),
             );
 
+            // The same files can be deleted by hand from this folder; showing it
+            // here is what makes that possible without the docs.
+            let store = crate::aiedit::store_dir();
+            versions = versions.child(
+                text(format!("Saved in {store}"))
+                    .font(theme::MONO)
+                    .color(p.text_faint)
+                    .truncate()
+                    .help_when_truncated(store),
+            );
+
             if ui.history.len() > 1 {
                 let mut list = col().w_full().gap(2.0);
                 for version in ui.history.iter().take(4) {
@@ -882,6 +893,62 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                         ),
                 );
             }
+            // Deleting sits with the list it clears: the builds, their source
+            // copies and the rollback files. The path above says where they are.
+            let armed = ui.delete_armed;
+            let label = if armed {
+                "Press again to delete"
+            } else {
+                "Delete saved UI files"
+            };
+            versions = versions.child(
+                row()
+                    .w_full()
+                    .gap(8.0)
+                    .center_y()
+                    .child(
+                        text("This cannot be undone. Provider settings and the key stay.")
+                            .font(theme::TINY)
+                            .color(p.text_faint)
+                            .grow(1.0)
+                            .min_w(0.0)
+                            .truncate(),
+                    )
+                    .child(
+                        el().key("ai-delete-files")
+                            .h(30.0)
+                            .px(12.0)
+                            .radius(6.0)
+                            .center()
+                            .role("button")
+                            .label(label)
+                            .help(
+                                "Delete the custom UI builds, source copies and rollback files from disk",
+                            )
+                            .fill(if armed {
+                                p.danger.alpha(0.12)
+                            } else {
+                                Color::TRANSPARENT
+                            })
+                            .border(1.0, if armed { p.danger.alpha(0.5) } else { p.divider })
+                            .hover(p.danger.alpha(0.12))
+                            .on_press(|s: &mut App| {
+                                if s.ui_edit.delete_armed {
+                                    s.ui_edit_delete_files();
+                                } else {
+                                    s.ui_edit.delete_armed = true;
+                                    s.toast("Press the button again to delete the saved UI files.");
+                                }
+                            })
+                            .child(
+                                text(label).font(theme::SMALL_MED).color(if armed {
+                                    p.danger
+                                } else {
+                                    p.text_muted
+                                }),
+                            ),
+                    ),
+            );
             versions
         })
         .child(divider())
