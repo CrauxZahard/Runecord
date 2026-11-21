@@ -22,7 +22,7 @@ pub(crate) fn settings_sheet(s: &App, p: Palette, tab: SettingsTab) -> El {
         .key("settings-sheet")
         .w(800.0)
         .h(600.0)
-        .radius(12.0)
+        .radius(8.0)
         .clip_rounded(8.0)
         .fill(p.modal)
         .shadow(12.0, 32.0, p.shadow)
@@ -57,7 +57,7 @@ fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
             .w_full()
             .h(32.0)
             .px(8.0)
-            .radius(8.0)
+            .radius(4.0)
             .center_y()
             .role("tab")
             .label(crate::i18n::t(label))
@@ -156,7 +156,7 @@ fn settings_nav(s: &App, p: Palette, tab: SettingsTab, width: f32) -> El {
                 .w_full()
                 .h(32.0)
                 .px(8.0)
-                .radius(8.0)
+                .radius(4.0)
                 .center_y()
                 .role("button")
                 .label("Log Out")
@@ -180,7 +180,7 @@ fn settings_input(
         .key(key)
         .w_full()
         .h(38.0)
-        .radius(8.0)
+        .radius(4.0)
         .fill(p.input)
         .color(p.text)
         .role("textbox")
@@ -236,22 +236,18 @@ fn settings_body(s: &App, p: Palette, tab: SettingsTab, _sheet: bool, trailing: 
         SettingsTab::Bots => application_tab(s, p),
     };
 
-    let shell = col()
-        .key("settings-body")
-        .grow(1.0)
-        .min_w(0.0)
-        .h_full()
-        .child(
-            row()
-                .key("settings-top")
-                .h(64.0)
-                .px(40.0)
-                .pr(12.0 + trailing)
-                .items_center()
-                .window_drag()
-                .child(el().grow(1.0))
-                .child(close_button(p)),
-        );
+    let mut shell = col().key("settings-body").grow(1.0).min_w(0.0).h_full();
+    shell = shell.child(
+        row()
+            .key("settings-top")
+            .h(64.0)
+            .px(40.0)
+            .pr(12.0 + trailing)
+            .items_center()
+            .window_drag()
+            .child(el().grow(1.0))
+            .child(close_button(p)),
+    );
     shell
         .child(
             col()
@@ -334,7 +330,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
     col()
         .key("server-menu")
         .w(220.0)
-        .radius(12.0)
+        .radius(8.0)
         .fill(theme::color("#111214"))
         .padding(8.0)
         .gap(2.0)
@@ -343,7 +339,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
         .children((!guild.banner_url.is_empty()).then(|| {
             el().w_full()
                 .h(64.0)
-                .radius(10.0)
+                .radius(6.0)
                 .clip_rounded(6.0)
                 .child(guild_banner_el(s, &guild, 64.0, p))
         }))
@@ -359,7 +355,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
                 .w_full()
                 .h(30.0)
                 .px(6.0)
-                .radius(8.0)
+                .radius(4.0)
                 .gap(6.0)
                 .center_y()
                 .role("button")
@@ -385,7 +381,7 @@ pub(crate) fn server_menu(s: &App, p: Palette) -> El {
                 .child(
                     el().w(54.0)
                         .h(6.0)
-                        .radius(8.0)
+                        .radius(3.0)
                         .clip_rounded(3.0)
                         .fill(p.rail)
                         .child(

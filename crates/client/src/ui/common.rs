@@ -12,8 +12,8 @@ pub(crate) fn rail_icon(
     help: &'static str,
 ) -> El {
     el().key(key)
-        .size(44.0, 40.0)
-        .radius(if selected { 12.0 } else { 10.0 })
+        .size(48.0, 48.0)
+        .radius(if selected { 16.0 } else { 24.0 })
         .fill(if selected { selected_fill } else { hover_fill })
         .center()
         .role("button")
@@ -26,20 +26,19 @@ pub(crate) fn rail_icon(
 
 pub(crate) fn with_indicator(button: El, active: bool, unread: bool, p: Palette) -> El {
     let h = if active {
-        18.0
+        40.0
     } else if unread {
-        6.0
+        8.0
     } else {
         0.0
     };
-    row().w_full().h(44.0).center().child(button).child(
+    row().w_full().h(48.0).center().child(button).child(
         el().key("indicator")
-            .absolute(0.0, if active { 13.0 } else { 19.0 })
-            .w(3.0)
+            .absolute(0.0, if active { 4.0 } else { 20.0 })
+            .w(4.0)
             .h(h)
             .radius(2.0)
-            .fill(p.accent)
-            .gradient(theme::sunset_amber(p.dark), theme::sunset_magenta(p.dark)),
+            .fill(p.text_bright),
     )
 }
 
@@ -57,14 +56,14 @@ pub(crate) fn panel_button(key: &'static str, ic: &'static Icon, p: Palette, act
         _ => "Control",
     };
     el().key(key)
-        .size(28.0, 28.0)
-        .radius(14.0)
+        .size(32.0, 32.0)
+        .radius(4.0)
         .center()
         .role("button")
         .label(label)
         .help(label)
         .hover(p.sidebar_hover)
-        .child(icon(ic, 18.0).color(if active { p.danger } else { p.interactive }))
+        .child(icon(ic, 20.0).color(if active { p.danger } else { p.interactive }))
 }
 
 // ---------------------------------------------------------------------------
@@ -85,16 +84,16 @@ pub(crate) fn tool_button(key: &'static str, ic: &'static Icon, p: Palette) -> E
         "help" => "About Runecord",
         _ => "Tool",
     };
-    let size = 30.0;
+    let size = 32.0;
     el().key(key)
         .size(size, size)
-        .radius(10.0)
+        .radius(4.0)
         .center()
         .role("button")
         .label(label)
         .help(label)
         .hover(p.rail)
-        .child(icon(ic, 18.0).color(p.interactive))
+        .child(icon(ic, 20.0).color(p.interactive))
 }
 
 /// Same button with an explicit accessible name, so screen readers announce it.
@@ -105,8 +104,7 @@ pub(crate) fn action_button_named(
     run: impl Fn(&mut App) + 'static,
 ) -> El {
     let mut button = el()
-        .size(30.0, 28.0)
-        .radius(10.0)
+        .size(32.0, 30.0)
         .center()
         .role("button")
         .hover(p.rail)
@@ -114,18 +112,17 @@ pub(crate) fn action_button_named(
     if !name.is_empty() {
         button = button.label(name.to_string()).help(name.to_string());
     }
-    button.child(icon(ic, 17.0).color(p.interactive))
+    button.child(icon(ic, 18.0).color(p.interactive))
 }
 
 /// A forum tag drawn as a coloured pill, on a post or in its header.
 pub(crate) fn forum_tag_pill(tag: &runecord_protocol::ForumTag, p: Palette) -> El {
     let tint = theme::avatar_color(tag.id.rem_euclid(10) as u32);
     el().h(20.0)
-        .px(8.0)
+        .px(7.0)
         .radius(10.0)
         .center()
-        .fill(tint.alpha(if p.dark { 0.22 } else { 0.14 }))
-        .border(1.0, tint.alpha(if p.dark { 0.45 } else { 0.3 }))
+        .fill(tint.alpha(if p.dark { 0.2 } else { 0.12 }))
         .child(
             text(format!("{}{}", tag.emoji, tag.name))
                 .font(theme::TINY)
@@ -214,7 +211,7 @@ fn custom_emoji_text(s: &App, content: &str, p: Palette) -> Option<El> {
         .wrap()
         .selectable(true);
     for (at, pixels) in icons {
-        el = el.inline_icon(at, rune::InlineIcon::image(pixels).size(20.0).gap(2.0));
+        el = el.inline_icon(at, rune::InlineIcon::image(pixels).size(22.0).gap(2.0));
     }
     Some(el)
 }
@@ -268,7 +265,7 @@ pub(crate) fn attachment_card(s: &App, a: &runecord_protocol::Attachment, p: Pal
             .h_full()
             .center()
             .gap(8.0)
-            .child(icon(&icons::IMAGE, 36.0).color(p.text_faint))
+            .child(icon(&icons::IMAGE, 40.0).color(p.text_faint))
             .child(
                 text(a.filename.clone())
                     .font(theme::SMALL)
@@ -279,10 +276,10 @@ pub(crate) fn attachment_card(s: &App, a: &runecord_protocol::Attachment, p: Pal
         .key(format!("attachment-{}", a.id))
         .w(w)
         .h(h)
-        .radius(12.0)
-        .clip_rounded(12.0)
+        .radius(8.0)
+        .clip_rounded(8.0)
         .fill(p.input)
-        .border(1.0, theme::gloss_edge(p))
+        .border(1.0, p.divider)
         .role("button")
         .child(body);
     if let Some(url) = image_url {
@@ -310,7 +307,7 @@ pub(crate) fn attachment_card(s: &App, a: &runecord_protocol::Attachment, p: Pal
 pub(crate) fn group_label(label: &str, p: Palette) -> El {
     el().key(format!("group-{label}"))
         .w_full()
-        .h(26.0)
+        .h(32.0)
         .px(8.0)
         .center_y()
         .child(
@@ -346,7 +343,7 @@ pub(crate) fn guild_icon(s: &App, guild: &GuildSummary, size: f32, radius: f32, 
         .to_uppercase();
     base.center().child(
         text(initials)
-            .font(TextStyle::new((size * 0.36).clamp(10.0, 18.0), 700.0))
+            .font(TextStyle::new((size * 0.4).clamp(10.0, 20.0), 700.0))
             .color(Color::WHITE),
     )
 }
@@ -412,14 +409,14 @@ pub(crate) const DECORATIONS: [(&str, &str); 5] = [
 
 fn badge_color(key: &str) -> Color {
     theme::color(match key {
-        "staff" => "#5f8f4e",
-        "partner" => "#2f7a6a",
-        "early_supporter" => "#c9a227",
-        "bug_hunter" => "#a83426",
-        "nitro" => "#b4ec4a",
-        "booster" => "#7a4a8c",
-        "developer" => "#3d7a85",
-        _ => "#79857e",
+        "staff" => "#5865f2",
+        "partner" => "#3ba55d",
+        "early_supporter" => "#faa61a",
+        "bug_hunter" => "#ed4245",
+        "nitro" => "#eb459e",
+        "booster" => "#ff73fa",
+        "developer" => "#1abc9c",
+        _ => "#747f8d",
     })
 }
 
@@ -443,7 +440,7 @@ pub(crate) fn badge_chip(key: &str, size: f32, _p: Palette) -> El {
         .map(|(_, label)| *label)
         .unwrap_or("Profile badge");
     el().size(size, size)
-        .radius(2.0)
+        .radius(size * 0.22)
         .fill(badge_color(key).alpha(0.22))
         .center()
         .help(label)
@@ -460,23 +457,22 @@ pub(crate) fn badges_row(badges: &[String], size: f32, p: Palette, limit: usize)
 
 pub(crate) fn decoration_colors(key: &str) -> (Color, Color) {
     match key {
-        "aurora" => (theme::color("#5f8f4e"), theme::color("#2f9e8f")),
-        "sakura" => (theme::color("#c98aa6"), theme::color("#7a4a8c")),
-        "flame" => (theme::color("#c9a227"), theme::color("#a83426")),
-        "smoke" => (theme::color("#4a5658"), theme::color("#1e282b")),
+        "aurora" => (theme::color("#5865f2"), theme::color("#eb459e")),
+        "sakura" => (theme::color("#ffb6c1"), theme::color("#eb459e")),
+        "flame" => (theme::color("#faa61a"), theme::color("#ed4245")),
+        "smoke" => (theme::color("#4e5058"), theme::color("#1e1f22")),
         _ => (Color::TRANSPARENT, Color::TRANSPARENT),
     }
 }
 
 fn avatar_visual(user: &User, size: f32, _p: Palette) -> El {
-    let radius = size * 0.28;
-    let mut e = el().size(size, size).radius(radius);
+    let mut e = el().size(size, size).radius(size / 2.0);
     if let Some(pixels) = avatar_pixels(user.id) {
         // `center()` keeps the image aligned with the generated (initials)
         // avatar; without it some sizes render a pixel or two off-centre.
         e = e
             .center()
-            .clip_rounded(radius)
+            .clip_rounded(size / 2.0)
             .pixels_fit(&pixels, rune::SurfaceFit::Fill);
     } else {
         e = e
@@ -484,7 +480,7 @@ fn avatar_visual(user: &User, size: f32, _p: Palette) -> El {
             .center()
             .child(
                 text(user.initials())
-                    .font(TextStyle::new((size * 0.4).max(10.0), 700.0))
+                    .font(TextStyle::new((size * 0.4).max(11.0), 700.0))
                     .color(Color::WHITE),
             );
     }
@@ -505,25 +501,25 @@ pub fn avatar(user: &User, size: f32, p: Palette) -> El {
     let (top, bottom) = decoration_colors(decoration);
     el().key("avatar")
         .size(size, size)
-        .radius(size * 0.32)
+        .radius(size / 2.0)
         .fill(top)
         .gradient(top, bottom)
         .center()
         .role("img")
         .label(format!("{} decorated avatar", user.display_name))
-        .child(avatar_visual(user, (size - 5.0).max(8.0), p))
+        .child(avatar_visual(user, (size - 6.0).max(8.0), p))
 }
 
 pub fn avatar_status(user: &User, size: f32, p: Palette, ring: Color, show_status: bool) -> El {
-    let dot = (size * 0.3).max(8.0);
+    let dot = (size * 0.32).max(10.0);
     el().size(size, size)
         .center()
         .child(avatar(user, size, p))
         .children(show_status.then(|| {
             el().key("status-dot")
-                .absolute(size - dot - 1.0, size - dot - 1.0)
+                .absolute(size - dot, size - dot)
                 .size(dot, dot)
-                .radius(2.0)
+                .radius(dot / 2.0)
                 .fill(theme::status_color(p, user.status))
                 .border((dot * 0.22).max(2.0), ring)
         }))
@@ -604,21 +600,19 @@ pub(crate) fn toast(t: &Toast, p: Palette) -> El {
         .pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0))
         .items_center()
         .justify_end()
-        .pb(72.0)
+        .pb(80.0)
         .inert()
         .child(
             row()
                 .key("toast")
-                .radius(16.0)
-                .fill(p.modal)
-                .border(1.0, theme::gloss_edge(p))
-                .backdrop_blur(8.0)
+                .radius(8.0)
+                .fill(theme::color("#111214"))
                 .px(16.0)
-                .py(10.0)
+                .py(12.0)
                 .role("status")
                 .live_region(rune::LiveRegion::Polite)
-                .shadow(2.0, 14.0, p.shadow)
-                .child(text(t.text.clone()).font(theme::SMALL).color(p.text_bright)),
+                .shadow(4.0, 16.0, p.shadow)
+                .child(text(t.text.clone()).font(theme::SMALL).color(Color::WHITE)),
         )
 }
 
@@ -628,15 +622,15 @@ pub(crate) fn toast(t: &Toast, p: Palette) -> El {
 
 pub(crate) fn close_button(p: Palette) -> El {
     el().key("modal-close")
-        .size(28.0, 28.0)
-        .radius(14.0)
+        .size(32.0, 32.0)
+        .radius(4.0)
         .center()
         .role("button")
         .label("Close")
         .help("Close")
         .hover(p.rail)
         .on_press(|s: &mut App| s.modal = Modal::None)
-        .child(icon(&icons::CLOSE, 16.0).color(p.text_muted))
+        .child(icon(&icons::CLOSE, 20.0).color(p.text_muted))
 }
 
 pub(crate) fn developer_bar(s: &App, p: Palette) -> El {
@@ -659,7 +653,7 @@ pub(crate) fn developer_bar(s: &App, p: Palette) -> El {
     row()
         .key("developer-bar")
         .w_full()
-        .h(22.0)
+        .h(24.0)
         .px(12.0)
         .gap(16.0)
         .center_y()
@@ -695,7 +689,7 @@ fn skeleton_alpha(clock: f64) -> f32 {
 pub(crate) fn skeleton_bar(width: f32, height: f32, p: Palette, clock: f64) -> El {
     el().w(width)
         .h(height)
-        .radius(3.0)
+        .radius(height / 2.0)
         .fill(p.rail_hover.alpha(skeleton_alpha(clock)))
 }
 
@@ -706,16 +700,16 @@ pub(crate) fn skeleton_channel_rows(count: usize, p: Palette, clock: f64) -> El 
         rows = rows.child(
             row()
                 .w_full()
-                .h(30.0)
-                .px(8.0)
+                .h(34.0)
+                .px(10.0)
                 .gap(8.0)
                 .center_y()
                 .child(
-                    el().size(14.0, 14.0)
-                        .radius(4.0)
+                    el().size(18.0, 18.0)
+                        .radius(9.0)
                         .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
                 )
-                .child(skeleton_bar(label, 7.0, p, clock)),
+                .child(skeleton_bar(label, 9.0, p, clock)),
         );
     }
     rows
@@ -728,21 +722,21 @@ pub(crate) fn skeleton_member_rows(count: usize, p: Palette, clock: f64) -> El {
         rows = rows.child(
             row()
                 .w_full()
-                .h(40.0)
-                .px(8.0)
-                .gap(8.0)
+                .h(46.0)
+                .px(10.0)
+                .gap(12.0)
                 .center_y()
                 .child(
-                    el().size(26.0, 26.0)
-                        .radius(8.0)
+                    el().size(32.0, 32.0)
+                        .radius(16.0)
                         .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
                 )
                 .child(
                     col()
                         .grow(1.0)
                         .gap(6.0)
-                        .child(skeleton_bar(label, 8.0, p, clock))
-                        .child(skeleton_bar(label * 0.7, 6.0, p, clock)),
+                        .child(skeleton_bar(label, 9.0, p, clock))
+                        .child(skeleton_bar(label * 0.7, 7.0, p, clock)),
                 ),
         );
     }
@@ -750,17 +744,17 @@ pub(crate) fn skeleton_member_rows(count: usize, p: Palette, clock: f64) -> El {
 }
 
 pub(crate) fn skeleton_message_rows(count: usize, p: Palette, clock: f64) -> El {
-    let mut rows = col().w_full().gap(16.0).padding(14.0);
+    let mut rows = col().w_full().gap(18.0).padding(16.0);
     for index in 0..count {
         let name = 90.0 + ((index * 31) % 70) as f32;
         let body = 320.0 + ((index * 61) % 190) as f32;
         rows = rows.child(
             row()
                 .w_full()
-                .gap(10.0)
+                .gap(12.0)
                 .child(
-                    el().size(36.0, 36.0)
-                        .radius(10.0)
+                    el().size(40.0, 40.0)
+                        .radius(20.0)
                         .fill(p.rail_hover.alpha(skeleton_alpha(clock))),
                 )
                 .child(
@@ -771,11 +765,11 @@ pub(crate) fn skeleton_message_rows(count: usize, p: Palette, clock: f64) -> El 
                             row()
                                 .gap(8.0)
                                 .center_y()
-                                .child(skeleton_bar(name, 9.0, p, clock))
-                                .child(skeleton_bar(52.0, 7.0, p, clock)),
+                                .child(skeleton_bar(name, 10.0, p, clock))
+                                .child(skeleton_bar(54.0, 8.0, p, clock)),
                         )
-                        .child(skeleton_bar(body, 8.0, p, clock))
-                        .child(skeleton_bar(body * 0.55, 8.0, p, clock)),
+                        .child(skeleton_bar(body, 9.0, p, clock))
+                        .child(skeleton_bar(body * 0.55, 9.0, p, clock)),
                 ),
         );
     }

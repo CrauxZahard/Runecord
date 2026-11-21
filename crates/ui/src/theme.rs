@@ -1,60 +1,9 @@
-//! Kiln's palette and type scale, as tokens.
-//!
-//! The look is "Dusk Vice": deep navy and aubergine surfaces, hot magenta and
-//! electric cyan accents, and a sunset ramp of amber into magenta into violet
-//! laid over the title bar, selected rows, primary buttons and the auth card.
-//! The daylight counterpart is the same city at noon: sun-bleached lavender
-//! surfaces carrying the very same accents.
+//! Runecord's palette and type scale, as tokens.
 
 use rune::{Color, TextStyle};
 
 pub fn color(hex: &str) -> Color {
     rune::color::hex(hex).unwrap_or(Color::BLACK)
-}
-
-/// Amber head of the sunset ramp.
-pub fn sunset_amber(dark: bool) -> Color {
-    if dark {
-        color("#ffb648")
-    } else {
-        color("#ffcf87")
-    }
-}
-
-/// Hot magenta middle of the sunset ramp.
-pub fn sunset_magenta(dark: bool) -> Color {
-    if dark {
-        color("#ff2d95")
-    } else {
-        color("#e0268a")
-    }
-}
-
-/// Violet foot of the sunset ramp.
-pub fn sunset_violet(dark: bool) -> Color {
-    if dark {
-        color("#7b2ff7")
-    } else {
-        color("#8b5fd6")
-    }
-}
-
-/// Electric cyan, the cool counter-accent that keeps the magenta honest.
-pub fn electric(dark: bool) -> Color {
-    if dark {
-        color("#31e6ff")
-    } else {
-        color("#0089a7")
-    }
-}
-
-/// The thin bright edge every glossy card carries.
-pub fn gloss_edge(p: Palette) -> Color {
-    if p.dark {
-        p.accent.alpha(0.6)
-    } else {
-        p.accent.alpha(0.42)
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -104,110 +53,103 @@ impl Palette {
     pub fn dark() -> Self {
         Palette {
             dark: true,
-            // Night neon: navy and aubergine, almost black in the gutters.
-            rail: color("#0a0716"),
-            rail_hover: color("#1a1030"),
-            sidebar: color("#110b22"),
-            sidebar_hover: color("#1e1438"),
-            sidebar_active: color("#2a1a4c"),
-            user_panel: color("#0a0716"),
-            chat: color("#0d0920"),
-            chat_hover: color("#1a1033"),
-            header: color("#140d28"),
-            input: color("#1c1338"),
-            input_hover: color("#271a4a"),
-            modal: color("#150e2a"),
-            modal_sidebar: color("#100a1e"),
-            modal_footer: color("#100a1e"),
-            card: color("#1b1236"),
-            card_hover: color("#261848"),
-            text: color("#ece6ff"),
-            text_bright: color("#fdfbff"),
-            text_muted: color("#b4a7d6"),
-            text_faint: color("#7f74a6"),
-            text_link: color("#ff6ad5"),
-            interactive: color("#d7cdf5"),
-            divider: color("#2e1f57"),
-            divider_soft: color("#221741"),
-            accent: color("#ff2d95"),
-            accent_hover: color("#ff62b4"),
-            accent_text: color("#150a20"),
-            danger: color("#ff4d6d"),
-            danger_hover: color("#ff7a92"),
-            green: color("#35e0b0"),
-            yellow: color("#ffc857"),
-            scrim: color("#05020c").alpha(0.72),
-            mention: color("#451a4e"),
-            mention_hover: color("#ff2d95"),
-            selected: color("#3a1050"),
-            shadow: color("#1a0018").alpha(0.72),
-            code_bg: color("#120b24"),
+            rail: color("#1e1f22"),
+            rail_hover: color("#35373c"),
+            sidebar: color("#2b2d31"),
+            sidebar_hover: color("#35373c"),
+            sidebar_active: color("#404249"),
+            user_panel: color("#232428"),
+            chat: color("#313338"),
+            chat_hover: color("#2e3035"),
+            header: color("#313338"),
+            input: color("#383a40"),
+            input_hover: color("#3f4147"),
+            modal: color("#313338"),
+            modal_sidebar: color("#2b2d31"),
+            modal_footer: color("#2b2d31"),
+            card: color("#2b2d31"),
+            card_hover: color("#35373c"),
+            text: color("#dbdee1"),
+            text_bright: color("#f2f3f5"),
+            text_muted: color("#949ba4"),
+            text_faint: color("#80848e"),
+            text_link: color("#00a8fc"),
+            interactive: color("#b5bac1"),
+            divider: color("#3f4147"),
+            divider_soft: color("#26272b"),
+            accent: color("#5865f2"),
+            accent_hover: color("#4752c4"),
+            accent_text: color("#ffffff"),
+            danger: color("#f23f43"),
+            danger_hover: color("#da373c"),
+            green: color("#23a55a"),
+            yellow: color("#f0b232"),
+            scrim: color("#000000").alpha(0.5),
+            mention: color("#414675"),
+            mention_hover: color("#5865f2"),
+            selected: color("#404249"),
+            shadow: color("#000000").alpha(0.3),
+            code_bg: color("#2b2d31"),
         }
     }
 
     pub fn light() -> Self {
         Palette {
             dark: false,
-            // Sun-bleached day: the same city at noon, lavender paper.
-            rail: color("#f3e6f2"),
-            rail_hover: color("#e8d6ea"),
-            sidebar: color("#faf0f7"),
-            sidebar_hover: color("#f0dff0"),
-            sidebar_active: color("#e6cfec"),
-            user_panel: color("#f3e6f2"),
-            chat: color("#fffafd"),
-            chat_hover: color("#fbeef7"),
-            header: color("#fdf3fa"),
-            input: color("#f6e9f4"),
-            input_hover: color("#ecdaee"),
-            modal: color("#fffafd"),
-            modal_sidebar: color("#f9eef6"),
-            modal_footer: color("#f9eef6"),
-            card: color("#f8ecf6"),
-            card_hover: color("#eedcef"),
-            text: color("#241a2e"),
-            text_bright: color("#150c1e"),
-            text_muted: color("#5d4a6e"),
-            text_faint: color("#8a779c"),
-            text_link: color("#b81e7a"),
-            interactive: color("#3a2c4a"),
-            divider: color("#e3cfe2"),
-            divider_soft: color("#f0e0ee"),
-            accent: color("#d01a84"),
-            accent_hover: color("#ad1268"),
-            accent_text: color("#fff7fc"),
-            danger: color("#b02243"),
-            danger_hover: color("#8d1735"),
-            green: color("#0a6f5c"),
-            yellow: color("#8a5a00"),
-            scrim: color("#1a0a18").alpha(0.42),
-            mention: color("#fbd6e6"),
-            mention_hover: color("#f7bcd8"),
-            selected: color("#f7d3e6"),
-            shadow: color("#4a1030").alpha(0.18),
-            code_bg: color("#f6ebf4"),
+            rail: color("#e3e5e8"),
+            rail_hover: color("#d7d9dc"),
+            sidebar: color("#f2f3f5"),
+            sidebar_hover: color("#ebedef"),
+            sidebar_active: color("#e3e5e8"),
+            user_panel: color("#ebedef"),
+            chat: color("#ffffff"),
+            chat_hover: color("#f2f3f5"),
+            header: color("#ffffff"),
+            input: color("#ebedef"),
+            input_hover: color("#e3e5e8"),
+            modal: color("#ffffff"),
+            modal_sidebar: color("#f2f3f5"),
+            modal_footer: color("#f2f3f5"),
+            card: color("#f2f3f5"),
+            card_hover: color("#ebedef"),
+            text: color("#2e3338"),
+            text_bright: color("#060607"),
+            text_muted: color("#5c5e66"),
+            text_faint: color("#80848e"),
+            text_link: color("#006ce7"),
+            interactive: color("#4e5058"),
+            divider: color("#d4d7dc"),
+            divider_soft: color("#e3e5e8"),
+            accent: color("#5865f2"),
+            accent_hover: color("#4752c4"),
+            accent_text: color("#ffffff"),
+            danger: color("#d83c3e"),
+            danger_hover: color("#a12d2f"),
+            green: color("#248046"),
+            yellow: color("#b8891a"),
+            scrim: color("#000000").alpha(0.35),
+            mention: color("#e8e9fd"),
+            mention_hover: color("#dfe1fd"),
+            selected: color("#e3e5e8"),
+            shadow: color("#000000").alpha(0.15),
+            code_bg: color("#f2f3f5"),
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Type scale: chunky display weights, generous leading, roomier sections.
-// ---------------------------------------------------------------------------
-
-pub const BODY: TextStyle = TextStyle::new(14.0, 400.0).lh(22.0);
-pub const BODY_MED: TextStyle = TextStyle::new(14.0, 500.0).lh(22.0);
-pub const BODY_BOLD: TextStyle = TextStyle::new(14.0, 700.0).lh(22.0);
-pub const SMALL: TextStyle = TextStyle::new(12.0, 400.0).lh(19.0);
-pub const SMALL_MED: TextStyle = TextStyle::new(12.0, 500.0).lh(19.0);
-pub const LABEL: TextStyle = TextStyle::new(11.0, 700.0).lh(15.0);
-// Uppercase group labels ride the mono face, which spaces the letters wide.
-pub const SECTION: TextStyle = TextStyle::new(10.0, 800.0).lh(14.0).mono();
-pub const TINY: TextStyle = TextStyle::new(10.0, 400.0).lh(15.0);
-pub const NAME: TextStyle = TextStyle::new(14.5, 700.0).lh(21.0);
-pub const TITLE: TextStyle = TextStyle::new(20.0, 800.0).lh(27.0);
-pub const HERO: TextStyle = TextStyle::new(26.0, 800.0).lh(33.0);
-pub const INTRO: TextStyle = TextStyle::new(32.0, 800.0).lh(40.0);
-pub const MONO: TextStyle = TextStyle::new(11.5, 400.0).lh(18.0).mono();
+pub const BODY: TextStyle = TextStyle::new(16.0, 400.0).lh(21.0);
+pub const BODY_MED: TextStyle = TextStyle::new(16.0, 500.0).lh(21.0);
+pub const BODY_BOLD: TextStyle = TextStyle::new(16.0, 700.0).lh(21.0);
+pub const SMALL: TextStyle = TextStyle::new(14.0, 400.0).lh(18.0);
+pub const SMALL_MED: TextStyle = TextStyle::new(14.0, 500.0).lh(18.0);
+pub const LABEL: TextStyle = TextStyle::new(12.0, 600.0).lh(16.0);
+pub const SECTION: TextStyle = TextStyle::new(12.0, 700.0).lh(16.0);
+pub const TINY: TextStyle = TextStyle::new(11.0, 400.0).lh(14.0);
+pub const NAME: TextStyle = TextStyle::new(16.0, 600.0).lh(20.0);
+pub const TITLE: TextStyle = TextStyle::new(20.0, 700.0).lh(24.0);
+pub const HERO: TextStyle = TextStyle::new(24.0, 800.0).lh(30.0);
+pub const INTRO: TextStyle = TextStyle::new(32.0, 700.0).lh(38.0);
+pub const MONO: TextStyle = TextStyle::new(13.0, 400.0).lh(18.0).mono();
 
 pub fn status_color(p: Palette, status: runecord_protocol::Presence) -> Color {
     use runecord_protocol::Presence;
@@ -234,10 +176,9 @@ pub fn profile_banner_color(value: u32) -> Color {
 }
 
 pub fn avatar_color_value(seed: u32) -> u32 {
-    // Mid-dark dusk hues: white initials stay legible on every one.
     const COLORS: [u32; 10] = [
-        0xb01a6e, 0x2f5f8c, 0x6b3fa0, 0x2f7a8c, 0x8c3f6a, 0x3f8073, 0x7a4a8c, 0x55637f, 0x9c3f5a,
-        0x3f6f8c,
+        0x5865f2, 0x3ba55d, 0xfaa61a, 0xed4245, 0xeb459e, 0x9b59b6, 0x1abc9c, 0xe67e22, 0x2ecc71,
+        0x7289da,
     ];
     COLORS[(seed as usize) % COLORS.len()]
 }
@@ -260,10 +201,10 @@ pub fn encode_nameplate(primary: u32, secondary: u32, gradient: bool) -> String 
 /// (primary, secondary, is_gradient)
 pub fn nameplate_values(kind: &str) -> Option<(u32, u32, bool)> {
     match kind {
-        "midnight" => Some((0x8fa6c8, 0x33456b, true)),
-        "aurora" => Some((0xffb648, 0xff2d95, true)),
-        "sunset" => Some((0xffb648, 0x7b2ff7, true)),
-        "candy" => Some((0xff6ad5, 0x7b2ff7, true)),
+        "midnight" => Some((0x8ea2ff, 0x5865f2, true)),
+        "aurora" => Some((0x1db954, 0x00d4ff, true)),
+        "sunset" => Some((0xff73fa, 0xfaa61a, true)),
+        "candy" => Some((0xff73fa, 0xffb3fd, true)),
         _ => {
             let mut parts = kind.split(':');
             match parts.next()? {
