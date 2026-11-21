@@ -45,16 +45,18 @@ repository.
 
 ## Linux
 
-Run the smoke checks on an x86_64 Linux host:
+Run the smoke checks on an x86_64 Linux host with the same `..\rune` and
+`..\Runecord-backend` checkouts that built the client:
 
 ```bash
 bash scripts/verify-linux.sh
 ```
 
 That checks formatting, runs the client tests and builds the release binary
-with the embedded server. The `.github/workflows/linux.yml` job runs the same
-commands on `ubuntu-22.04` and uploads `runecord` as an artifact. It checks out
-`CrauxZahard/Runecord-backend` and `anomalyco/rune` as siblings.
+with the embedded server. The script is local-only on purpose: the client
+builds against sibling working trees, so an automatic CI job must first pin
+pushed, reproducible Rune and backend refs. Do not add a hosted job that checks
+out different refs and call it the release check.
 
 The shipped `dist\Runecord-linux.tar.gz` is cross-compiled on Windows with
 `scripts/build-linux.ps1` (zig + cargo-zigbuild). Cross-compiling is not a
@@ -81,7 +83,7 @@ is.
 - [ ] Both workspaces are formatted, checked and tested.
 - [ ] The Windows app and installer report a `Valid` signature.
 - [ ] The installer launches, and the portable exe launches.
-- [ ] The Linux job is green, and the tarball was unpacked and started on Linux.
+- [ ] The Linux script ran on a Linux host with matching sibling checkouts.
 - [ ] A clean profile shows the expected AI editor availability state.
 - [ ] `dist\README.txt`, `LICENSE` and both icons are present.
 - [ ] The version in `crates/client/Cargo.toml` matches the download page.
