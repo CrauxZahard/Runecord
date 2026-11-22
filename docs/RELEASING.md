@@ -64,19 +64,20 @@ substitute for the Linux run: do both before publishing.
 
 ## The AI editor
 
-The editor is a preview. Check three things on a clean profile:
+The editor is a preview. Check these on a clean profile:
 
-1. With no source tree, the Appearance card says **No source** and does not
-   offer Generate. Nothing is sent to a provider.
-2. With a checkout (`RUNECORD_UI_SRC` or a sibling workspace), Generate builds
-   a separate copy and **Restart** switches to it.
-3. Change `app_version` in a staged `meta.json` to an older version, restart,
+1. Install with the installer, then confirm `<install>\src\Runecord\Cargo.toml`
+   exists next to `rune` and `Runecord-backend`.
+2. With Cargo not on PATH, the Appearance card disables Generate, says
+   **Rust not found**, and offers **Get Rust** and **Check again**.
+3. With Cargo on PATH, Generate builds a separate copy and **Restart** switches
+   to it.
+4. Change `app_version` in a staged `meta.json` to an older version, restart,
    and confirm the **built for an older app** warning appears with Keep,
    Rebuild and Reset. Keep silences it for this app version only.
 
-The one-time source and toolchain download for packaged installs is still not
-implemented. Do not advertise the editor as working from the installer until it
-is.
+The source bundle ships with the installer. The one-time Rust toolchain download
+is still not implemented, so people without Rust must install it first.
 
 ## Checklist
 
@@ -84,6 +85,8 @@ is.
 - [ ] The Windows app and installer report a `Valid` signature.
 - [ ] The installer launches, and the portable exe launches.
 - [ ] The Linux script ran on a Linux host with matching sibling checkouts.
+- [ ] The installer contains `src\Runecord\Cargo.toml`, `src\rune` and `src\Runecord-backend`.
+- [ ] With Cargo removed from PATH, Generate is disabled and says Rust not found.
 - [ ] A clean profile shows the expected AI editor availability state.
 - [ ] `dist\README.txt`, `LICENSE` and both icons are present.
 - [ ] The version in `crates/client/Cargo.toml` matches the download page.

@@ -26,6 +26,15 @@ install -d "$bin_dir" "$app_dir" "$icon_dir"
 install -m 755 "$here/Runecord" "$bin_dir/runecord"
 install -m 644 "$here/assets/icon.png" "$icon_dir/runecord.png"
 
+# Keep the UI source next to the app data. The AI editor needs it, and the
+# data folder is writable without root.
+source_dir="$data_home/runecord/aiedit/src"
+if [ -d "$here/src" ]; then
+    install -d "$data_home/runecord/aiedit"
+    rm -rf "$source_dir"
+    cp -R "$here/src" "$source_dir"
+fi
+
 sed "s|@BIN@|$bin_dir/runecord|g" "$here/runecord.desktop" > "$app_dir/runecord.desktop"
 chmod 644 "$app_dir/runecord.desktop"
 
@@ -39,4 +48,7 @@ echo "  $app_dir/runecord.desktop"
 echo
 echo "Run it from your application menu, or: $bin_dir/runecord"
 echo "Data lives in $data_home/runecord"
+if [ -d "$here/src" ]; then
+    echo "UI source for the AI editor: $source_dir"
+fi
 echo "Remove the program files with: $here/uninstall.sh"

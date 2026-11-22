@@ -25,6 +25,7 @@ pub use attach::Attachment;
 pub use install::{keep_current_version, outdated_current};
 pub use provider::Image;
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -175,6 +176,9 @@ pub struct UiEdit {
     pub delete_armed: bool,
     /// The app version the user acknowledged for an older custom UI.
     pub kept_app_version: String,
+    /// True when a Rust toolchain was found for this launch.
+    /// Press Check again to refresh it.
+    pub rust_available: bool,
 }
 
 impl Default for UiEdit {
@@ -207,6 +211,7 @@ impl Default for UiEdit {
             brief_for: String::new(),
             delete_armed: false,
             kept_app_version: state.kept_app_version,
+            rust_available: toolchain_available(),
         }
     }
 }
@@ -239,6 +244,48 @@ pub fn source_available() -> bool {
 /// The reason the editor cannot run, when the source tree is missing.
 pub fn source_error() -> Option<String> {
     install::source_root().err()
+}
+
+/// Finds the Cargo executable. The installer checks this before it enables the
+/// editor, and the build uses the same path so a stale Explorer PATH cannot
+/// find Cargo in the card but fail in `Command::new("cargo")`.
+pub(crate) fn cargo_path() -> Option<PathBuf> {
+    if let Some(cargo) = std::env::var_os("CARGO") {
+        let path = PathBuf::from(cargo);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let name = if cfg!(windows) { "cargo.exe" } else { "cargo" };
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Some(home) = std::env::var_os("CARGO_HOME") {
+        let candidate = PathBuf::from(home).join("bin").join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    for var in ["USERPROFILE", "HOME"] {
+        if let Some(home) = std::env::var_os(var) {
+            let candidate = PathBuf::from(home).join(".cargo").join("bin").join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Whether a Rust toolchain is available. The source bundle ships with the
+/// installer; the compiler does not.
+pub fn toolchain_available() -> bool {
+    cargo_path().is_some()
 }
 
 /// Whether an edit is running, so the card can say so instead of looking idle.
@@ -315,6 +362,11 @@ pub fn start(
         return Err("Describe the change you want first.".into());
     }
     install::source_root()?;
+    if !toolchain_available() {
+        return Err(
+            "Rust toolchain not found. Install Rust 1.99.1, then press Check again.".into(),
+        );
+    }
     if BUSY.swap(true, Ordering::SeqCst) {
         return Err("An edit is already running.".into());
     }
@@ -456,6 +508,11 @@ pub fn rebuild(name: &str) -> Result<(), String> {
         ));
     }
     install::source_root()?;
+    if !toolchain_available() {
+        return Err(
+            "Rust toolchain not found. Install Rust 1.99.1, then press Check again.".into(),
+        );
+    }
     if BUSY.swap(true, Ordering::SeqCst) {
         return Err("An edit is already running.".into());
     }
@@ -840,6 +897,12 @@ impl crate::app::App {
             self.ui_edit.stage = Stage::Failed("Save an API key first.".into());
             return;
         }
+        if !self.ui_edit.rust_available {
+            self.ui_edit.stage = Stage::Failed(
+                "Rust toolchain not found. Install Rust 1.99.1, then press Check again.".into(),
+            );
+            return;
+        }
         let prompt = self.ui_edit.prompt.text.clone();
         let images = self.ui_edit_images();
         let brief = self.ui_edit_brief_for_prompt();
@@ -906,6 +969,20 @@ impl crate::app::App {
         result
     }
 
+    /// Re-check PATH after the user installs Rust while the app is open.
+    pub fn ui_edit_check_toolchain(&mut self) {
+        let found = toolchain_available();
+        let was = self.ui_edit.rust_available;
+        self.ui_edit.rust_available = found;
+        if found {
+            self.toast("Rust toolchain found.");
+        } else if was {
+            self.toast("Rust toolchain is no longer on PATH.");
+        } else {
+            self.toast("Rust toolchain not found. Install Rust 1.99.1, then check again.");
+        }
+    }
+
     /// Acknowledge an older custom UI for this app version. The warning returns
     /// only after the app itself updates again.
     pub fn ui_edit_keep_current(&mut self) {
@@ -944,6 +1021,12 @@ impl crate::app::App {
 
     /// Rebuild a source-only version, then leave it staged for Restart.
     pub fn ui_edit_rebuild(&mut self, name: &str) {
+        if !self.ui_edit.rust_available {
+            self.ui_edit.stage = Stage::Failed(
+                "Rust toolchain not found. Install Rust 1.99.1, then press Check again.".into(),
+            );
+            return;
+        }
         match rebuild(name) {
             Ok(()) => {
                 self.ui_edit.detail.clear();

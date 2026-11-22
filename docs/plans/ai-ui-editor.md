@@ -1,7 +1,7 @@
 # AI UI editor: "edit your own UI"
 
-Status: phase 0 and the core loop are implemented; the toolchain download and
-the full source bundle for packaged installs are not.
+Status: phase 0 and the core loop are implemented. The installer now bundles the
+build source; the one-time Rust toolchain download is not implemented.
 
 ## What exists today
 
@@ -35,12 +35,15 @@ When a build's recorded `app_version` differs from the running app, the card
 warns and offers **Keep for now**, **Rebuild**, or **Reset**; keeping silences
 that warning until the next app update.
 
-The editor is labelled Preview. Without a UI source tree the Appearance card
-shows a **No source** notice and does not offer Generate; nothing is sent to a
-provider. The prompt area also states that the request, reference images and
-the UI files the editor reads go to the configured provider, that the provider
-bills the user's key, and that one edit is capped at 12 model calls and 3
-repairs.
+The editor is labelled Preview. The installer bundles the build source under
+`<install>\src\Runecord`, next to the `rune` and `Runecord-backend` siblings.
+The editor also needs Rust. If Cargo is not on PATH, the Generate button is
+disabled and the card offers **Get Rust** and **Check again**. A portable exe
+without a `src` folder still shows the **No source** notice. Nothing is sent to
+a provider while Generate is disabled. The prompt area states that the request,
+reference images and the UI files the editor reads go to the configured
+provider, that the provider bills the user's key, and that one edit is capped at
+12 model calls and 3 repairs.
 
 The provider URL and model persist in `aiedit\provider.json`; on Windows the key
 is a DPAPI-sealed blob in `aiedit\.env`, elsewhere a 0600 file.
@@ -126,10 +129,11 @@ always opening the original binary.
 Startup also prunes any executable that is not current, last-good or pending.
 The source manifests are never pruned by that pass.
 
-Not built yet: the one-time toolchain and source download for packaged installs
-(`source_root()` currently finds a sibling checkout or `%APPDATA%\runecord\aiedit\src`);
-the card detects a missing source tree and disables Generate. A diff preview
-before writing is also still open.
+Not built yet: the one-time Rust toolchain download for packaged installs.
+`source_root()` finds the bundled tree at `<install>\src\Runecord`, a sibling
+checkout, `RUNECORD_UI_SRC`, or `%APPDATA%\Runecord\aiedit\src`. The card
+disables Generate when Cargo is missing. A diff preview before writing is also
+still open.
 
 
 ## What the feature is

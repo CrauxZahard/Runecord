@@ -61,11 +61,10 @@ patches the view layer (`crates/client/src/ui`, `crates/ui/src`) before
 rebuilding the client. Bring an OpenAI-compatible base URL, model and key; on
 Windows the key is DPAPI-sealed in `aiedit\.env`, and elsewhere the file is 0600.
 
-The editor is a preview. It needs the UI source tree and Rust toolchain; a
-packaged install without the source bundle shows a disabled card instead of a
-button that cannot work. Requests, reference images and the UI files it reads
-go to the configured provider, and that provider bills the key. One edit is
-capped at 12 model calls and 3 repairs.
+The editor is a preview. The installer includes the UI source. The editor also
+needs Rust 1.99.1; if Cargo is not on PATH, Generate is disabled. Requests,
+reference images and the UI files it reads go to the configured provider, and
+that provider bills the key. One edit is capped at 12 model calls and 3 repairs.
 
 The app builds beside the running binary and keeps the current and last-good
 executables plus a source snapshot per version. A restart supervisor waits for

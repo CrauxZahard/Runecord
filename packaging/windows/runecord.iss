@@ -63,6 +63,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourceDir}\Runecord.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\src\*"; DestDir: "{app}\src"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\assets\icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "{#SourceDir}\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion

@@ -58,11 +58,18 @@ pub fn root() -> Result<PathBuf, String> {
 /// A development checkout is found by walking up from the executable to the
 /// workspace manifest; a packaged install uses the copy the feature downloaded.
 pub fn source_root() -> Result<PathBuf, String> {
-    if let Ok(value) = std::env::var("RUNECORD_UI_SRC") {
-        let path = PathBuf::from(value);
-        if path.join("Cargo.toml").exists() {
-            return Ok(path);
-        }
+    if let Ok(value) = std::env::var("RUNECORD_UI_SRC")
+        && let Some(path) = workspace_at(Path::new(&value))
+    {
+        return Ok(path);
+    }
+    // An installed app keeps the build tree in <install>\src\Runecord. A
+    // version exe runs from AppData, so ask the base executable where it lives.
+    if let Some(base) = base_exe()
+        && let Some(dir) = base.parent()
+        && let Some(path) = workspace_at(&dir.join("src"))
+    {
+        return Ok(path);
     }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
@@ -75,14 +82,28 @@ pub fn source_root() -> Result<PathBuf, String> {
             }
         }
     }
-    let packaged = root()?.join("src");
-    if packaged.join("Cargo.toml").exists() {
-        return Ok(packaged);
+    if let Ok(dir) = root()
+        && let Some(path) = workspace_at(&dir.join("src"))
+    {
+        return Ok(path);
     }
     Err(
-        "The UI source isn't installed. The editor needs the one-time source download before it can run."
+        "The UI source isn't installed. Reinstall Runecord with its source bundle, or set RUNECORD_UI_SRC."
             .into(),
     )
+}
+
+/// Accepts either a workspace folder or a bundle folder that contains
+/// `Runecord\Cargo.toml`.
+fn workspace_at(dir: &Path) -> Option<PathBuf> {
+    if dir.join("Cargo.toml").is_file() {
+        return Some(dir.to_path_buf());
+    }
+    let nested = dir.join("Runecord");
+    if nested.join("Cargo.toml").is_file() {
+        return Some(nested);
+    }
+    None
 }
 
 /// Where the compiler writes. A checkout reuses its warm `target/`; a packaged

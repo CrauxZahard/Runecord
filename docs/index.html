@@ -321,7 +321,7 @@
             <li>Requests, reference images and the UI files it reads go to that provider, and your key is billed there. One edit is capped at 12 model calls.</li>
             <li>Only the view layer is writable, so networking, storage and secrets stay out of reach.</li>
             <li>Switch versions, undo the last change, or reset to the UI that shipped.</li>
-            <li><strong>Preview:</strong> needs the UI source tree and Rust toolchain; a packaged build without the source bundle shows a disabled card.</li>
+            <li><strong>Preview:</strong> the editor needs Rust 1.99.1. If Cargo is not on PATH, Generate is disabled.</li>
           </ul>
           <div class="studio-prompt terminal" aria-label="Example UI requests">
             <div class="term-bar" aria-hidden="true">
@@ -532,7 +532,7 @@
           </details>
           <details class="faq-item reveal">
             <summary><span class="faq-num">07</span> Can I change how it looks?<span class="faq-plus" aria-hidden="true"></span></summary>
-            <div class="faq-body"><p>Yes, as a preview. <strong>Settings → Appearance → Edit your own UI</strong> takes a plain-language request, patches the view layer and builds a new copy beside the running app. Bring an OpenAI-compatible key; on Windows it is sealed with DPAPI, and elsewhere the file is 0600. Requests, reference images and the UI files it reads go to that provider and are billed there. The editor needs the UI source tree and Rust toolchain, so a packaged build without the source bundle shows a disabled card. If the new build does not start, Runecord reopens the previous one, and you can switch versions or reset to the shipped UI at any time.</p></div>
+            <div class="faq-body"><p>Yes, as a preview. <strong>Settings → Appearance → Edit your own UI</strong> takes a plain-language request, patches the view layer and builds a new copy beside the running app. Bring an OpenAI-compatible key; on Windows it is sealed with DPAPI, and elsewhere the file is 0600. Requests, reference images and the UI files it reads go to that provider and are billed there. The editor needs Rust 1.99.1; if Cargo is not on PATH, Generate is disabled. If the new build does not start, Runecord reopens the previous one, and you can switch versions or reset to the shipped UI at any time.</p></div>
           </details>
         </div>
       </div>

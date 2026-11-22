@@ -148,8 +148,11 @@ function Sign-Artifact {
     throw "no signer certificate on $Path"
 }
 
-# 3. Sign the app, then build and sign the installer.
+# 3. Sign the app, stage the source tree, then build and sign the installer.
 Sign-Artifact (Join-Path $dist "Runecord.exe")
+
+$source = Join-Path $dist "src"
+& (Join-Path $PSScriptRoot "stage-source.ps1") -Destination $source
 
 $iscc = Find-Iscc
 $script = Join-Path $root "packaging\windows\runecord.iss"

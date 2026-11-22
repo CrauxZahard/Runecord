@@ -2,6 +2,8 @@ Runecord
 ========
 
 Windows: Run Runecord-Setup-0.1.1.exe. Use Runecord.exe for a portable copy.
+The installer also includes the UI source in a src folder. The AI editor also
+needs Rust 1.99.1; if cargo is not on PATH, the editor button stays disabled.
 Linux:   Unpack Runecord-linux.tar.gz. Run ./install.sh.
 
 The app starts its own backend. No launcher or second process is needed.

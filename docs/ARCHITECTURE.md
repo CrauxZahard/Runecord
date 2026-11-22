@@ -116,7 +116,8 @@ is under `crates/client/src/ui/` or `crates/ui/src/`; `build.rs` runs
 supervises the restart. `net/`, `config.rs`, `paths.rs` and the session token
 type are outside the writable tree, so an edit cannot reach them. Progress
 crosses to the UI thread through an event queue; the UI thread never builds or
-blocks. Without a source tree the card disables itself, and each build records
+blocks. The installer bundles the build source under `<install>\src`; the user
+supplies Rust. Without Cargo the card disables Generate, and each build records
 the app version so the card can warn when an older UI is running against a
 newer app.
 

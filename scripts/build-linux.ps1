@@ -50,6 +50,14 @@ $app = Join-Path $stage "Runecord"
 New-Item -ItemType Directory -Force -Path (Join-Path $app "assets") | Out-Null
 Copy-Item $binary (Join-Path $app "Runecord")
 Copy-Item (Join-Path $root "assets\icon.png") (Join-Path $app "assets\icon.png")
+
+$source = Join-Path $root "dist\src"
+if (-not (Test-Path (Join-Path $source "Runecord\Cargo.toml"))) {
+    & (Join-Path $PSScriptRoot "stage-source.ps1") -Destination $source
+}
+New-Item -ItemType Directory -Force -Path (Join-Path $app "src") | Out-Null
+Copy-Item (Join-Path $source "*") (Join-Path $app "src") -Recurse -Force
+
 Copy-Item (Join-Path $root "packaging\linux\install.sh") (Join-Path $app "install.sh")
 Copy-Item (Join-Path $root "packaging\linux\uninstall.sh") (Join-Path $app "uninstall.sh")
 Copy-Item (Join-Path $root "packaging\linux\runecord.desktop") (Join-Path $app "runecord.desktop")
@@ -80,6 +88,10 @@ Data lives in ~/.local/share/runecord (honouring XDG_DATA_HOME):
   key.bin           encryption key; back this up with the database
   server.log        server log
   backups/          daily encrypted snapshots (newest 7)
+  aiedit/src/       UI source used by the AI editor
+
+The AI editor also needs Rust 1.99.1. If cargo is not on PATH, the editor
+button stays disabled. The source is included; the compiler is not.
 
 If the window does not appear, run ./Runecord from a terminal to see the error.
 

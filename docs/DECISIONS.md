@@ -364,9 +364,10 @@ three repairs. The caps live in `aiedit/mod.rs` (`MAX_STEPS`,
 `MAX_FILE_ROUNDS`, `MAX_REPAIRS`, `MAX_IDLE`) so a looping model cannot spin
 forever or exhaust the user's budget.
 
-The card is explicit about availability and age. Without a source tree it
-replaces Generate with a No source notice, so a packaged install cannot offer a
-button that always fails. A current build whose recorded `app_version` differs
+The card is explicit about availability and age. The installer bundles the
+source tree, and the card disables Generate when Cargo is not on PATH. A
+portable exe without a `src` folder shows a No source notice, so it cannot offer
+a button that always fails. A current build whose recorded `app_version` differs
 from the running app shows Keep / Rebuild / Reset; keeping silences it only for
 that app version. The version list renders every source-backed version instead
 of a fixed four, so a long history stays reachable. The prompt area discloses

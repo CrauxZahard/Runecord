@@ -195,6 +195,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
     let ui = &s.ui_edit;
     let running = crate::aiedit::busy();
     let available = crate::aiedit::source_available();
+    let rust = ui.rust_available;
     let can_undo = ui.history.iter().any(|version| version.name != "base");
 
     // A quiet, bordered button: secondary actions should not compete with the
@@ -492,7 +493,9 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 ),
         )
         .child({
-            let label = if running {
+            let label = if !rust {
+                "Rust not found"
+            } else if running {
                 "Building…"
             } else {
                 "Generate & build"
@@ -506,22 +509,55 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 .center()
                 .role("button")
                 .label(label)
-                .fill(if running { p.rail } else { p.accent })
-                .disabled(running)
+                .fill(if running || !rust { p.rail } else { p.accent })
+                .disabled(running || !rust)
                 .child(
                     icon(&icons::SPARKLES, 14.0)
-                        .color(if running { p.text_faint } else { Color::WHITE })
+                        .color(if running || !rust {
+                            p.text_faint
+                        } else {
+                            Color::WHITE
+                        })
                         .a11y_hidden(),
                 )
-                .child(text(label).font(theme::SMALL_MED).color(if running {
+                .child(text(label).font(theme::SMALL_MED).color(if running || !rust {
                     p.text_faint
                 } else {
                     Color::WHITE
                 }));
-            if !running {
+            if !running && rust {
                 generate = generate
                     .hover(p.accent_hover)
                     .on_press(|s: &mut App| s.ui_edit_begin());
+            }
+            let mut block = col().w_full().gap(8.0);
+            if !rust {
+                block = block.child(
+                    row()
+                        .w_full()
+                        .gap(8.0)
+                        .center_y()
+                        .child(icon(&icons::CLOCK, 12.0).color(p.yellow).a11y_hidden())
+                        .child(
+                            text("Rust toolchain not found. Install Rust 1.99.1, then press Check again.")
+                                .wrap()
+                                .font(theme::TINY)
+                                .color(p.text_muted)
+                                .grow(1.0)
+                                .min_w(0.0),
+                        )
+                        .child(
+                            ghost("ai-get-rust", "Get Rust", 30.0).on_press_tx(
+                                |_s: &mut App, tx: &mut rune::Tx| {
+                                    let _ = tx.open_url("https://rustup.rs/");
+                                },
+                            ),
+                        )
+                        .child(
+                            ghost("ai-check-rust", "Check again", 30.0)
+                                .on_press(|s: &mut App| s.ui_edit_check_toolchain()),
+                        ),
+                );
             }
             let mut actions = row().w_full().gap(8.0).center_y();
             actions = actions.child(generate);
@@ -556,7 +592,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                 );
                 actions = actions.child(el().grow(1.0)).children(secondary);
             }
-            actions
+            block.child(actions)
         });
 
     if !ui.attachments.is_empty() {
@@ -858,7 +894,9 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     ghost("ai-keep-old", "Keep for now", 30.0)
                         .on_press(|s: &mut App| s.ui_edit_keep_current()),
                 );
-                if let Some(name) = current {
+                if rust
+                    && let Some(name) = current
+                {
                     actions = actions.child(
                         ghost("ai-rebuild-old", "Rebuild", 30.0)
                             .on_press(move |s: &mut App| s.ui_edit_rebuild(&name)),
@@ -898,10 +936,14 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                                 ),
                         )
                         .child(
-                            text("Rebuild it against the current app, or reset to the shipped UI. Keeping it leaves the old build running and stops this warning until the app changes again.")
-                                .wrap()
-                                .font(theme::TINY)
-                                .color(p.text_muted),
+                            text(if rust {
+                                "Rebuild it against the current app, or reset to the shipped UI. Keeping it leaves the old build running and stops this warning until the app changes again."
+                            } else {
+                                "Install Rust 1.99.1 to rebuild it, or reset to the shipped UI. Keeping it leaves the old build running and stops this warning until the app changes again."
+                            })
+                            .wrap()
+                            .font(theme::TINY)
+                            .color(p.text_muted),
                         )
                         .child(actions),
                 );
@@ -939,7 +981,7 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                             } else {
                                 p.divider
                             }));
-                    } else if version.source {
+                    } else if version.source && rust {
                         let name = version.name.clone();
                         entry = entry
                             .key(format!("ai-rebuild-{}", version.name))
@@ -949,6 +991,10 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                             .hover(p.rail_hover)
                             .on_press(move |s: &mut App| s.ui_edit_rebuild(&name))
                             .child(el().size(6.0, 6.0).radius(3.0).fill(p.text_link));
+                    } else if version.source {
+                        entry = entry.child(
+                            el().size(6.0, 6.0).radius(3.0).fill(p.text_faint),
+                        );
                     } else {
                         entry = entry.child(el().size(6.0, 6.0).radius(3.0).fill(p.divider));
                     }
@@ -959,7 +1005,11 @@ fn ai_edit_card(s: &App, p: Palette) -> El {
                     } else if version.binary && !version.source {
                         text("Fallback").font(theme::TINY).color(p.text_faint)
                     } else if !version.binary && version.source {
-                        text("Rebuild").font(theme::TINY).color(p.text_link)
+                        if rust {
+                            text("Rebuild").font(theme::TINY).color(p.text_link)
+                        } else {
+                            text("Needs Rust").font(theme::TINY).color(p.text_faint)
+                        }
                     } else if !version.binary {
                         text("No source").font(theme::TINY).color(p.text_faint)
                     } else {

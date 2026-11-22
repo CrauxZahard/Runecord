@@ -14,7 +14,10 @@ const TAIL: usize = 300;
 
 /// Builds the release binary and returns its path.
 pub fn release(root: &Path, target: &Path) -> Result<PathBuf, String> {
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let cargo = super::cargo_path().ok_or_else(|| {
+        "The Rust toolchain is not available. Install Rust 1.99.1 from rustup.rs, then try again."
+            .to_string()
+    })?;
     if !Command::new(&cargo)
         .arg("--version")
         .stdout(Stdio::null())
@@ -24,12 +27,24 @@ pub fn release(root: &Path, target: &Path) -> Result<PathBuf, String> {
         .unwrap_or(false)
     {
         return Err(format!(
-            "The Rust toolchain is not available: `{cargo}` could not be run. \
-             The editor needs the one-time toolchain download."
+            "The Rust toolchain is not available: `{}` could not be run. Install Rust 1.99.1 from rustup.rs, then try again.",
+            cargo.display()
         ));
     }
     super::log(&format!("cargo build --release in {}", root.display()));
-    let mut child = Command::new(&cargo)
+    let mut command = Command::new(&cargo);
+    // Explorer can keep a stale PATH. Add Cargo's folder so rustup's rustc is
+    // visible to the child even when the card found Cargo by its fallback path.
+    if let Some(dir) = cargo.parent() {
+        let mut paths = vec![dir.to_path_buf()];
+        if let Some(path) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&path));
+        }
+        if let Ok(joined) = std::env::join_paths(paths) {
+            command.env("PATH", joined);
+        }
+    }
+    let mut child = command
         .current_dir(root)
         .args([
             "build",
